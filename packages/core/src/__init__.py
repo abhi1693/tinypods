@@ -1,0 +1,1 @@
+"""tinypods-core package."""

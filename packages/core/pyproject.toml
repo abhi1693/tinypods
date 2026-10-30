@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tinypods-core"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = ["pydantic-settings>=2.8"]
+
+[tool.setuptools]
+packages = ["tinypods_core"]
+
+[tool.setuptools.package-dir]
+tinypods_core = "src"
+
+[tool.setuptools.package-data]
+tinypods_core = ["py.typed"]

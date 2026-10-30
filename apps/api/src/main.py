@@ -1,0 +1,78 @@
+"""API composition root and process entry point."""
+
+import asyncio
+import logging
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from contextlib import asynccontextmanager
+
+import uvicorn
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from tinypods_core.logging import configure_logging
+from tinypods_core.settings import ConfigurationError, Settings, load_settings
+
+ReadinessCheck = Callable[[], Awaitable[bool]]
+logger = logging.getLogger("tinypods.api")
+
+
+def create_app(
+    settings: Settings | None = None,
+    *,
+    readiness_checks: Mapping[str, ReadinessCheck] | None = None,
+) -> FastAPI:
+    config = settings if settings is not None else load_settings()
+    configure_logging(config)
+    checks = dict(readiness_checks or {})
+    if "runtime" in checks:
+        raise ValueError("runtime is a reserved readiness check name")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        app.state.ready = True
+        logger.info("API started")
+        try:
+            yield
+        finally:
+            app.state.ready = False
+            logger.info("API stopped")
+
+    app = FastAPI(title=config.service_name, lifespan=lifespan)
+    app.state.ready = False
+
+    @app.get("/healthz", operation_id="getLiveness")
+    async def liveness() -> dict[str, str]:
+        return {"status": "alive"}
+
+    @app.get("/readyz", operation_id="getReadiness")
+    async def readiness() -> JSONResponse:
+        async def evaluate(name: str, check: ReadinessCheck) -> tuple[str, bool]:
+            try:
+                async with asyncio.timeout(config.readiness_timeout):
+                    return name, bool(await check())
+            except Exception:
+                logger.warning("Readiness dependency unavailable")
+                return name, False
+
+        results = dict(await asyncio.gather(*(evaluate(n, c) for n, c in checks.items())))
+        results["runtime"] = bool(app.state.ready)
+        ready = all(results.values())
+        return JSONResponse(
+            {"status": "ready" if ready else "not_ready", "checks": results},
+            status_code=200 if ready else 503,
+        )
+
+    return app
+
+
+def main() -> None:
+    try:
+        settings = load_settings()
+    except ConfigurationError as exc:
+        raise SystemExit(str(exc)) from None
+    uvicorn.run(
+        create_app(settings),
+        host=settings.api_host,
+        port=settings.api_port,
+        log_config=None,
+        access_log=False,
+    )
