@@ -106,3 +106,19 @@ def wait_for_postgres(url: str) -> None:
             if time.monotonic() >= deadline:
                 pytest.fail("Disposable PostgreSQL/PgBouncer did not become ready")
             time.sleep(0.1)
+
+
+@pytest.fixture(autouse=True)
+def isolated_logging() -> Iterator[None]:
+    import logging
+
+    from tinypods_core.logging import shutdown_logging
+
+    root = logging.getLogger()
+    level = root.level
+    shutdown_logging()
+    try:
+        yield
+    finally:
+        shutdown_logging()
+        root.setLevel(level)

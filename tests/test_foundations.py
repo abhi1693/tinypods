@@ -13,7 +13,6 @@ from urllib.request import urlopen
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
 from tinypods_api.main import create_app
 from tinypods_core.logging import JsonFormatter, configure_logging
 from tinypods_core.settings import ConfigurationError, Settings, load_settings
@@ -54,11 +53,10 @@ def test_valid_settings_and_secret_representations(monkeypatch):
     settings = load_settings()
     assert settings.api_port == 8123
     assert "postgresql://private" not in repr(settings)
-    assert settings.secret_values() == ("postgresql://private",)
 
 
-def test_json_logging_redacts_nested_context_and_exceptions():
-    formatter = JsonFormatter(("private-value",))
+def test_json_logging_preserves_fields_and_exception_diagnostics():
+    formatter = JsonFormatter("backend")
     record = logging.LogRecord(
         "tinypods.test", logging.ERROR, "", 1, "failure %s", ("private-value",), None
     )
@@ -71,21 +69,21 @@ def test_json_logging_redacts_nested_context_and_exceptions():
     record.exc_info = (ValueError, ValueError("private-value"), None)
     rendered = formatter.format(record)
     payload = json.loads(rendered)
-    assert "private-value" not in rendered
-    assert "hidden" not in rendered
-    assert "bearer" not in rendered
+    assert "private-value" in rendered
+    assert "hidden" in rendered
+    assert "bearer" in rendered
     assert payload["context"]["safe"] == 42
-    assert payload["exception_type"] == "ValueError"
+    assert payload["error_type"] == "ValueError"
 
 
 def test_logging_configuration_is_idempotent(capsys):
-    settings = Settings(database_url=SecretStr("postgresql://private-value"))
+    settings = Settings(log_format="json")
     configure_logging(settings)
     configure_logging(settings)
     logging.getLogger("tinypods.test").info("postgresql://private-value")
-    lines = capsys.readouterr().out.splitlines()
+    lines = capsys.readouterr().err.splitlines()
     assert len(lines) == 1
-    assert json.loads(lines[0])["message"] == "[REDACTED]"
+    assert json.loads(lines[0])["message"] == "postgresql://private-value"
 
 
 def test_health_and_readiness_follow_lifecycle():
@@ -128,7 +126,7 @@ def test_runtime_readiness_name_cannot_be_overridden():
 def test_installed_commands_validate_configuration(command):
     result = subprocess.run(command, capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stderr
-    assert "valid" in result.stdout
+    assert "valid" in result.stdout + result.stderr
 
 
 @pytest.mark.parametrize(
@@ -147,11 +145,11 @@ def test_worker_stops_cleanly_on_sigterm():
         ["tinypods-worker"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
     )
     try:
-        assert "started" in process.stdout.readline()
+        assert "started" in process.stderr.readline()
         process.send_signal(signal.SIGTERM)
         stdout, stderr = process.communicate(timeout=10)
         assert process.returncode == 0, stderr
-        assert "stopped" in stdout
+        assert "stopped" in stderr
     finally:
         if process.poll() is None:
             process.kill()
@@ -183,7 +181,7 @@ def test_api_entry_point_serves_http_and_shuts_down():
         process.send_signal(signal.SIGTERM)
         stdout, stderr = process.communicate(timeout=10)
         assert process.returncode in (0, -signal.SIGTERM), stderr
-        assert "API stopped" in stdout
+        assert "API stopped" in stderr
     finally:
         if process.poll() is None:
             process.kill()

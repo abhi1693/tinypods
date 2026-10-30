@@ -77,7 +77,7 @@ PgBouncer images on a private network with random test credentials and ephemeral
 localhost ports, then remove only those test containers. No existing database is
 used. Tests cover installed commands, HTTP lifecycle, async request sessions,
 transaction rollback, populated upgrades, failed migration rollback, migration
-locking, plugin-table preservation, redaction and event-loop responsiveness. Pytest enforces
+locking, plugin-table preservation, logging and event-loop responsiveness. Pytest enforces
 90% branch-aware coverage across the implemented backend packages and writes
 JUnit and coverage XML into `reports/`. CI uses the pinned shared Python workflow
 from `abhi1693/actions` and uploads those reports. Strict mypy checks include all
@@ -176,3 +176,23 @@ The Docker daemon and builder must trust the registry's certificate, whose names
 must include the configured hostname. Local backend images are built locally;
 the registry prefix does not redirect them. `TINYPODS_BACKEND_IMAGE` still selects
 an existing backend image when the build override is omitted.
+
+
+## Backend logging
+
+The API, worker and CLI share DevFeed's standard-library logging pattern.
+`TINYPODS_LOG_FORMAT=text` is the default; set it to `json` for structured output.
+`TINYPODS_LOG_LEVEL` controls verbosity. Logs go to stderr, leaving CLI command
+results on stdout. Text output shows readable events and operational context;
+JSON also includes code locations and bounded exception stack locations.
+
+Request logs carry a server-generated `x-request-id`, method, path, response status
+and duration. The context remains active through streaming bodies and exceptions,
+and propagates to synchronous FastAPI endpoints. Successful health probes log at
+DEBUG; failed probes remain visible. Duplicate Uvicorn access logs are disabled.
+
+API output uses a bounded in-memory queue so a slow stderr collector does not block
+the event loop. `TINYPODS_LOG_QUEUE_CAPACITY` defaults to 1024 messages. New logs
+are dropped and counted when it fills. Drains and shutdown waits are bounded;
+the API drains outside the event loop. Worker and CLI output use the same formatters
+with synchronous process-level stderr handlers. Custom log redaction is removed.
