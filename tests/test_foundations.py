@@ -79,10 +79,10 @@ def test_json_logging_redacts_nested_context_and_exceptions():
 
 
 def test_logging_configuration_is_idempotent(capsys):
-    settings = Settings(database_url=SecretStr("private-value"))
+    settings = Settings(database_url=SecretStr("postgresql://private-value"))
     configure_logging(settings)
     configure_logging(settings)
-    logging.getLogger("tinypods.test").info("private-value")
+    logging.getLogger("tinypods.test").info("postgresql://private-value")
     lines = capsys.readouterr().out.splitlines()
     assert len(lines) == 1
     assert json.loads(lines[0])["message"] == "[REDACTED]"

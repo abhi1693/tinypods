@@ -2,8 +2,10 @@
 
 from typing import Literal
 
-from pydantic import Field, SecretStr, ValidationError
+from pydantic import Field, SecretStr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 
 class ConfigurationError(ValueError):
@@ -19,12 +21,31 @@ class Settings(BaseSettings):
     api_port: int = Field(default=8000, ge=1, le=65535)
     readiness_timeout: float = Field(default=2.0, gt=0, le=30)
     database_url: SecretStr | None = None
+    migration_database_url: SecretStr | None = None
+    database_mode: Literal["direct", "pgbouncer"] = "direct"
+    database_pool_size: int = Field(default=5, ge=1, le=100)
+    database_max_overflow: int = Field(default=5, ge=0, le=100)
+    database_pool_timeout: float = Field(default=5.0, gt=0, le=60)
+    database_connect_timeout: int = Field(default=5, ge=1, le=60)
     valkey_url: SecretStr | None = None
+
+    @field_validator("database_url", "migration_database_url")
+    @classmethod
+    def validate_database_url(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is None:
+            return None
+        try:
+            url = make_url(value.get_secret_value())
+            if url.drivername not in {"postgresql", "postgresql+psycopg"}:
+                raise ValueError("PostgreSQL with psycopg is required")
+        except ArgumentError:
+            raise ValueError("Invalid PostgreSQL URL") from None
+        return value
 
     def secret_values(self) -> tuple[str, ...]:
         return tuple(
             value.get_secret_value()
-            for value in (self.database_url, self.valkey_url)
+            for value in (self.database_url, self.migration_database_url, self.valkey_url)
             if value is not None and value.get_secret_value()
         )
 
