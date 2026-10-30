@@ -1,6 +1,35 @@
-# Build the shared backend image locally instead of pulling a published image.
+# Local builds and Compose Watch; upstream images can use a pull-through registry.
+x-backend-build: &backend-build
+  context: .
+  dockerfile: Dockerfile
+  args:
+    DOCKERHUB_PREFIX: ${TINYPODS_IMAGE_REGISTRY:+${TINYPODS_IMAGE_REGISTRY}/docker.io/library/}
+    REGISTRY_PREFIX: ${TINYPODS_IMAGE_REGISTRY:+${TINYPODS_IMAGE_REGISTRY}/}
+
+x-backend-develop: &backend-develop
+  watch:
+    - {action: rebuild, path: ./apps/api}
+    - {action: rebuild, path: ./apps/worker}
+    - {action: rebuild, path: ./apps/cli}
+    - {action: rebuild, path: ./packages/core}
+    - {action: rebuild, path: ./migrations}
+    - {action: rebuild, path: ./alembic.ini}
+    - {action: rebuild, path: ./pyproject.toml}
+    - {action: rebuild, path: ./uv.lock}
+    - {action: rebuild, path: ./.python-version}
+    - {action: rebuild, path: ./Dockerfile}
+    - {action: rebuild, path: ./.dockerignore}
+
 services:
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${TINYPODS_LOCAL_IMAGE_PREFIX:-tinypods}/api:local
+    build: *backend-build
+    develop: *backend-develop
+  worker:
+    image: ${TINYPODS_LOCAL_IMAGE_PREFIX:-tinypods}/worker:local
+    build: *backend-build
+    develop: *backend-develop
+  migrate:
+    image: ${TINYPODS_LOCAL_IMAGE_PREFIX:-tinypods}/migrate:local
+    build: *backend-build
+    develop: *backend-develop

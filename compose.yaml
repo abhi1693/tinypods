@@ -31,7 +31,7 @@ x-healthcheck: &healthcheck
 
 services:
   postgres:
-    image: postgres:17-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+    image: ${TINYPODS_IMAGE_REGISTRY:+${TINYPODS_IMAGE_REGISTRY}/docker.io/library/}postgres:17-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
     profiles: [local]
     restart: unless-stopped
     environment:
@@ -45,7 +45,7 @@ services:
       test: [CMD, pg_isready, -U, tinypods, -d, tinypods]
 
   valkey:
-    image: valkey/valkey:9.1.3-trixie@sha256:3add1a336a920ea54770a001ab6feb3da5fceea96a40373a3a2cd469b815f0b7
+    image: ${TINYPODS_IMAGE_REGISTRY:+${TINYPODS_IMAGE_REGISTRY}/docker.io/}valkey/valkey:9.1.3-trixie@sha256:3add1a336a920ea54770a001ab6feb3da5fceea96a40373a3a2cd469b815f0b7
     profiles: [local]
     restart: unless-stopped
     # Validate the password before handing back to the image's non-root entrypoint.

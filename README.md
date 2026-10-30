@@ -96,7 +96,7 @@ worker override layout used in DevFeed:
 ```sh
 cp compose.env.example .env
 # Set POSTGRES_PASSWORD and VALKEY_PASSWORD to different random hex strings.
-docker compose -f compose.yaml -f compose.build.yaml -f compose.workers.yaml build api
+docker compose -f compose.yaml -f compose.build.yaml -f compose.workers.yaml build
 docker compose -f compose.yaml -f compose.build.yaml -f compose.workers.yaml up -d --wait
 ```
 
@@ -147,3 +147,32 @@ containers to verify database/queue persistence, and runs against externally
 provided services. It also verifies private networking, worker overrides, and
 host/port configuration. ARM64 image inputs are verified; runtime integration
 tests execute on the host architecture.
+
+
+### Watch local changes
+
+Use the build and worker overrides with `up --watch` to rebuild and recreate
+the backend containers when source, dependencies or migrations change:
+
+```sh
+docker compose -f compose.yaml -f compose.build.yaml -f compose.workers.yaml up --watch
+```
+
+API, worker and migration services use separate local image tags, sharing the
+same Dockerfile and cached build layers. The migration job stays separate from
+the long-running application processes. Image-based deployment without the build
+override does not enable source watching.
+
+### Optional local image registry
+
+Set `TINYPODS_IMAGE_REGISTRY=registry.home` in `.env` to use a pull-through
+registry. Leave it empty to use the original upstream registries. The path layout
+matches DevFeed: Docker Hub library images use
+`<registry>/docker.io/library/...`, Valkey uses `<registry>/docker.io/valkey/...`,
+and uv uses `<registry>/ghcr.io/astral-sh/...`. This covers runtime dependencies
+and Dockerfile build inputs while keeping immutable image digests.
+
+The Docker daemon and builder must trust the registry's certificate, whose names
+must include the configured hostname. Local backend images are built locally;
+the registry prefix does not redirect them. `TINYPODS_BACKEND_IMAGE` still selects
+an existing backend image when the build override is omitted.

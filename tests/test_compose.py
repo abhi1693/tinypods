@@ -2,10 +2,13 @@
 
 import json
 import os
+import shutil
+import signal
 import subprocess
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from urllib.request import urlopen
 from uuid import uuid4
@@ -20,15 +23,22 @@ class ComposeStack:
     name: str
     environment: dict[str, str] = field(repr=False)
     extra_files: tuple[Path, ...] = ()
+    directory: Path = ROOT
 
-    def run(self, *arguments: str, timeout: int = 120) -> str:
-        files = [ROOT / "compose.yaml", ROOT / "compose.build.yaml", ROOT / "compose.workers.yaml"]
+    def command(self, *arguments: str) -> list[str]:
+        files = [
+            self.directory / name
+            for name in ["compose.yaml", "compose.build.yaml", "compose.workers.yaml"]
+        ]
         files.extend(self.extra_files)
         command = ["docker", "compose", "--project-name", self.name, "--env-file", "/dev/null"]
         for path in files:
             command.extend(["-f", str(path)])
+        return command + list(arguments)
+
+    def run(self, *arguments: str, timeout: int = 120) -> str:
         result = subprocess.run(
-            command + list(arguments),
+            self.command(*arguments),
             env=self.environment,
             capture_output=True,
             text=True,
@@ -62,7 +72,7 @@ def compose_stack() -> Iterator[ComposeStack]:
             "VALKEY_PASSWORD": queue_password,
             "TINYPODS_DATABASE_URL": f"postgresql+psycopg://tinypods:{password}@postgres:5432/tinypods",
             "TINYPODS_VALKEY_URL": f"redis://:{queue_password}@valkey:6379/0",
-            "TINYPODS_BACKEND_IMAGE": "tinypods-tests/backend:" + name,
+            "TINYPODS_LOCAL_IMAGE_PREFIX": "tinypods-tests/" + name,
             "TINYPODS_PUBLISH_HOST": "127.0.0.1",
             "TINYPODS_PUBLISH_PORT": "0",
             "TINYPODS_WORKER_HEARTBEAT_INTERVAL": "0.1",
@@ -70,14 +80,22 @@ def compose_stack() -> Iterator[ComposeStack]:
     )
     stack = ComposeStack(name, environment)
     try:
-        stack.run("build", "api", timeout=300)
+        stack.run("build", timeout=300)
         stack.run("up", "-d", "--wait", "--wait-timeout", "90")
         yield stack
     finally:
         # Only this generated project's containers/networks/volumes are disposable.
         stack.run("down", "--volumes", "--remove-orphans")
         subprocess.run(
-            ["docker", "image", "rm", environment["TINYPODS_BACKEND_IMAGE"]],
+            [
+                "docker",
+                "image",
+                "rm",
+                *[
+                    environment["TINYPODS_LOCAL_IMAGE_PREFIX"] + "/" + service + ":local"
+                    for service in ("api", "worker", "migrate")
+                ],
+            ],
             capture_output=True,
             timeout=30,
         )
@@ -156,3 +174,136 @@ def test_publish_host_and_port_are_configurable(compose_stack: ComposeStack) -> 
     port = configuration["services"]["api"]["ports"][0]
     assert port["host_ip"] == "192.0.2.10"
     assert port["published"] == "8123"
+
+
+def test_optional_registry_rewrites_upstream_images_and_build_args(
+    compose_stack: ComposeStack,
+) -> None:
+    stack = ComposeStack(
+        compose_stack.name, dict(compose_stack.environment, TINYPODS_IMAGE_REGISTRY="registry.home")
+    )
+    services = json.loads(stack.run("config", "--format", "json"))["services"]
+    assert services["postgres"]["image"].startswith("registry.home/docker.io/library/postgres:")
+    assert services["valkey"]["image"].startswith("registry.home/docker.io/valkey/valkey:")
+    for service in ["api", "worker", "migrate"]:
+        assert services[service]["build"]["args"] == {
+            "DOCKERHUB_PREFIX": "registry.home/docker.io/library/",
+            "REGISTRY_PREFIX": "registry.home/",
+        }
+    original = json.loads(compose_stack.run("config", "--format", "json"))["services"]
+    assert original["postgres"]["image"].startswith("postgres:")
+    assert original["valkey"]["image"].startswith("valkey/valkey:")
+    assert original["api"]["build"]["args"]["REGISTRY_PREFIX"] == ""
+
+
+def test_watch_rebuilds_api_worker_and_runs_new_migrations(
+    compose_stack: ComposeStack,
+    tmp_path: Path,
+) -> None:
+    directory = tmp_path / "checkout"
+    directory.mkdir()
+    for name in ["apps", "packages", "migrations"]:
+        shutil.copytree(
+            ROOT / name,
+            directory / name,
+            ignore=shutil.ignore_patterns("build", "*.egg-info", "__pycache__"),
+        )
+    for name in [
+        "Dockerfile",
+        ".dockerignore",
+        "pyproject.toml",
+        "uv.lock",
+        ".python-version",
+        "alembic.ini",
+        "compose.yaml",
+        "compose.build.yaml",
+        "compose.workers.yaml",
+    ]:
+        shutil.copy2(ROOT / name, directory / name)
+    probe = directory / "packages/core/src/watch_probe.py"
+    probe.write_text('VALUE = "before"\n')
+    environment = dict(compose_stack.environment)
+    environment["TINYPODS_LOCAL_IMAGE_PREFIX"] += "-watch"
+    stack = ComposeStack(compose_stack.name + "-watch", environment, directory=directory)
+    watcher: subprocess.Popen[bytes] | None = None
+    output = tmp_path / "watch.log"
+    try:
+        stack.run("build", timeout=300)
+        stack.run("up", "-d", "--wait", "--wait-timeout", "90")
+        original = json.loads(stack.identity())
+        with output.open("wb") as log:
+            watcher = subprocess.Popen(
+                stack.command("watch", "--no-up"),
+                env=environment,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            deadline = time.monotonic() + 20
+            while "Watch enabled" not in output.read_text():
+                assert watcher.poll() is None, output.read_text()[-3000:]
+                assert time.monotonic() < deadline, output.read_text()[-3000:]
+                time.sleep(0.1)
+            probe.write_text('VALUE = "after"\n')
+            (directory / "migrations/versions/0002_watch.py").write_text(
+                "from alembic import op\nrevision='0002_watch'\n"
+                "down_revision='0001_installation'\n"
+                "def upgrade():\n    op.execute('CREATE TABLE compose_watch_probe (id integer)')\n"
+            )
+            deadline = time.monotonic() + 150
+            while True:
+                assert watcher.poll() is None, output.read_text()[-3000:]
+                try:
+                    values = [
+                        stack.run(
+                            "exec",
+                            "-T",
+                            service,
+                            "python",
+                            "-c",
+                            "from tinypods_core.watch_probe import VALUE; print(VALUE)",
+                        )
+                        for service in ["api", "worker"]
+                    ]
+                    revisions = json.loads(
+                        stack.run("exec", "-T", "api", "tinypods", "db", "current")
+                    )["revisions"]
+                    if values == ["after", "after"] and revisions == ["0002_watch"]:
+                        break
+                except (AssertionError, json.JSONDecodeError):
+                    pass
+                assert time.monotonic() < deadline, output.read_text()[-5000:]
+                time.sleep(0.5)
+            stack.assert_ready()
+            assert json.loads(stack.identity()) == original
+            ids = stack.run("ps", "-aq").splitlines()
+            containers = json.loads(subprocess.check_output(["docker", "inspect", *ids]))
+            states = {
+                item["Config"]["Labels"]["com.docker.compose.service"]: item["State"]
+                for item in containers
+            }
+            migrated = datetime.fromisoformat(states["migrate"]["FinishedAt"])
+            for service in ["api", "worker"]:
+                assert datetime.fromisoformat(states[service]["StartedAt"]) >= migrated
+    finally:
+        if watcher is not None and watcher.poll() is None:
+            os.killpg(watcher.pid, signal.SIGINT)
+            try:
+                watcher.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                os.killpg(watcher.pid, signal.SIGKILL)
+                watcher.wait(timeout=10)
+        stack.run("down", "--volumes", "--remove-orphans")
+        subprocess.run(
+            [
+                "docker",
+                "image",
+                "rm",
+                *[
+                    environment["TINYPODS_LOCAL_IMAGE_PREFIX"] + "/" + service + ":local"
+                    for service in ["api", "worker", "migrate"]
+                ],
+            ],
+            capture_output=True,
+            timeout=30,
+        )
