@@ -24,6 +24,7 @@ commits. Valkey configuration is reserved for the queue integration work.
 
 ## PostgreSQL
 
+The Typer CLI provides typed commands and `--help` at each command level.
 Provide a PostgreSQL database and export `TINYPODS_DATABASE_URL` before running:
 
 ```sh

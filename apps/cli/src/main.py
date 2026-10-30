@@ -1,15 +1,22 @@
-"""Diagnostics and explicit database administration commands."""
+"""Typed CLI commands for diagnostics and explicit database administration."""
 
-import argparse
 import asyncio
 import json
 from pathlib import Path
+from typing import Annotated
 
+import typer
 from alembic.util.exc import CommandError
 from sqlalchemy.exc import SQLAlchemyError
 from tinypods_core.db import Database
 from tinypods_core.migrations import MigrationManager
 from tinypods_core.settings import ConfigurationError, Settings, load_settings
+
+app = typer.Typer(help="TinyPods CLI", add_completion=False, pretty_exceptions_enable=False)
+database_app = typer.Typer(help="Manage core migrations explicitly.", add_completion=False)
+app.add_typer(database_app, name="db")
+
+ConfigOption = Annotated[Path, typer.Option("--config", help="Alembic configuration path.")]
 
 
 async def check_database(settings: Settings) -> str:
@@ -20,30 +27,43 @@ async def check_database(settings: Settings) -> str:
         await database.close()
 
 
+@app.command()
+def doctor(
+    database: Annotated[
+        bool, typer.Option("--database", help="Check the migrated database.")
+    ] = False,
+) -> None:
+    """Validate configuration, optionally checking PostgreSQL."""
+    settings = load_settings()
+    if database:
+        typer.echo(asyncio.run(check_database(settings)))
+    else:
+        typer.echo(json.dumps({"configuration": "valid", "service": settings.service_name}))
+
+
+@database_app.command()
+def upgrade(config: ConfigOption = Path("alembic.ini")) -> None:
+    """Apply pending core migrations."""
+    MigrationManager(load_settings(), config).upgrade()
+    typer.echo(json.dumps({"migration": "upgraded"}))
+
+
+@database_app.command()
+def check(config: ConfigOption = Path("alembic.ini")) -> None:
+    """Check whether core models need a new migration."""
+    MigrationManager(load_settings(), config).check()
+
+
+@database_app.command()
+def current(config: ConfigOption = Path("alembic.ini")) -> None:
+    """Show applied core migration revisions."""
+    revisions = MigrationManager(load_settings(), config).current()
+    typer.echo(json.dumps({"revisions": revisions}))
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="TinyPods CLI")
-    commands = parser.add_subparsers(dest="command", required=True)
-    doctor = commands.add_parser("doctor", help="validate configuration")
-    doctor.add_argument("--database", action="store_true", help="check the migrated database")
-    migrations = commands.add_parser("db", help="manage core migrations explicitly")
-    migrations.add_argument("action", choices=["upgrade", "check", "current"])
-    migrations.add_argument("--config", type=Path, default=Path("alembic.ini"))
-    args = parser.parse_args()
     try:
-        settings = load_settings()
-        if args.command == "db":
-            manager = MigrationManager(settings, args.config)
-            if args.action == "upgrade":
-                manager.upgrade()
-                print(json.dumps({"migration": "upgraded"}))
-            elif args.action == "check":
-                manager.check()
-            else:
-                print(json.dumps({"revisions": manager.current()}))
-        elif args.database:
-            print(asyncio.run(check_database(settings)))
-        else:
-            print(json.dumps({"configuration": "valid", "service": settings.service_name}))
+        app()
     except ConfigurationError as exc:
         raise SystemExit(str(exc)) from None
     except (SQLAlchemyError, CommandError):

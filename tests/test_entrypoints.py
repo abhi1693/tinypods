@@ -1,15 +1,18 @@
 """In-process command checks complement the installed-process smoke tests."""
 
+import subprocess
+
 import pytest
 from tinypods_api import main as api
 from tinypods_cli import main as cli
 from tinypods_worker import main as worker
+from typer.testing import CliRunner
 
 
-def test_cli_diagnostics(monkeypatch, capsys):
-    monkeypatch.setattr("sys.argv", ["tinypods", "doctor"])
-    cli.main()
-    assert '"configuration": "valid"' in capsys.readouterr().out
+def test_cli_diagnostics() -> None:
+    result = CliRunner().invoke(cli.app, ["doctor"])
+    assert result.exit_code == 0
+    assert '"configuration": "valid"' in result.output
 
 
 def test_worker_check(monkeypatch, capsys):
@@ -40,3 +43,34 @@ def test_server_uses_local_binding_and_disables_access_logs(monkeypatch):
     api.main()
     assert calls[0]["host"] == "127.0.0.1"
     assert calls[0]["access_log"] is False
+
+
+@pytest.mark.parametrize(
+    "arguments,expected",
+    [
+        (["--help"], "doctor"),
+        (["db", "--help"], "upgrade"),
+        (["doctor", "--help"], "--database"),
+        (["db", "upgrade", "--help"], "--config"),
+    ],
+)
+def test_cli_help_is_available_without_database(
+    arguments: list[str],
+    expected: str,
+) -> None:
+    result = CliRunner().invoke(cli.app, arguments)
+    assert result.exit_code == 0
+    assert expected in result.output
+
+
+@pytest.mark.parametrize("arguments", [["db", "unknown"], ["doctor", "--unknown"], ["db"]])
+def test_cli_invalid_command_has_clean_usage_error(arguments: list[str]) -> None:
+    result = subprocess.run(
+        ["tinypods", *arguments],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 2
+    assert "Usage:" in result.stderr
+    assert "Traceback" not in result.stdout + result.stderr
