@@ -8,12 +8,23 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from starlette.types import ASGIApp
+from tinypods_api.logging import RequestLoggingMiddleware
 from tinypods_core.db import Database
-from tinypods_core.logging import configure_logging
+from tinypods_core.logging import configure_logging, shutdown_logging
 from tinypods_core.settings import ConfigurationError, Settings, load_settings
 
 ReadinessCheck = Callable[[], Awaitable[bool]]
 logger = logging.getLogger("tinypods.api")
+
+
+class LoggedFastAPI(FastAPI):
+    """Keep request context outside the error handler, including generated 500 responses."""
+
+    def build_middleware_stack(self) -> ASGIApp:
+        return RequestLoggingMiddleware(
+            super().build_middleware_stack(), service="api", logger=logger
+        )
 
 
 def create_app(
@@ -22,7 +33,7 @@ def create_app(
     readiness_checks: Mapping[str, ReadinessCheck] | None = None,
 ) -> FastAPI:
     config = settings if settings is not None else load_settings()
-    configure_logging(config)
+    log_handler = configure_logging(config, service="api", non_blocking=True)
     checks = dict(readiness_checks or {})
     if "runtime" in checks:
         raise ValueError("runtime is a reserved readiness check name")
@@ -48,8 +59,9 @@ def create_app(
             if database is not None:
                 await database.close()
             logger.info("API stopped")
+            await asyncio.to_thread(log_handler.flush)
 
-    app = FastAPI(title=config.service_name, lifespan=lifespan)
+    app = LoggedFastAPI(title=config.service_name, lifespan=lifespan)
     app.state.database = database
     app.state.ready = False
 
@@ -83,10 +95,13 @@ def main() -> None:
         settings = load_settings()
     except ConfigurationError as exc:
         raise SystemExit(str(exc)) from None
-    uvicorn.run(
-        create_app(settings),
-        host=settings.api_host,
-        port=settings.api_port,
-        log_config=None,
-        access_log=False,
-    )
+    try:
+        uvicorn.run(
+            create_app(settings),
+            host=settings.api_host,
+            port=settings.api_port,
+            log_config=None,
+            access_log=False,
+        )
+    finally:
+        shutdown_logging()

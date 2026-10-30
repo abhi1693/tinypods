@@ -19,7 +19,7 @@ def main() -> None:
         settings = load_settings()
     except ConfigurationError as exc:
         raise SystemExit(str(exc)) from None
-    configure_logging(settings)
+    configure_logging(settings, service="worker")
     if args.check:
         logger.info("Worker configuration valid")
         return

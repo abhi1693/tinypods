@@ -19,7 +19,7 @@ def test_cli_diagnostics() -> None:
 def test_worker_check(monkeypatch, capsys):
     monkeypatch.setattr("sys.argv", ["tinypods-worker", "--check"])
     worker.main()
-    assert "configuration valid" in capsys.readouterr().out
+    assert "configuration valid" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
