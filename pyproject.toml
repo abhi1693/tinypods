@@ -27,7 +27,8 @@ addopts = "--strict-markers --strict-config --cov=tinypods_core --cov=tinypods_a
 [tool.mypy]
 python_version = "3.13"
 strict = true
-packages = ["tinypods_core", "tinypods_api", "tinypods_worker", "tinypods_cli"]
+files = ["packages/core/src", "apps/api/src", "apps/worker/src", "apps/cli/src"]
+explicit_package_bases = true
 
 [tool.coverage.run]
 patch = ["subprocess"]

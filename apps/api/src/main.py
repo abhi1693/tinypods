@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from tinypods_core.db import Database
 from tinypods_core.logging import configure_logging
 from tinypods_core.settings import ConfigurationError, Settings, load_settings
 
@@ -26,6 +27,16 @@ def create_app(
     if "runtime" in checks:
         raise ValueError("runtime is a reserved readiness check name")
 
+    database = Database(config) if config.database_url is not None else None
+    if database is not None:
+        if "database" in checks:
+            raise ValueError("database is a reserved readiness check name")
+
+        async def database_ready() -> bool:
+            return await database.ping()
+
+        checks["database"] = database_ready
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.ready = True
@@ -34,9 +45,12 @@ def create_app(
             yield
         finally:
             app.state.ready = False
+            if database is not None:
+                await database.close()
             logger.info("API stopped")
 
     app = FastAPI(title=config.service_name, lifespan=lifespan)
+    app.state.database = database
     app.state.ready = False
 
     @app.get("/healthz", operation_id="getLiveness")
