@@ -1,0 +1,7 @@
+# Enable and size workers independently; combine with compose.build.yaml locally.
+services:
+  worker:
+    profiles: !reset []
+    scale: ${TINYPODS_WORKER_REPLICAS:-1}
+    cpus: ${TINYPODS_WORKER_CPUS:-0.5}
+    mem_limit: ${TINYPODS_WORKER_MEMORY:-256m}

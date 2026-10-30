@@ -38,11 +38,11 @@ def test_bad_settings_exit_safely(entry, argv, monkeypatch):
     assert str(caught.value) == "Invalid settings: api_port"
 
 
-def test_server_uses_local_binding_and_disables_access_logs(monkeypatch):
+def test_server_uses_all_interfaces_and_disables_access_logs(monkeypatch):
     calls = []
     monkeypatch.setattr(api.uvicorn, "run", lambda *args, **kwargs: calls.append(kwargs))
     api.main()
-    assert calls[0]["host"] == "127.0.0.1"
+    assert calls[0]["host"] == "0.0.0.0"
     assert calls[0]["access_log"] is False
 
 

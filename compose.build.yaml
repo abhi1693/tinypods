@@ -1,0 +1,6 @@
+# Build the shared backend image locally instead of pulling a published image.
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
