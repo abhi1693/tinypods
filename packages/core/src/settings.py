@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     service_name: str = Field(default="TinyPods", min_length=1, max_length=80)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
-    api_host: str = "127.0.0.1"
+    api_host: str = "0.0.0.0"
     api_port: int = Field(default=8000, ge=1, le=65535)
     readiness_timeout: float = Field(default=2.0, gt=0, le=30)
     database_url: SecretStr | None = None
@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     database_pool_timeout: float = Field(default=5.0, gt=0, le=60)
     database_connect_timeout: int = Field(default=5, ge=1, le=60)
     valkey_url: SecretStr | None = None
+    worker_heartbeat_interval: float = Field(default=30.0, gt=0, le=60)
 
     @field_validator("database_url", "migration_database_url")
     @classmethod

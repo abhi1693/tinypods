@@ -1,0 +1,104 @@
+name: tinypods
+
+x-runtime: &runtime
+  image: ${TINYPODS_BACKEND_IMAGE:-tinypods/backend:local}
+  init: true
+  restart: unless-stopped
+  read_only: true
+  tmpfs: ["/tmp:size=32m,mode=1777"]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  networks: [default, data]
+  environment: &environment
+    TINYPODS_DATABASE_URL: ${TINYPODS_DATABASE_URL:?Set TINYPODS_DATABASE_URL}
+    TINYPODS_MIGRATION_DATABASE_URL:
+    TINYPODS_DATABASE_MODE: ${TINYPODS_DATABASE_MODE:-direct}
+    TINYPODS_VALKEY_URL: ${TINYPODS_VALKEY_URL:?Set TINYPODS_VALKEY_URL}
+    TINYPODS_LOG_LEVEL: ${TINYPODS_LOG_LEVEL:-INFO}
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: '3'}
+
+x-local-ready: &local-ready
+  postgres: {condition: service_healthy, required: false}
+  valkey: {condition: service_healthy, required: false}
+
+x-healthcheck: &healthcheck
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 10s
+
+services:
+  postgres:
+    image: ${TINYPODS_IMAGE_REGISTRY:+${TINYPODS_IMAGE_REGISTRY}/docker.io/library/}postgres:17-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+    profiles: [local]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tinypods
+      POSTGRES_DB: tinypods
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    networks: [data]
+    healthcheck:
+      <<: *healthcheck
+      test: [CMD, pg_isready, -U, tinypods, -d, tinypods]
+
+  valkey:
+    image: ${TINYPODS_IMAGE_REGISTRY:+${TINYPODS_IMAGE_REGISTRY}/docker.io/}valkey/valkey:9.1.3-trixie@sha256:3add1a336a920ea54770a001ab6feb3da5fceea96a40373a3a2cd469b815f0b7
+    profiles: [local]
+    restart: unless-stopped
+    # Validate the password before handing back to the image's non-root entrypoint.
+    entrypoint: [tini, --, sh, -ec, 'test -n "$$VALKEYCLI_AUTH" || { echo "Set VALKEY_PASSWORD" >&2; exit 1; }; exec docker-entrypoint.sh "$$@"', --]
+    command: [valkey-server, --appendonly, 'yes', --appendfsync, everysec,
+              --maxmemory, 128mb, --maxmemory-policy, noeviction,
+              --requirepass, '${VALKEY_PASSWORD:-}']
+    environment:
+      VALKEYCLI_AUTH: ${VALKEY_PASSWORD:-}
+    # Leave headroom for AOF rewrite buffers and copy-on-write pages.
+    mem_limit: 384m
+    volumes: [valkey-data:/data]
+    networks: [data]
+    healthcheck:
+      <<: *healthcheck
+      test: [CMD, valkey-cli, ping]
+
+  migrate:
+    <<: *runtime
+    restart: 'no'
+    command: [tinypods, db, upgrade]
+    depends_on: *local-ready
+
+  api:
+    <<: *runtime
+    command: [tinypods-api]
+    environment:
+      <<: *environment
+      TINYPODS_API_HOST: 0.0.0.0
+      TINYPODS_API_PORT: '8000'
+    ports:
+      - '${TINYPODS_PUBLISH_HOST:-0.0.0.0}:${TINYPODS_PUBLISH_PORT:-8000}:8000'
+    depends_on:
+      <<: *local-ready
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      <<: *healthcheck
+      test: [CMD, python, -c, 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/readyz", timeout=3)']
+
+  worker:
+    <<: *runtime
+    profiles: [workers]
+    command: [tinypods-worker]
+    environment:
+      <<: *environment
+      TINYPODS_WORKER_HEARTBEAT_INTERVAL: ${TINYPODS_WORKER_HEARTBEAT_INTERVAL:-30}
+    depends_on:
+      <<: *local-ready
+      migrate: {condition: service_completed_successfully}
+
+volumes:
+  postgres-data:
+  valkey-data:
+
+networks:
+  data: {internal: true}

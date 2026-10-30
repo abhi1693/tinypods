@@ -31,6 +31,6 @@ def main() -> None:
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     logger.info("Worker process started; queue handlers are not configured")
-    while not stopped.wait(30):
+    while not stopped.wait(settings.worker_heartbeat_interval):
         logger.info("Worker process heartbeat")
     logger.info("Worker process stopped")

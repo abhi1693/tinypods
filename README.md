@@ -13,7 +13,8 @@ uv run --no-sync tinypods doctor
 uv run --no-sync tinypods-worker --check
 ```
 
-The API listens on `127.0.0.1:8000`. `/healthz` reports process liveness.
+The API listens on `0.0.0.0:8000` by default for LAN access. Set
+`TINYPODS_API_HOST` and `TINYPODS_API_PORT` to override the direct process binding. `/healthz` reports process liveness.
 `/readyz` returns 503 outside the application lifespan or when a registered
 dependency fails or times out. If a database URL is configured, readiness verifies
 the migrated installation record. Liveness does not depend on the database.
@@ -84,5 +85,94 @@ backend source packages; generated migration files are excluded.
 
 Runnable entry points live under `apps/`; shared Python packages live under
 `packages/`. Each package maps its import namespace to its flat `src/` directory.
-Tests live at the repository root. Frontend and Compose work follow
-the tracker dependencies.
+Tests live at the repository root. Frontend work follows the tracker dependencies.
+
+
+## Docker Compose
+
+Use Docker Engine with Compose 2.24.4 or later. This follows the base, build and
+worker override layout used in DevFeed:
+
+```sh
+cp compose.env.example .env
+# Set POSTGRES_PASSWORD and VALKEY_PASSWORD to different random hex strings.
+docker compose -f compose.yaml -f compose.build.yaml -f compose.workers.yaml build
+docker compose -f compose.yaml -f compose.build.yaml -f compose.workers.yaml up -d --wait
+```
+
+The example enables the `local` profile for PostgreSQL and Valkey. The one-shot
+`migrate` service applies core migrations before the API and worker start. The
+backend image runs as an unprivileged user with a read-only filesystem and a
+temporary `/tmp`. It includes the API, worker and migration CLI; no web service
+is started yet. All upstream image references pin ARM64/AMD64 manifest digests.
+
+The API is available at `http://<machine-LAN-IP>:8000`. Set
+`TINYPODS_PUBLISH_HOST` and `TINYPODS_PUBLISH_PORT` in `.env` to change the
+published interface and port; the host defaults to `0.0.0.0` (all interfaces).
+Use `127.0.0.1` for host-only access. Inside the container, the API binds to
+`0.0.0.0:8000`; the published host address belongs to the Docker host.
+
+Database and queue ports are not published. Both use the private `data` network
+and named volumes. Queue Valkey uses AOF with a one-second fsync interval,
+128 MiB of data memory and `noeviction`; it rejects writes when full rather than
+evicting queued work. The container has a separate 384 MiB memory limit. An
+evictable cache must use a different instance. PostgreSQL/Valkey health checks
+gate startup, and API readiness checks the migrated database.
+
+The worker currently logs its heartbeat but has no queue handlers. Compose tracks
+its running state; a queue-backed worker health probe belongs with queue runtime
+support. No heartbeat files or file-based health probes are used. The worker
+override enables workers and configures replicas, CPU and memory independently.
+Omit it for an API-only setup, or enable the `workers` profile explicitly.
+
+```sh
+docker compose -f compose.yaml -f compose.workers.yaml logs -f api worker
+docker compose -f compose.yaml -f compose.workers.yaml run --rm migrate
+docker compose -f compose.yaml -f compose.workers.yaml down
+```
+
+`down` preserves data. Only use `down --volumes` when intentionally deleting the
+local databases. Omit the build override and set `TINYPODS_BACKEND_IMAGE` when
+using an already-built image.
+
+For external PostgreSQL/Valkey, clear `COMPOSE_PROFILES` in `.env` and replace
+`TINYPODS_DATABASE_URL` and `TINYPODS_VALKEY_URL` with reachable service URLs.
+No local database/queue containers are started in that mode. For PgBouncer, set
+`TINYPODS_DATABASE_MODE=pgbouncer` and supply the direct migration URL. Configure
+TLS in the service URLs as required by the external provider. Container
+`localhost` addresses the container itself, so use a reachable DNS name or IP.
+
+The test suite builds this image, starts isolated Compose projects, recreates
+containers to verify database/queue persistence, and runs against externally
+provided services. It also verifies private networking, worker overrides, and
+host/port configuration. ARM64 image inputs are verified; runtime integration
+tests execute on the host architecture.
+
+
+### Watch local changes
+
+Use the build and worker overrides with `up --watch` to rebuild and recreate
+the backend containers when source, dependencies or migrations change:
+
+```sh
+docker compose -f compose.yaml -f compose.build.yaml -f compose.workers.yaml up --watch
+```
+
+API, worker and migration services use separate local image tags, sharing the
+same Dockerfile and cached build layers. The migration job stays separate from
+the long-running application processes. Image-based deployment without the build
+override does not enable source watching.
+
+### Optional local image registry
+
+Set `TINYPODS_IMAGE_REGISTRY=registry.home` in `.env` to use a pull-through
+registry. Leave it empty to use the original upstream registries. The path layout
+matches DevFeed: Docker Hub library images use
+`<registry>/docker.io/library/...`, Valkey uses `<registry>/docker.io/valkey/...`,
+and uv uses `<registry>/ghcr.io/astral-sh/...`. This covers runtime dependencies
+and Dockerfile build inputs while keeping immutable image digests.
+
+The Docker daemon and builder must trust the registry's certificate, whose names
+must include the configured hostname. Local backend images are built locally;
+the registry prefix does not redirect them. `TINYPODS_BACKEND_IMAGE` still selects
+an existing backend image when the build override is omitted.
