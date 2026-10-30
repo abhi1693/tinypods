@@ -1,5 +1,6 @@
 """In-process command checks complement the installed-process smoke tests."""
 
+import re
 import subprocess
 
 import pytest
@@ -58,9 +59,10 @@ def test_cli_help_is_available_without_database(
     arguments: list[str],
     expected: str,
 ) -> None:
-    result = CliRunner().invoke(cli.app, arguments)
+    result = CliRunner().invoke(cli.app, arguments, color=True, env={"FORCE_COLOR": "1"})
     assert result.exit_code == 0
-    assert expected in result.output
+    plain_output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    assert expected in plain_output
 
 
 @pytest.mark.parametrize("arguments", [["db", "unknown"], ["doctor", "--unknown"], ["db"]])
