@@ -78,6 +78,7 @@ uv run --no-sync python scripts/sync_version.py --check
 uv run --no-sync tinypods-openapi --check
 uv run --no-sync openapi-spec-validator openapi.json
 uv run --no-sync pytest
+uv run --no-sync python scripts/check_coverage.py
 ```
 
 Tests require a running Docker daemon. They start pinned PostgreSQL and

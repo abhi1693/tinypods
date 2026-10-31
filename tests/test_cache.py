@@ -2,12 +2,13 @@
 
 import asyncio
 import json
+import logging
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from types import SimpleNamespace
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NoReturn
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -986,3 +987,89 @@ async def test_invalid_hit_does_not_retry_a_failing_source(cache_settings: Setti
         await cache.redis.set(keys[0], b'{"invalid":"dto"}', ex=30)
         assert (await client.get("/source-error")).status_code == 500
     assert calls == 2
+
+
+async def test_opted_in_cache_route_requires_a_public_dto() -> None:
+    """Reject an opted-in route before serving when it has no public response DTO."""
+    application = FastAPI()
+    application.router.route_class = CachedReadRoute
+
+    async def endpoint() -> dict[str, bool]:
+        """Provide a response that intentionally lacks a declared public DTO.
+
+        Returns:
+            A synthetic JSON body that must never be enabled for shared caching.
+        """
+        return {"valid": True}
+
+    policy = CachePolicy(namespace="requires_dto", revision=1, ttl="content")
+    with pytest.raises(ValueError, match="public response DTO"):
+        application.add_api_route(
+            "/missing-dto", endpoint, response_model=None, openapi_extra=policy.openapi_extra()
+        )
+
+
+async def test_simultaneous_cache_failures_warn_once(
+    cache: ResponseCache,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Avoid warning storms when already-started requests fail after another opens the breaker.
+
+    Args:
+        cache: Isolated cache instance whose connection pool is closed by its fixture.
+        monkeypatch: Scoped client fault injection applied before either lookup starts.
+        caplog: Captured warning records used to check one transition announcement.
+    """
+    ready = asyncio.Event()
+    release = asyncio.Event()
+    attempts = 0
+
+    async def fail_get(key: str) -> NoReturn:
+        """Hold both already-started reads until they can fail in a controlled order.
+
+        Args:
+            key: Generation key requested by the lookup operation.
+
+        Raises:
+            ConnectionError: Always, after both lookups have entered the I/O boundary.
+        """
+        nonlocal attempts
+        attempts += 1
+        if attempts == 2:
+            ready.set()
+        await release.wait()
+        raise ConnectionError("controlled connection failure")
+
+    monkeypatch.setattr(cache.redis, "get", fail_get)
+    caplog.set_level(logging.WARNING, logger="tinypods.cache")
+    tasks = [asyncio.create_task(cache.lookup(identity)) for identity in ("first", "second")]
+    try:
+        await asyncio.wait_for(ready.wait(), timeout=2)
+        release.set()
+        outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+        assert all(isinstance(outcome, CacheUnavailable) for outcome in outcomes)
+        warnings = [record for record in caplog.records if record.name == "tinypods.cache"]
+        assert len(warnings) == 1 and warnings[0].getMessage() == "Cache unavailable"
+    finally:
+        release.set()
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def test_discard_without_observed_body_keeps_newer_storage(cache: ResponseCache) -> None:
+    """Do not delete bytes published after a lookup that observed no response body.
+
+    Args:
+        cache: Real isolated Valkey cache used to verify conditional deletion semantics.
+    """
+    lookup = await cache.lookup("unobserved-body")
+    assert lookup.body is None
+    try:
+        newer = b'{"state":"newer"}'
+        await cache.redis.set(lookup.key, newer)
+        await cache.discard(lookup)
+        assert await cache.redis.get(lookup.key) == newer
+    finally:
+        await cache.release(lookup)

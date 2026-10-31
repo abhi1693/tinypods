@@ -37,7 +37,7 @@ convention = "google"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--strict-markers --strict-config --cov=tinypods_core --cov=tinypods_api --cov=tinypods_worker --cov=tinypods_cli --cov-branch --cov-report=term-missing --cov-report=xml:reports/coverage.xml --cov-report=json:reports/coverage.json --cov-report=html:reports/html --junitxml=reports/junit.xml --cov-fail-under=90"
+addopts = "--strict-markers --strict-config --cov=tinypods_core --cov=tinypods_api --cov=tinypods_worker --cov=tinypods_cli --cov-branch --cov-report=term-missing --cov-report=xml:reports/coverage.xml --cov-report=json:reports/coverage.json --cov-report=html:reports/html --junitxml=reports/junit.xml"
 
 [tool.mypy]
 python_version = "3.13"
@@ -47,3 +47,6 @@ explicit_package_bases = true
 
 [tool.coverage.run]
 patch = ["subprocess"]
+
+[tool.coverage.report]
+fail_under = 100

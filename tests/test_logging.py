@@ -687,3 +687,140 @@ def test_json_preserves_complete_non_scalar_metadata(metadata: object) -> None:
     with log_context(service=metadata):
         payload = json.loads(JsonFormatter("api").format(record))
     assert payload["service"] == metadata and "truncated" not in payload
+
+
+@pytest.mark.parametrize(
+    "arguments,message,expected",
+    [
+        (
+            {"actor": "demo", "details": {"answer": 42}},
+            "actor %(actor)s details %(details)r",
+            'actor demo details {"answer": 42}',
+        ),
+        (7, "value %d", "value 7"),
+    ],
+)
+def test_reconstructed_records_keep_mapping_and_scalar_arguments(
+    arguments: object,
+    message: str,
+    expected: str,
+) -> None:
+    """Preserve standard percent-format semantics in records reconstructed by adapters.
+
+    Args:
+        arguments: Mapping or scalar supplied through the standard makeLogRecord boundary.
+        message: Percent-format template associated with those arguments.
+        expected: Complete interpolated diagnostic message.
+    """
+    record = logging.makeLogRecord(
+        {
+            "name": "tinypods.test",
+            "levelno": logging.INFO,
+            "levelname": "INFO",
+            "msg": message,
+            "args": arguments,
+        }
+    )
+    assert JsonFormatter("api").payload(record)["message"] == expected
+    assert expected.replace('"', '\\"') in JsonFormatter("api").format(record)
+
+
+def test_verbose_text_output_preserves_dependency_diagnostics(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Make dependency diagnostics visible when the operator explicitly enables DEBUG.
+
+    Args:
+        capsys: Captured stderr receiving normal handler output.
+    """
+    configure_logging(Settings(log_level="DEBUG", log_format="text"), service="api")
+    logging.getLogger("library.example").info("full dependency diagnostic")
+    assert "full dependency diagnostic" in capsys.readouterr().err
+
+
+def test_queued_custom_render_failure_is_safe_and_does_not_stop_output(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Recover from a misimplemented renderer and continue with a standard custom formatter.
+
+    Args:
+        capsys: Captured stderr containing the fallback notice and subsequent message.
+    """
+    from tinypods_core.json_types import JsonRecord
+
+    class IncompleteRenderer(BaseFormatter):
+        """Simulate an extension incorrectly delegating to the abstract render contract."""
+
+        def render(self, payload: JsonRecord) -> str:
+            """Expose the unimplemented base contract as a controlled renderer failure.
+
+            Args:
+                payload: Owned normalized record delivered to the renderer.
+
+            Returns:
+                No rendered output because the delegated base contract raises.
+            """
+            return super().render(payload)
+
+    handler = QueuedStderrHandler(capacity=4)
+    try:
+        handler.setFormatter(IncompleteRenderer("api"))
+        handler.emit(
+            logging.LogRecord("tinypods.test", logging.INFO, "", 1, "private-raw-record", (), None)
+        )
+        handler.flush()
+        handler.setFormatter(logging.Formatter("custom %(message)s"))
+        handler.emit(logging.LogRecord("tinypods.test", logging.INFO, "", 1, "continued", (), None))
+        handler.flush()
+    finally:
+        handler.close()
+    output = capsys.readouterr().err
+    assert "logging_error: unable to render application log" in output
+    assert "custom continued" in output and "private-raw-record" not in output
+
+
+def test_output_collector_can_close_handler_without_joining_itself(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Allow an output-thread callback to close its owner without self-join deadlock.
+
+    Args:
+        monkeypatch: Scoped stderr substitution restored before process-level teardown.
+    """
+    handler = QueuedStderrHandler(capacity=2)
+    handler.setFormatter(JsonFormatter("api"))
+    received: list[str] = []
+    closed = threading.Event()
+
+    class ClosingCollector:
+        """Close the owning handler while its output worker is writing a record."""
+
+        def write(self, line: str) -> int:
+            """Record output and request reentrant shutdown from the collector callback.
+
+            Args:
+                line: Complete queued output line.
+
+            Returns:
+                Number of accepted characters.
+            """
+            assert threading.current_thread() is handler.worker
+            received.append(line)
+            handler.close()
+            closed.set()
+            return len(line)
+
+        def flush(self) -> None:
+            """Complete the collector interface without performing external I/O."""
+
+    try:
+        with monkeypatch.context() as scoped:
+            scoped.setattr("sys.stderr", ClosingCollector())
+            handler.emit(
+                logging.LogRecord("tinypods.test", logging.INFO, "", 1, "collector_close", (), None)
+            )
+        handler.worker.join(timeout=2)
+        assert not handler.worker.is_alive() and closed.is_set()
+        assert json.loads(received[0])["event"] == "collector_close"
+    finally:
+        handler.close()

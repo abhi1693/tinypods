@@ -79,13 +79,20 @@ which execute the actual inline reporting script with mocked GitHub APIs; it is
 not a backend runtime dependency.
 
 CI uploads these reports as `backend-tests-<attempt>`. For same-repository PRs,
-a separate data-only job updates one coverage comment and its job summary with
-workspace totals and missing statements/branch arcs linked to the tested commit.
+a separate data-only job updates one coverage comment with the pass/fail gate,
+minimum, test/source counts and workspace percentages linked to the tested commit.
 It never checks out or executes PR code with comment-write permission. Fork and
 Dependabot PRs retain downloadable reports without attempting a privileged comment.
 
 The percentages measure the complete backend exercised by the suite, including
-real-service tests. They are not changed-line coverage. The comment limits long
-missing-code lists; download the HTML report for the complete detail. Missing or
+real-service tests. They are not changed-line coverage. Download the HTML/JSON reports for complete missing-line and branch detail. Missing or
 inconsistent artifacts are reported as unavailable, never as passing coverage.
-When rerunning reporting, rerun the backend job too so both use the current attempt.
+A report-only rerun may reuse a successful backend job artifact from an earlier
+attempt; failed backend attempts must provide their own matching report.
+
+The backend coverage gate requires 100% with branch measurement enabled. After the
+full suite, run `uv run --no-sync python scripts/check_coverage.py`. This checks
+exact statement/branch counts and missing-code lists rather than a percentage
+rounded for display. Keep the existing API/core/CLI/worker scope intact; add
+behavioral regressions or controlled fault injection rather than hiding reachable
+code through exclusions.

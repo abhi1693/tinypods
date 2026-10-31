@@ -1,6 +1,5 @@
 """Validate installed public imports and complete wheel discovery after domain grouping."""
 
-import json
 import subprocess
 import sys
 import zipfile
@@ -105,23 +104,3 @@ for name in module.__all__:
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout == "" and result.stderr == ""
-
-
-def test_nested_coverage_paths_link_to_grouped_source(tmp_path: Path) -> None:
-    """Map installed nested module paths back to their grouped source locations.
-
-    Args:
-        tmp_path: Isolated directory used by the mocked coverage publisher.
-    """
-    from test_coverage_workflow import publish, sample_report
-
-    report = sample_report()
-    files = report["files"]
-    for package, nested in [("core", "logging/formatters.py"), ("api", "cache/routes.py")]:
-        prefix = f".venv/lib/python3.13/site-packages/tinypods_{package}/"
-        files[prefix + nested] = files.pop(prefix + "main.py")
-    outcome = publish(tmp_path, json.dumps(report))
-    assert not outcome["failures"]
-    body = outcome["created"][0]
-    assert "packages/core/src/logging/formatters.py#L2" in body
-    assert "apps/api/src/cache/routes.py#L2" in body

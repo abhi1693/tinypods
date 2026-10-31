@@ -34,26 +34,26 @@ def workflow() -> dict[str, Any]:
 
 
 def sample_report() -> dict[str, Any]:
-    """Build a small consistent report covering all four backend workspaces.
+    """Build a validated summary artifact matching the canonical reporting schema.
 
     Returns:
-        Coverage.py-shaped data with known missing statement and function-exit arcs.
+        Consistent per-workspace counts, producing attempt and complete JUnit totals.
     """
-    counts = {"covered_lines": 1, "num_statements": 2, "covered_branches": 1, "num_branches": 2}
-    files = {
-        f".venv/lib/python3.13/site-packages/tinypods_{name}/main.py": {
-            "summary": counts.copy(),
-            "executed_lines": [1],
-            "missing_lines": [2],
-            "executed_branches": [[1, 2]],
-            "missing_branches": [[1, -1]],
-        }
-        for name in ("api", "core", "cli", "worker")
-    }
+    counters = {"covered_lines": 1, "num_statements": 2, "covered_branches": 1, "num_branches": 2}
     return {
-        "meta": {"branch_coverage": True},
-        "files": files,
-        "totals": {key: value * 4 for key, value in counts.items()},
+        "schema": 1,
+        "valid": True,
+        "status": "passed",
+        "minimum": 50.0,
+        "unit_exit_code": 0,
+        "unit_attempt": 1,
+        "source_files": 4,
+        "totals": {key: value * 4 for key, value in counters.items()},
+        "packages": {
+            name: counters.copy()
+            for name in ("apps/api", "apps/cli", "apps/worker", "packages/core")
+        },
+        "tests": {"total": 1, "passed": 1, "failed": 0, "skipped": 0},
     }
 
 
@@ -80,7 +80,8 @@ def publish(
     if report is not None:
         directory = tmp_path / "report"
         directory.mkdir(exist_ok=True)
-        (directory / "coverage.json").write_text(report)
+        (directory / "coverage").mkdir(exist_ok=True)
+        (directory / "coverage/summary.json").write_text(report)
     script = workflow()["jobs"]["coverage-report"]["steps"][1]["with"]["script"]
     runner = tmp_path / "publisher.cjs"
     runner.write_text(
@@ -134,7 +135,7 @@ new AsyncFunction('github', 'context', 'core', 'require', script)(github, contex
 
 @pytest.mark.parametrize("existing", [False, True])
 def test_coverage_comment_creates_or_updates_one_report(tmp_path: Path, existing: bool) -> None:
-    """Publish counts, missing lines and missing exit arcs without comment duplication.
+    """Publish the established status, test counts and percentage table without duplication.
 
     Args:
         tmp_path: Isolated publisher directory.
@@ -145,9 +146,9 @@ def test_coverage_comment_creates_or_updates_one_report(tmp_path: Path, existing
     assert len(bodies) == 1 and not outcome["failures"]
     assert not (outcome["created"] if existing else outcome["updated"])
     body = bodies[0]
-    assert "4/8 (50.00%)" in body and "1→exit" in body
-    assert "apps/api/src/main.py#L2" in body
-    assert "not changed-line coverage" in body and outcome["summary"] == body
+    assert "50.00%" in body and "minimum combined coverage **50.00%**" in body
+    assert "Tests: 1 passed, 0 failed, 0 skipped. Source files: 4." in body
+    assert "| Workspace | Lines | Branches | Combined |" in body
 
 
 @pytest.mark.parametrize("stale", ["early", "late"])
@@ -163,7 +164,7 @@ def test_coverage_comment_ignores_superseded_heads(tmp_path: Path, stale: str) -
 
 
 @pytest.mark.parametrize(
-    "case", ["missing", "json", "oversized", "totals", "workspace", "path", "lines", "branches"]
+    "case", ["missing", "json", "oversized", "totals", "workspace", "attempt", "tests", "counts"]
 )
 def test_coverage_comment_fails_closed_for_invalid_reports(tmp_path: Path, case: str) -> None:
     """Expose unavailable coverage rather than presenting malformed artifacts as a pass.
@@ -173,7 +174,6 @@ def test_coverage_comment_fails_closed_for_invalid_reports(tmp_path: Path, case:
         case: Malformed or incomplete artifact scenario.
     """
     report = sample_report()
-    file = next(iter(report["files"].values()))
     raw: str | None
     if case == "missing":
         raw = None
@@ -185,15 +185,13 @@ def test_coverage_comment_fails_closed_for_invalid_reports(tmp_path: Path, case:
         if case == "totals":
             report["totals"]["covered_lines"] += 1
         elif case == "workspace":
-            del report["files"][next(iter(report["files"]))]
-        elif case == "path":
-            report["files"]["tinypods_api/../../payload.py"] = report["files"].pop(
-                next(iter(report["files"]))
-            )
-        elif case == "lines":
-            file["missing_lines"] = [1]
-        elif case == "branches":
-            file["missing_branches"] = [[1, 2]]
+            del report["packages"]["apps/api"]
+        elif case == "attempt":
+            report["unit_attempt"] = 2
+        elif case == "tests":
+            report["tests"]["failed"] = 2
+        elif case == "counts":
+            report["totals"]["covered_branches"] = 100
         raw = json.dumps(report)
     outcome = publish(tmp_path, raw)
     assert outcome["failures"] and "Coverage unavailable" in outcome["created"][0]
@@ -207,7 +205,7 @@ def test_coverage_report_does_not_hide_backend_failure(tmp_path: Path) -> None:
         tmp_path: Isolated publisher directory.
     """
     outcome = publish(tmp_path, json.dumps(sample_report()), result="failure")
-    assert "**FAIL**" in outcome["created"][0] and "4/8" in outcome["created"][0]
+    assert "**FAIL**" in outcome["created"][0] and "50.00%" in outcome["created"][0]
 
 
 def test_coverage_workflow_keeps_privileged_job_data_only() -> None:

@@ -5,6 +5,7 @@ import importlib
 import json
 import logging
 import os
+import selectors
 import signal
 import socket
 import subprocess
@@ -200,10 +201,25 @@ def test_entry_points_reject_bad_environment_without_secrets(command: list[str])
 def test_worker_stops_cleanly_on_sigterm() -> None:
     """Verify worker stops cleanly on sigterm."""
     process = subprocess.Popen(
-        ["tinypods-worker"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        ["tinypods-worker"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env={**os.environ, "TINYPODS_WORKER_HEARTBEAT_INTERVAL": "0.05"},
     )
     try:
-        assert "started" in process.stderr.readline()
+        assert process.stderr is not None
+        with selectors.DefaultSelector() as selector:
+            selector.register(process.stderr, selectors.EVENT_READ)
+            deadline = time.monotonic() + 5
+            heartbeat = False
+            while time.monotonic() < deadline:
+                if selector.select(timeout=0.2):
+                    line = process.stderr.readline()
+                    if "heartbeat" in line:
+                        heartbeat = True
+                        break
+            assert heartbeat, "Worker did not emit a heartbeat before the shutdown check"
         process.send_signal(signal.SIGTERM)
         stdout, stderr = process.communicate(timeout=10)
         assert process.returncode == 0, stderr
