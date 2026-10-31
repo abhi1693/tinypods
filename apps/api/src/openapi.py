@@ -7,7 +7,7 @@ from typing import Annotated, cast
 
 import typer
 from fastapi import FastAPI
-from fastapi.routing import APIRoute
+from fastapi.routing import APIRoute, iter_route_contexts
 from pydantic import BaseModel
 from tinypods_core.json_types import JsonRecord
 from tinypods_core.settings import Settings
@@ -18,8 +18,9 @@ app = typer.Typer(add_completion=False, pretty_exceptions_enable=False)
 def export_schema(application: FastAPI) -> JsonRecord:
     """Reject undocumented routes, ambiguous IDs and missing response DTOs."""
     ids: set[str] = set()
-    for route in application.routes:
-        if not isinstance(route, APIRoute) or not route.include_in_schema:
+    for context in iter_route_contexts(application.routes):
+        route = context.original_route
+        if not isinstance(route, APIRoute) or not context.include_in_schema:
             continue
         if not route.operation_id or route.operation_id in ids:
             raise ValueError("Each API operation needs a unique explicit operation_id")

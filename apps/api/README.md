@@ -1,16 +1,34 @@
 # API contracts
 
-Use explicit Pydantic request and response DTOs from the HTTP layer. Do not expose SQLModel tables, settings, credentials or plugin APIs through the core schema. Request DTOs reject unknown fields.
+## FastAPI guidance
 
-Give every route a meaningful docstring explaining its purpose, response semantics and material HTTP status behavior. FastAPI publishes the public docstring in OpenAPI; the exporter rejects missing or blank public documentation.
+- **Inputs:** Type every path/query/body parameter and return value. Prefer `Annotated[T, Query(...)]` and `Annotated[T, Path(...)]` for constraints and metadata; keep defaults on the Python parameter. Scalars such as UUIDs and integers do not need wrapper models. See [query validation](https://fastapi.tiangolo.com/tutorial/query-params-str-validations/) and [path validation](https://fastapi.tiangolo.com/tutorial/path-params-numeric-validations/).
+- **Bodies:** Use Pydantic models for structured payloads and `Field` for field constraints. Use `Annotated[DTO, Body(...)]` when body metadata or embedding is needed. A route without a payload needs no request DTO or body. See [body fields](https://fastapi.tiangolo.com/tutorial/body-fields/).
+- **Outputs:** Return annotated public DTOs and declare the intended response schema. Separate input and output models when their fields differ; response models validate and filter output. Returning a raw `Response` bypasses that validation. See [response models](https://fastapi.tiangolo.com/tutorial/response-model/).
+- **Documentation and status:** Use route docstrings for OpenAPI descriptions. Document response meaning and status behavior; declare the default status on the decorator and additional responses explicitly. Response descriptions document behavior; they do not change runtime status codes. See [operation configuration](https://fastapi.tiangolo.com/tutorial/path-operation-configuration/).
+- **Organization:** Group feature routes in `APIRouter` modules with shared prefixes, tags, responses and dependencies. Include them in the application factory. See [bigger applications](https://fastapi.tiangolo.com/tutorial/bigger-applications/).
+- **Dependencies:** Use typed `Annotated[T, Depends(provider)]` parameters for shared services and sessions. Pass the provider, not its result; reuse annotated aliases where useful. See [dependency injection](https://fastapi.tiangolo.com/tutorial/dependencies/).
+- **I/O:** Use `async def` with awaited async clients. FastAPI runs synchronous route functions and dependencies in a thread pool, but ordinary synchronous helpers called inside an async route still run on the event loop. Explicitly offload unavoidable blocking I/O. See [async guidance](https://fastapi.tiangolo.com/async/).
 
-Give each public route one method and a unique, explicit camelCase operation ID. Treat operation IDs and response fields as client compatibility commitments. Declare response models for successful and alternate responses; use 204 for responses without a body.
+## TinyPods choices
 
-Collection routes use PageParams (limit 1–100, default 25; offset >= 0) and Page[ResponseDTO]. Order results deterministically with a unique tie-breaker. OperationStatus describes queued work; routes that create operations should return 202. This issue adds contracts, not collection or operation endpoints.
+These are project rules, not requirements imposed by FastAPI.
 
-Errors use ErrorResponse with code, message, request_id and validation issues. Request IDs match the x-request-id response header. Validation issues carry locations and codes, excluding input values and validator context. HTTP exceptions use standard status messages; unexpected failures use a fixed message. Exception details remain in existing logging. No logging redaction is added.
+- Keep public DTOs separate from SQLModel tables, settings and plugin APIs. Use distinct write/read DTOs when accepting input; reject unknown request fields through RequestDTO.
+- Give each public JSON operation one HTTP method, an explicit response DTO and a unique camelCase operation ID. Keep IDs stable for generated clients. FastAPI also supports inferred return schemas and generated IDs; TinyPods deliberately requires explicit contracts. See [operation IDs](https://fastapi.tiangolo.com/advanced/path-operation-advanced-configuration/).
+- Every route needs a meaningful docstring. The exporter checks public routes for a docstring and nonblank OpenAPI description. Document purpose, response semantics and material status behavior.
+- Use PageParams (limit 1–100, default 25; offset >= 0) and Page[ResponseDTO] for collections. Use deterministic ordering with a unique tie-breaker. Declare query binding explicitly when using PageParams.
+- Use OperationStatus for queued work and HTTP 202 when creating an operation. Use HTTP 201 for resource creation and 204 for a successful empty response where appropriate.
+- Use ErrorResponse for errors. Its request_id matches the x-request-id header. Validation issues expose locations and codes, not input values or validator context. HTTP exceptions use standard status messages; unexpected failures use a fixed message. Existing logging is unchanged.
+- Keep routes thin: inject services and sessions, await work, then return DTOs. Preserve transaction ownership in services and keep blocking database calls out of async request paths.
 
-Liveness and readiness keep their existing response shapes. Readiness returns the same typed body on 200 and 503.
+## Current coverage and remaining work
+
+The only application routes are /healthz and /readyz. Both have typed responses and published docstrings; neither accepts a request body. Liveness returns 200. Readiness returns the same typed shape on 200 and 503 and awaits configured checks.
+
+The exporter enforces operation IDs, public route documentation and primary response DTOs, including nested APIRouter routes. Router traversal uses FastAPI's public route-context helper, so the package requires FastAPI 0.162.0 or newer. CI checks deterministic export, schema validity and version alignment. It does not yet enforce every future input annotation, DTO separation, dependency boundary or async I/O choice automatically; those still require review and feature-specific tests.
+
+Feature APIRouter modules, annotated input/dependency aliases and collection/operation endpoints should arrive with their features. The two probes remain in the factory; this PR does not add empty router packages or invent request bodies.
 
 ## Export
 

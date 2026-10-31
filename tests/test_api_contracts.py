@@ -6,7 +6,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from openapi_spec_validator import validate
@@ -212,3 +212,54 @@ def test_export_rejects_routes_without_public_documentation(docstring):
     )
     with pytest.raises(ValueError, match="docstring and public description"):
         export_schema(app)
+
+
+@pytest.mark.parametrize("invalid", [None, "documentation", "operation_id", "response_model"])
+def test_export_checks_nested_feature_routers(invalid):
+    from tinypods_api.contracts import LivenessResponse
+
+    router = APIRouter()
+
+    async def endpoint() -> LivenessResponse:
+        """Return HTTP 200 when the nested feature is reachable."""
+        return LivenessResponse()
+
+    if invalid == "documentation":
+        endpoint.__doc__ = None
+    router.add_api_route(
+        "/probe",
+        endpoint,
+        methods=["GET"],
+        operation_id=None if invalid == "operation_id" else "getNestedProbe",
+        response_model=None if invalid == "response_model" else LivenessResponse,
+    )
+    parent = APIRouter()
+    parent.include_router(router, prefix="/feature")
+    app = FastAPI()
+    app.include_router(parent, prefix="/api")
+    if invalid:
+        message = {
+            "documentation": "docstring and public description",
+            "operation_id": "unique explicit operation_id",
+            "response_model": "explicit response model",
+        }[invalid]
+        with pytest.raises(ValueError, match=message):
+            export_schema(app)
+    else:
+        schema = export_schema(app)
+        assert schema["paths"]["/api/feature/probe"]["get"]["description"] == getdoc(endpoint)
+        app.include_router(router, prefix="/duplicate")
+        with pytest.raises(ValueError, match="unique explicit operation_id"):
+            export_schema(app)
+
+
+def test_export_ignores_routers_excluded_from_public_schema():
+    router = APIRouter()
+
+    @router.get("/internal", response_model=None)
+    async def internal() -> dict[str, str]:
+        return {}
+
+    app = FastAPI()
+    app.include_router(router, include_in_schema=False)
+    assert not export_schema(app)["paths"]
