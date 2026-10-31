@@ -6,9 +6,10 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Response
 from starlette.types import ASGIApp
+from tinypods_api.contracts import LivenessResponse, ReadinessResponse
+from tinypods_api.errors import ERROR_RESPONSES, install_error_handlers
 from tinypods_api.logging import RequestLoggingMiddleware
 from tinypods_core.db import Database
 from tinypods_core.logging import configure_logging, shutdown_logging
@@ -61,16 +62,24 @@ def create_app(
             logger.info("API stopped")
             await asyncio.to_thread(log_handler.flush)
 
-    app = LoggedFastAPI(title=config.service_name, lifespan=lifespan)
+    app = LoggedFastAPI(
+        title="TinyPods API", version="0.1.0", lifespan=lifespan, responses=ERROR_RESPONSES
+    )
+    install_error_handlers(app)
     app.state.database = database
     app.state.ready = False
 
-    @app.get("/healthz", operation_id="getLiveness")
-    async def liveness() -> dict[str, str]:
-        return {"status": "alive"}
+    @app.get("/healthz", operation_id="getLiveness", response_model=LivenessResponse)
+    async def liveness() -> LivenessResponse:
+        return LivenessResponse()
 
-    @app.get("/readyz", operation_id="getReadiness")
-    async def readiness() -> JSONResponse:
+    @app.get(
+        "/readyz",
+        operation_id="getReadiness",
+        response_model=ReadinessResponse,
+        responses={503: {"model": ReadinessResponse, "description": "Not ready"}},
+    )
+    async def readiness(response: Response) -> ReadinessResponse:
         async def evaluate(name: str, check: ReadinessCheck) -> tuple[str, bool]:
             try:
                 async with asyncio.timeout(config.readiness_timeout):
@@ -82,10 +91,8 @@ def create_app(
         results = dict(await asyncio.gather(*(evaluate(n, c) for n, c in checks.items())))
         results["runtime"] = bool(app.state.ready)
         ready = all(results.values())
-        return JSONResponse(
-            {"status": "ready" if ready else "not_ready", "checks": results},
-            status_code=200 if ready else 503,
-        )
+        response.status_code = 200 if ready else 503
+        return ReadinessResponse(status="ready" if ready else "not_ready", checks=results)
 
     return app
 
