@@ -11,6 +11,7 @@ from starlette.types import ASGIApp
 from tinypods_api.contracts import LivenessResponse, ReadinessResponse
 from tinypods_api.errors import ERROR_RESPONSES, install_error_handlers
 from tinypods_api.logging import RequestLoggingMiddleware
+from tinypods_core import __version__
 from tinypods_core.db import Database
 from tinypods_core.logging import configure_logging, shutdown_logging
 from tinypods_core.settings import ConfigurationError, Settings, load_settings
@@ -63,7 +64,7 @@ def create_app(
             await asyncio.to_thread(log_handler.flush)
 
     app = LoggedFastAPI(
-        title="TinyPods API", version="0.1.0", lifespan=lifespan, responses=ERROR_RESPONSES
+        title="TinyPods API", version=__version__, lifespan=lifespan, responses=ERROR_RESPONSES
     )
     install_error_handlers(app)
     app.state.database = database
@@ -71,6 +72,11 @@ def create_app(
 
     @app.get("/healthz", operation_id="getLiveness", response_model=LivenessResponse)
     async def liveness() -> LivenessResponse:
+        """Check that the API process can respond to HTTP requests.
+
+        Returns HTTP 200 with status `alive`. This probe does not check startup
+        readiness or dependencies; use `/readyz` to decide whether to send traffic.
+        """
         return LivenessResponse()
 
     @app.get(
@@ -80,6 +86,15 @@ def create_app(
         responses={503: {"model": ReadinessResponse, "description": "Not ready"}},
     )
     async def readiness(response: Response) -> ReadinessResponse:
+        """Check whether the API runtime and configured dependencies are ready.
+
+        Returns HTTP 200 with status `ready` when every check passes, otherwise
+        HTTP 503 with status `not_ready`. Both responses include boolean results
+        for each check, including `runtime` and PostgreSQL when configured.
+        Failed or timed-out dependencies are reported as false without their
+        exception details. Readiness failures do not change `/healthz`.
+        """
+
         async def evaluate(name: str, check: ReadinessCheck) -> tuple[str, bool]:
             try:
                 async with asyncio.timeout(config.readiness_timeout):

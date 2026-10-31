@@ -101,12 +101,13 @@
   },
   "info": {
     "title": "TinyPods API",
-    "version": "0.1.0"
+    "version": "0.0.1"
   },
   "openapi": "3.1.0",
   "paths": {
     "/healthz": {
       "get": {
+        "description": "Check that the API process can respond to HTTP requests.\n\nReturns HTTP 200 with status `alive`. This probe does not check startup\nreadiness or dependencies; use `/readyz` to decide whether to send traffic.",
         "operationId": "getLiveness",
         "responses": {
           "200": {
@@ -225,6 +226,7 @@
     },
     "/readyz": {
       "get": {
+        "description": "Check whether the API runtime and configured dependencies are ready.\n\nReturns HTTP 200 with status `ready` when every check passes, otherwise\nHTTP 503 with status `not_ready`. Both responses include boolean results\nfor each check, including `runtime` and PostgreSQL when configured.\nFailed or timed-out dependencies are reported as false without their\nexception details. Readiness failures do not change `/healthz`.",
         "operationId": "getReadiness",
         "responses": {
           "200": {

@@ -4,7 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tinypods-cli"
-version = "0.1.0"
+# Generated from VERSION by scripts/sync_version.py.
+version = "0.0.1"
 requires-python = ">=3.13"
 dependencies = ["tinypods-core", "typer>=0.15"]
 

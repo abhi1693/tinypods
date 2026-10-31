@@ -1,11 +1,13 @@
 import json
 import os
 import subprocess
+from inspect import getdoc
 from pathlib import Path
 from uuid import UUID
 
 import pytest
 from fastapi import FastAPI, HTTPException
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from openapi_spec_validator import validate
 from openapi_spec_validator.validation.exceptions import OpenAPIValidationError
@@ -114,6 +116,7 @@ def test_export_rejects_ambiguous_routes(mode):
     app = FastAPI()
 
     async def endpoint() -> dict[str, str]:
+        """Return a liveness result for contract validation."""
         return {"status": "alive"}
 
     from tinypods_api.contracts import LivenessResponse
@@ -163,3 +166,49 @@ def test_export_command_is_offline_and_checks_drift(tmp_path):
     assert subprocess.run(command + ["--check"], capture_output=True, timeout=15).returncode == 1
     output.unlink()
     assert subprocess.run(command + ["--check"], capture_output=True, timeout=15).returncode == 1
+
+
+def test_route_docstrings_are_published_in_openapi():
+    app = create_app(Settings())
+    schema = export_schema(app)
+    routes = [
+        route for route in app.routes if isinstance(route, APIRoute) and route.include_in_schema
+    ]
+    assert {"/healthz", "/readyz"} <= {route.path for route in routes}
+    for route in routes:
+        for method in route.methods:
+            description = schema["paths"][route.path][method.lower()]["description"]
+            assert description == getdoc(route.endpoint)
+            assert description.strip()
+    for path in ("/healthz", "/readyz"):
+        assert "HTTP 200" in schema["paths"][path]["get"]["description"]
+    assert "HTTP 503" in schema["paths"]["/readyz"]["get"]["description"]
+    assert "dependencies" in schema["paths"]["/healthz"]["get"]["description"]
+    with TestClient(app) as client:
+        served = client.get("/openapi.json").json()
+    for route in routes:
+        assert (
+            served["paths"][route.path]["get"]["description"]
+            == (schema["paths"][route.path]["get"]["description"])
+        )
+
+
+@pytest.mark.parametrize("docstring", [None, "", "   ", "\fPrivate notes"])
+def test_export_rejects_routes_without_public_documentation(docstring):
+    from tinypods_api.contracts import LivenessResponse
+
+    app = FastAPI()
+
+    async def endpoint() -> LivenessResponse:
+        return LivenessResponse()
+
+    endpoint.__doc__ = docstring
+    app.add_api_route(
+        "/undocumented",
+        endpoint,
+        methods=["GET"],
+        operation_id="getUndocumented",
+        response_model=LivenessResponse,
+    )
+    with pytest.raises(ValueError, match="docstring and public description"):
+        export_schema(app)

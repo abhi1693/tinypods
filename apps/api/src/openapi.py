@@ -1,5 +1,6 @@
 """Deterministic, environment-independent core contract export."""
 
+import inspect
 import json
 from pathlib import Path
 from typing import Annotated, cast
@@ -15,7 +16,7 @@ app = typer.Typer(add_completion=False, pretty_exceptions_enable=False)
 
 
 def export_schema(application: FastAPI) -> JsonRecord:
-    """Fail before export when routes omit explicit IDs or response DTOs."""
+    """Reject undocumented routes, ambiguous IDs and missing response DTOs."""
     ids: set[str] = set()
     for route in application.routes:
         if not isinstance(route, APIRoute) or not route.include_in_schema:
@@ -24,6 +25,8 @@ def export_schema(application: FastAPI) -> JsonRecord:
             raise ValueError("Each API operation needs a unique explicit operation_id")
         if len(route.methods or set()) != 1:
             raise ValueError("Each API operation must declare exactly one method")
+        if not inspect.getdoc(route.endpoint) or not route.description.strip():
+            raise ValueError("Each API operation needs a docstring and public description")
         ids.add(route.operation_id)
         if route.status_code != 204 and (
             not isinstance(route.response_model, type)
