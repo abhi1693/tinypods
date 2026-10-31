@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from tinypods_api.main import create_app
 from tinypods_cli import main as cli
+from tinypods_cli.runtime import command_settings
 from tinypods_core.settings import Settings
 
 
@@ -59,7 +60,7 @@ def test_boundary_failures_log_only_deliberate_safe_fields(
             Raises:
                 RuntimeError: Always, with a synthetic credential in its message.
             """
-            cli.command_settings()
+            command_settings()
             raise RuntimeError(secret)
 
         monkeypatch.setattr(cli, "app", fail_command)

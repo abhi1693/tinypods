@@ -5,7 +5,7 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
-from tinypods_core.db import database_url, migration_engine
+from tinypods_core.db.connections import database_url, migration_engine
 from tinypods_core.settings import ConfigurationError, Settings
 
 MIGRATION_LOCK = 7464696

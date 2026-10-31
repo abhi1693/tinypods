@@ -11,22 +11,24 @@ from fastapi import Request, Response
 from fastapi.dependencies.models import Dependant
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
-from tinypods_api.http_constants import (
-    CACHE_CONTROL_HEADER,
+from tinypods_api.cache.constants import (
     CACHE_OUTCOME_HEADER,
     CACHE_POLICY_EXTENSION,
     CACHE_POLL_SECONDS,
     CACHE_REASON_HEADER,
     CACHE_WAIT_SECONDS,
-    CONTENT_TYPE_HEADER,
-    JSON_MEDIA_TYPE,
     MAX_QUERY_BYTES,
-    NO_STORE,
     REQUEST_BYPASS_DIRECTIVES,
     STORABLE_RESPONSE_HEADERS,
     CacheOutcome,
 )
-from tinypods_core.cache import CacheUnavailable, ResponseCache
+from tinypods_api.http.constants import (
+    CACHE_CONTROL_HEADER,
+    CONTENT_TYPE_HEADER,
+    JSON_MEDIA_TYPE,
+    NO_STORE,
+)
+from tinypods_core.cache import CacheLookup, CacheUnavailable, ResponseCache
 from tinypods_core.json_types import JsonRecord
 from tinypods_core.settings import Settings
 
@@ -211,6 +213,7 @@ class CachedReadRoute(APIRoute):
             assert cache is not None
             key = policy.identity(request)
             deadline = time.monotonic() + CACHE_WAIT_SECONDS
+            lookup: CacheLookup | None = None
             try:
                 while True:
                     lookup = await cache.lookup(key)
@@ -236,6 +239,8 @@ class CachedReadRoute(APIRoute):
                 # Keep endpoint execution outside the storage exception boundary.
                 # A source error must not trigger a second render or be misclassified as cache I/O.
                 return tagged(await handler(request), CacheOutcome.BYPASS, reason)
+            # Publication/release require a successfully observed lookup, not a failed read.
+            assert lookup is not None
             try:
                 response = await handler(request)
                 body = getattr(response, "body", None)

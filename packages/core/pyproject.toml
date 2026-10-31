@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["tinypods_core"]
+packages = ["tinypods_core", "tinypods_core.cache", "tinypods_core.db", "tinypods_core.logging"]
 
 [tool.setuptools.package-dir]
 tinypods_core = "src"

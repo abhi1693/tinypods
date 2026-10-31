@@ -20,6 +20,8 @@ Prefer context managers and explicit resource owners. Cleanup should still run w
 
 Annotate parameters and return values precisely, including test helpers. Use domain types instead of broad object/Any where the actual shape is known; dynamic library boundaries sometimes justify those types. Keep public request/response DTOs separate from persistence models, settings and credentials.
 
+Runtime constants and type expressions have different roles. Use literal values, literal type aliases or enum members inside Literal[...] rather than substituting arbitrary Final variables. The [typing specification](https://typing.python.org/en/latest/spec/literal.html#legal-and-illegal-parameterizations) defines the accepted forms; runtime validation alone does not prove an annotation is valid.
+
 Give routes meaningful descriptions and stable operation IDs. Declare response/status semantics and constrain inputs where useful. The [API guide](apps/api/README.md) covers route-specific conventions. Scalar path/query values do not need artificial wrapper models, and read-only routes do not need invented request bodies.
 
 ## Documentation and comments
@@ -36,7 +38,7 @@ Choose log fields deliberately. Keep credentials, tokens, raw configuration and 
 
 Logging preserves complete supported values without size-based truncation. Cycles, unsupported objects and non-JSON numeric/binary values have explicit representation markers. Normalization snapshots mutable values on the producer; rendering and output run on the API logging thread. Full-content snapshots consume proportional CPU/memory, and the bounded queue still drops whole records when full. Output failures and bounded shutdown can also lose records; do not describe this as durable or lossless delivery.
 
-Keep reused protocol values in the owning domain module, such as log_constants, http_constants or cache_constants. Prefer typed enums, tuples/frozensets and frozen records where they capture stable identifiers or owned snapshots. JSON payloads, library configuration mappings and TypedDict serialization boundaries should remain dictionaries; avoid a global constants dumping ground or classes for one-off values.
+Keep reused protocol values in the owning domain module, such as logging/constants.py, http/constants.py or cache/constants.py. Prefer typed enums, tuples/frozensets and frozen records where they capture stable identifiers or owned snapshots. JSON payloads, library configuration mappings and TypedDict serialization boundaries should remain dictionaries; avoid a global constants dumping ground or classes for one-off values.
 
 Preserve private infrastructure, least privilege and fail-closed authorization/isolation behavior. Shared request caching is explicitly opt-in for public data, not an authorization mechanism. Document actual safety limits rather than claiming a blanket guarantee.
 

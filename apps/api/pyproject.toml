@@ -10,7 +10,7 @@ requires-python = ">=3.13"
 dependencies = ["tinypods-core", "fastapi>=0.162.0", "uvicorn>=0.34", "typer>=0.27.3"]
 
 [tool.setuptools]
-packages = ["tinypods_api"]
+packages = ["tinypods_api", "tinypods_api.cache", "tinypods_api.http"]
 
 [tool.setuptools.package-dir]
 tinypods_api = "src"
@@ -19,8 +19,8 @@ tinypods_api = "src"
 tinypods_api = ["py.typed"]
 
 [project.scripts]
-tinypods-api = "tinypods_api.main:main"
-tinypods-openapi = "tinypods_api.openapi:cli"
+tinypods-api = "tinypods_api:run_api"
+tinypods-openapi = "tinypods_api.http.schema:cli"
 
 [tool.uv.sources]
 tinypods-core = { workspace = true }

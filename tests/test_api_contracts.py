@@ -14,9 +14,9 @@ from fastapi.testclient import TestClient
 from openapi_spec_validator import validate
 from openapi_spec_validator.validation.exceptions import OpenAPIValidationError
 from pydantic import ValidationError
-from tinypods_api.contracts import OperationStatus, Page, PageParams, RequestDTO
+from tinypods_api.http.contracts import OperationStatus, Page, PageParams, RequestDTO
+from tinypods_api.http.schema import export_schema, render_schema
 from tinypods_api.main import create_app
-from tinypods_api.openapi import export_schema, render_schema
 from tinypods_core.settings import Settings
 
 
@@ -164,7 +164,7 @@ def test_export_rejects_ambiguous_routes(mode: str) -> None:
         """Return a liveness result for contract validation."""
         return {"status": "alive"}
 
-    from tinypods_api.contracts import LivenessResponse
+    from tinypods_api.http.contracts import LivenessResponse
 
     options = {"response_model": LivenessResponse}
     if mode != "missing_id":
@@ -252,7 +252,7 @@ def test_export_rejects_routes_without_public_documentation(docstring: str | Non
     Args:
         docstring: Endpoint documentation variant accepted or rejected by the exporter.
     """
-    from tinypods_api.contracts import LivenessResponse
+    from tinypods_api.http.contracts import LivenessResponse
 
     app = FastAPI()
 
@@ -283,7 +283,7 @@ def test_export_checks_nested_feature_routers(invalid: str | None) -> None:
     Args:
         invalid: Nested route contract defect introduced for this case.
     """
-    from tinypods_api.contracts import LivenessResponse
+    from tinypods_api.http.contracts import LivenessResponse
 
     router = APIRouter()
 
@@ -348,8 +348,8 @@ def test_check_rejects_api_contract_changes_until_regenerated(
         monkeypatch: Scoped environment or dependency substitutions restored after the test.
     """
     from tinypods_api import main as api_main
-    from tinypods_api.contracts import LivenessResponse
-    from tinypods_api.openapi import app as export_command
+    from tinypods_api.http.contracts import LivenessResponse
+    from tinypods_api.http.schema import app as export_command
     from typer.testing import CliRunner
 
     output = tmp_path / "openapi.json"
@@ -398,7 +398,7 @@ def test_openapi_command_releases_owned_logging(tmp_path: Path) -> None:
     """
     import logging
 
-    from tinypods_api.openapi import main
+    from tinypods_api.http.schema import main
     from tinypods_core.logging import StderrHandler
 
     main(output=tmp_path / "schema.json")

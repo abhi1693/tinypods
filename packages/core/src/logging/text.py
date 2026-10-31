@@ -4,8 +4,8 @@ import json
 from datetime import datetime
 
 from tinypods_core.json_types import JsonRecord, JsonValue
-from tinypods_core.log_constants import CONTEXT_IDENTIFIERS, ERROR_LEVELS, LogEvent, LogField
-from tinypods_core.log_values import encode_json
+from tinypods_core.logging.constants import CONTEXT_IDENTIFIERS, ERROR_LEVELS, LogEvent, LogField
+from tinypods_core.logging.values import encode_json
 
 
 def inline(value: JsonValue) -> str:

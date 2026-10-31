@@ -9,9 +9,9 @@ import uuid
 from urllib.parse import quote
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
-from tinypods_api.http_constants import QUIET_PROBE_PATHS, REQUEST_ID_HEADER_BYTES
-from tinypods_core.log_constants import LogEvent, LogField
+from tinypods_api.http.constants import QUIET_PROBE_PATHS, REQUEST_ID_HEADER_BYTES
 from tinypods_core.logging import elapsed_ms, failure_fields, log_context
+from tinypods_core.logging.constants import LogEvent, LogField
 
 
 class RequestLoggingMiddleware:

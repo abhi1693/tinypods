@@ -10,10 +10,10 @@ import uvicorn
 from fastapi import FastAPI, Response
 from starlette.types import ASGIApp
 from tinypods_api.cache import CachedReadRoute, CachePolicy
-from tinypods_api.contracts import LivenessResponse, PlatformInfoResponse, ReadinessResponse
-from tinypods_api.errors import ERROR_RESPONSES, install_error_handlers
-from tinypods_api.http_constants import LIVENESS_PATH, READINESS_PATH
-from tinypods_api.logging import RequestLoggingMiddleware
+from tinypods_api.http.constants import LIVENESS_PATH, READINESS_PATH
+from tinypods_api.http.contracts import LivenessResponse, PlatformInfoResponse, ReadinessResponse
+from tinypods_api.http.errors import ERROR_RESPONSES, install_error_handlers
+from tinypods_api.http.middleware import RequestLoggingMiddleware
 from tinypods_core import __version__
 from tinypods_core.cache import ResponseCache
 from tinypods_core.db import Database

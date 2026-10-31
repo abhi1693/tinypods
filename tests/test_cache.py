@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import SecretStr, ValidationError
 from redis.exceptions import ConnectionError
 from tinypods_api.cache import CachedReadRoute, CachePolicy
-from tinypods_api.contracts import PlatformInfoResponse
+from tinypods_api.http.contracts import PlatformInfoResponse
 from tinypods_api.main import create_app
 from tinypods_core import __version__
 from tinypods_core.cache import CacheLookup, CacheUnavailable, ResponseCache, json_body
@@ -653,7 +653,7 @@ async def test_cache_wait_deadline_is_bounded(
     Returns:
         None. Assertions or recorded calls verify the described behavior.
     """
-    from tinypods_api import cache as route_cache
+    from tinypods_api.cache import routes as route_cache
 
     monkeypatch.setattr(route_cache, "CACHE_WAIT_SECONDS", 0.01)
     app = create_app(cache_settings)

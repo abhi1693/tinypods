@@ -20,11 +20,11 @@ from sqlalchemy import text
 from sqlalchemy.pool import NullPool
 from sqlmodel import Field, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
-from tinypods_api.dependencies import get_session
+from tinypods_api.http.dependencies import get_session
 from tinypods_api.main import create_app
 from tinypods_core.db import Database, database_url, migration_engine
-from tinypods_core.migrations import MIGRATION_LOCK, MigrationManager
-from tinypods_core.models import Installation, core_metadata
+from tinypods_core.db.migrations import MIGRATION_LOCK, MigrationManager
+from tinypods_core.db.models import Installation, core_metadata
 from tinypods_core.settings import ConfigurationError, Settings, load_settings
 
 ROOT = Path(__file__).resolve().parents[1]

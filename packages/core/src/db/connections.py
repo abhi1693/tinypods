@@ -11,8 +11,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool, Pool
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
-from tinypods_core.models import Installation
-from tinypods_core.schemas import InstallationInfo
+from tinypods_core.db.models import Installation
+from tinypods_core.db.schemas import InstallationInfo
 from tinypods_core.settings import ConfigurationError, Settings
 
 

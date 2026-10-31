@@ -1,12 +1,9 @@
-"""Async Valkey storage for bounded JSON responses, fill locks and cache generations."""
+"""Async Valkey pool ownership, cache generations and conditional publication."""
 
 import hashlib
-import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
-from typing import NoReturn, TypedDict
 from uuid import uuid4
 
 from redis.asyncio import Redis
@@ -15,13 +12,20 @@ from redis.backoff import NoBackoff
 from redis.exceptions import RedisError
 from redis.maint_notifications import MaintNotificationsConfig
 from tinypods_core import __version__
-from tinypods_core.cache_constants import CACHE_TRANSPORT
+from tinypods_core.cache.codec import json_body
+from tinypods_core.cache.constants import CACHE_TRANSPORT
+from tinypods_core.cache.models import CacheLookup, RedisConnectionOptions
 from tinypods_core.settings import Settings
 
 logger = logging.getLogger("tinypods.cache")
+
+
 LOCK_SECONDS = 30
+
+
 RETRY_SECONDS = 5
-# The generation/token checks and SET must be atomic: invalidation can race a fill.
+
+
 PUBLISH = """
 if redis.call('GET', KEYS[1]) == ARGV[1]
    and redis.call('GET', KEYS[2]) == ARGV[2] then
@@ -30,45 +34,14 @@ if redis.call('GET', KEYS[1]) == ARGV[1]
 end
 return 0
 """
-# Compare before deletion so an expired owner cannot erase a replacement lock/body.
+
+
 DELETE_IF_MATCH = """
 if redis.call('GET', KEYS[1]) == ARGV[1] then
     return redis.call('DEL', KEYS[1])
 end
 return 0
 """
-
-
-def reject_constant(value: str) -> NoReturn:
-    """Reject a non-standard numeric token during JSON decoding.
-
-    Args:
-        value: NaN or Infinity token supplied by the JSON decoder.
-
-    Raises:
-        ValueError: Always; these tokens are not valid cached JSON numbers.
-    """
-    raise ValueError("Non-finite JSON values are not cacheable")
-
-
-def json_body(value: object, max_bytes: int) -> bytes | None:
-    """Accept a bounded byte sequence containing finite JSON.
-
-    Args:
-        value: Stored response value returned by Valkey.
-        max_bytes: Maximum serialized response size accepted by this cache.
-
-    Returns:
-        The original bytes when valid, otherwise None. DTO validation belongs
-        to the route wrapper that knows the response model.
-    """
-    if not isinstance(value, bytes) or len(value) > max_bytes:
-        return None
-    try:
-        json.loads(value, parse_constant=reject_constant)
-    except (ValueError, UnicodeError, RecursionError):
-        return None
-    return value
 
 
 class CacheUnavailable(Exception):
@@ -78,40 +51,6 @@ class CacheUnavailable(Exception):
     source. It does not include the connection URL or the underlying error text.
     Cancellation and programming errors are not converted into this exception.
     """
-
-
-@dataclass(frozen=True)
-class CacheLookup:
-    """Carry the response bytes and ownership state returned by a cache lookup.
-
-    A miss grants publication authority only when token is present. Pass the
-    generation and token back unchanged: Valkey checks both atomically before
-    accepting a fill. A hit has body bytes but does not acquire a fill lock.
-
-    Attributes:
-        generation_key: Key storing the namespace's current random generation.
-        generation: Generation observed before reading or acquiring a fill lock.
-        key: Hashed identity key within that generation.
-        lock_key: Expiring ownership key associated with this response.
-        token: Unique lock-owner value, or None when this lookup owns no lock.
-        body: Size-bounded JSON bytes on a hit, otherwise None.
-    """
-
-    generation_key: str
-    generation: bytes
-    key: str
-    lock_key: str
-    token: str | None = None
-    body: bytes | None = None
-
-
-class RedisConnectionOptions(TypedDict):
-    """Describe the library configuration mapping shared by pool creation and URL overrides."""
-
-    socket_connect_timeout: float
-    socket_timeout: float
-    retry: Retry
-    decode_responses: bool
 
 
 class ResponseCache:

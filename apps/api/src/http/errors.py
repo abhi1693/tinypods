@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
-from tinypods_api.contracts import ErrorResponse, ValidationIssue
+from tinypods_api.http.contracts import ErrorResponse, ValidationIssue
 
 ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     code: {"model": ErrorResponse, "description": HTTPStatus(code).phrase}

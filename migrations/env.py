@@ -3,8 +3,8 @@
 from alembic import context
 from sqlalchemy import text
 from tinypods_core.db import database_url, migration_engine
-from tinypods_core.migrations import MIGRATION_LOCK
-from tinypods_core.models import core_metadata
+from tinypods_core.db.migrations import MIGRATION_LOCK
+from tinypods_core.db.models import core_metadata
 from tinypods_core.settings import ConfigurationError, load_settings
 
 config = context.config

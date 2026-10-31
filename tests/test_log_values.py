@@ -9,7 +9,6 @@ from typing import NoReturn
 import pytest
 from pydantic import SecretBytes, SecretStr
 from tinypods_core.json_types import JsonRecord
-from tinypods_core.log_values import encode_json, log_value
 from tinypods_core.logging import (
     BaseFormatter,
     JsonFormatter,
@@ -18,6 +17,7 @@ from tinypods_core.logging import (
     exception_details,
     log_context,
 )
+from tinypods_core.logging.values import encode_json, log_value
 
 
 @pytest.mark.parametrize("formatter", [JsonFormatter, TextFormatter])
