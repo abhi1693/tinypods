@@ -6,10 +6,12 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Response
 from starlette.types import ASGIApp
+from tinypods_api.contracts import LivenessResponse, ReadinessResponse
+from tinypods_api.errors import ERROR_RESPONSES, install_error_handlers
 from tinypods_api.logging import RequestLoggingMiddleware
+from tinypods_core import __version__
 from tinypods_core.db import Database
 from tinypods_core.logging import configure_logging, shutdown_logging
 from tinypods_core.settings import ConfigurationError, Settings, load_settings
@@ -61,16 +63,38 @@ def create_app(
             logger.info("API stopped")
             await asyncio.to_thread(log_handler.flush)
 
-    app = LoggedFastAPI(title=config.service_name, lifespan=lifespan)
+    app = LoggedFastAPI(
+        title="TinyPods API", version=__version__, lifespan=lifespan, responses=ERROR_RESPONSES
+    )
+    install_error_handlers(app)
     app.state.database = database
     app.state.ready = False
 
-    @app.get("/healthz", operation_id="getLiveness")
-    async def liveness() -> dict[str, str]:
-        return {"status": "alive"}
+    @app.get("/healthz", operation_id="getLiveness", response_model=LivenessResponse)
+    async def liveness() -> LivenessResponse:
+        """Check that the API process can respond to HTTP requests.
 
-    @app.get("/readyz", operation_id="getReadiness")
-    async def readiness() -> JSONResponse:
+        Returns HTTP 200 with status `alive`. This probe does not check startup
+        readiness or dependencies; use `/readyz` to decide whether to send traffic.
+        """
+        return LivenessResponse()
+
+    @app.get(
+        "/readyz",
+        operation_id="getReadiness",
+        response_model=ReadinessResponse,
+        responses={503: {"model": ReadinessResponse, "description": "Not ready"}},
+    )
+    async def readiness(response: Response) -> ReadinessResponse:
+        """Check whether the API runtime and configured dependencies are ready.
+
+        Returns HTTP 200 with status `ready` when every check passes, otherwise
+        HTTP 503 with status `not_ready`. Both responses include boolean results
+        for each check, including `runtime` and PostgreSQL when configured.
+        Failed or timed-out dependencies are reported as false without their
+        exception details. Readiness failures do not change `/healthz`.
+        """
+
         async def evaluate(name: str, check: ReadinessCheck) -> tuple[str, bool]:
             try:
                 async with asyncio.timeout(config.readiness_timeout):
@@ -82,10 +106,8 @@ def create_app(
         results = dict(await asyncio.gather(*(evaluate(n, c) for n, c in checks.items())))
         results["runtime"] = bool(app.state.ready)
         ready = all(results.values())
-        return JSONResponse(
-            {"status": "ready" if ready else "not_ready", "checks": results},
-            status_code=200 if ready else 503,
-        )
+        response.status_code = 200 if ready else 503
+        return ReadinessResponse(status="ready" if ready else "not_ready", checks=results)
 
     return app
 

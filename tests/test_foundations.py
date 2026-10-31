@@ -8,6 +8,7 @@ import socket
 import subprocess
 import time
 from importlib.metadata import version
+from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -35,7 +36,7 @@ def clean_settings(monkeypatch):
     ],
 )
 def test_workspace_packages_are_installed(distribution, module):
-    assert version(distribution) == "0.1.0"
+    assert version(distribution) == Path("VERSION").read_text().strip()
     assert importlib.import_module(module)
 
 

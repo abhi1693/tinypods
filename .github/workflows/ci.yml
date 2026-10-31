@@ -15,7 +15,7 @@ jobs:
       python-version: '3.13'
       uv-version: '0.12.21'
       sync-command: uv sync --locked --all-packages --no-editable
-      lint-command: uv run --no-sync ruff check . && uv run --no-sync ruff format --check . && uv run --no-sync mypy
-      test-command: uv run --no-sync pytest
+      lint-command: uv run --no-sync python scripts/sync_version.py --check && uv run --no-sync ruff check . && uv run --no-sync ruff format --check . && uv run --no-sync mypy
+      test-command: uv run --no-sync tinypods-openapi --check && uv run --no-sync openapi-spec-validator openapi.json && uv run --no-sync pytest
       test-results-path: reports/
       test-results-name: backend-tests
