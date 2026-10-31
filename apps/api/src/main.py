@@ -9,15 +9,21 @@ import anyio
 import uvicorn
 from fastapi import FastAPI, Response
 from starlette.types import ASGIApp
-from tinypods_api.cache import CachedReadRoute, CachePolicy
+from tinypods_api.auth import router as auth_router
+from tinypods_api.cache import CachePolicy
 from tinypods_api.http.constants import LIVENESS_PATH, READINESS_PATH
 from tinypods_api.http.contracts import LivenessResponse, PlatformInfoResponse, ReadinessResponse
 from tinypods_api.http.errors import ERROR_RESPONSES, install_error_handlers
 from tinypods_api.http.middleware import RequestLoggingMiddleware
+from tinypods_api.rate_limit import GlobalRateLimitMiddleware, RateLimitedRoute
 from tinypods_core import __version__
+from tinypods_core.auth import AuthService, Credentials, LocalPasswordProvider, SessionService
+from tinypods_core.auth.federation import BrowserLogin
+from tinypods_core.auth.oidc import ZitadelOIDC
 from tinypods_core.cache import ResponseCache
 from tinypods_core.db import Database
 from tinypods_core.logging import configure_logging, shutdown_logging
+from tinypods_core.rate_limit import RateLimiter
 from tinypods_core.settings import ConfigurationError, Settings, load_settings
 
 ReadinessCheck = Callable[[], Awaitable[bool]]
@@ -69,6 +75,11 @@ def create_app(
         raise ValueError("runtime is a reserved readiness check name")
 
     database = Database(config) if config.database_url is not None else None
+    limiter = (
+        RateLimiter(config)
+        if config.rate_limit_valkey_url is not None or config.valkey_url is not None
+        else None
+    )
     if database is not None:
         if "database" in checks:
             raise ValueError("database is a reserved readiness check name")
@@ -110,17 +121,35 @@ def create_app(
                         cleanup.push_async_callback(response_cache.close)
                     if database is not None:
                         cleanup.push_async_callback(database.close)
+                    if limiter is not None:
+                        cleanup.push_async_callback(limiter.close)
                     logger.info("API stopped")
 
     app = LoggedFastAPI(
         title="TinyPods API", version=__version__, lifespan=lifespan, responses=ERROR_RESPONSES
     )
-    app.router.route_class = CachedReadRoute
+    app.router.route_class = RateLimitedRoute
+    app.add_middleware(
+        GlobalRateLimitMiddleware, limiter=limiter, limit=config.rate_limit_global_per_minute
+    )
+    app.state.rate_limiter = limiter
     app.state.settings = config
     app.state.response_cache = response_cache
     install_error_handlers(app)
     app.state.database = database
+    app.state.auth = (
+        AuthService[Credentials](database, LocalPasswordProvider(database, limiter), limiter)
+        if database is not None and config.auth_local_enabled
+        else None
+    )
+    app.state.sessions = SessionService(database, settings=config) if database is not None else None
+    app.state.browser_login = (
+        BrowserLogin(database, config, ZitadelOIDC(config), limiter)
+        if database is not None and config.zitadel_enabled
+        else None
+    )
     app.state.ready = False
+    app.include_router(auth_router)
 
     @app.get(
         "/info",

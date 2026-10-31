@@ -9,6 +9,11 @@ version = "0.0.1"
 requires-python = ">=3.13"
 dependencies = [
     "pydantic-settings>=2.8",
+    "argon2-cffi>=25.1,<26",
+    "anyio>=4.8",
+    "authlib>=1.9.1,<2",
+    "joserfc>=1.4,<2",
+    "httpx2>=2.15,<3",
     "sqlmodel>=0.0.24",
     "sqlalchemy[asyncio]>=2.0,<2.2",
     "alembic>=1.15",
@@ -17,7 +22,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["tinypods_core", "tinypods_core.cache", "tinypods_core.db", "tinypods_core.logging"]
+packages = ["tinypods_core", "tinypods_core.cache", "tinypods_core.db", "tinypods_core.logging", "tinypods_core.auth", "tinypods_core.rate_limit"]
 
 [tool.setuptools.package-dir]
 tinypods_core = "src"

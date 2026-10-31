@@ -144,7 +144,13 @@ def test_export_is_valid_deterministic_and_has_explicit_responses() -> None:
     ]["$ref"].endswith("/ErrorResponse")
     assert all(
         name not in first
-        for name in ("database_url", "migration_database_url", "password", "Installation", "plugin")
+        for name in (
+            "database_url",
+            "migration_database_url",
+            "password_hash",
+            "Installation",
+            "plugin",
+        )
     )
     assert first == Path("openapi.json").read_text()
 

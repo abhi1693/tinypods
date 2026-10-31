@@ -1,6 +1,7 @@
 """Public registration boundary for the CLI command groups."""
 
 import typer
+from tinypods_cli.commands.auth import auth_app
 from tinypods_cli.commands.database import database_app
 from tinypods_cli.commands.doctor import doctor
 
@@ -15,3 +16,4 @@ def register_commands(application: typer.Typer) -> None:
     """
     application.command()(doctor)
     application.add_typer(database_app, name="db")
+    application.add_typer(auth_app, name="auth")

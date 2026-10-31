@@ -3,7 +3,7 @@
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, ValidationError, field_validator
+from pydantic import Field, SecretStr, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
@@ -47,15 +47,72 @@ class Settings(BaseSettings):
     database_pool_timeout: float = Field(default=5.0, gt=0, le=60)
     database_connect_timeout: int = Field(default=5, ge=1, le=60)
     valkey_url: SecretStr | None = None
+    rate_limit_global_per_minute: int = Field(default=0, ge=0, le=1_000_000)
+    rate_limit_valkey_url: SecretStr | None = None
+    rate_limit_namespace: str = Field(default="tinypods:limits", pattern=r"^[a-zA-Z0-9:_-]{1,80}$")
     cache_enabled: bool = True
     cache_valkey_url: SecretStr | None = None
     cache_namespace: str = Field(default="tinypods:cache", pattern=r"^[a-zA-Z0-9:_-]{1,80}$")
     cache_ttl_seconds: int = Field(default=300, ge=1, le=3600)
     cache_metadata_ttl_seconds: int = Field(default=600, ge=1, le=3600)
     cache_max_bytes: int = Field(default=1_000_000, ge=1024, le=5_000_000)
+    auth_local_enabled: bool = True
+    zitadel_enabled: bool = False
+    zitadel_issuer: str | None = None
+    zitadel_client_id: str | None = Field(default=None, min_length=1, max_length=255)
+    zitadel_client_secret: SecretStr | None = None
+    zitadel_token_auth_method: Literal["none", "client_secret_basic"] = "none"
+    zitadel_redirect_uri: str | None = None
+    zitadel_post_logout_uri: str | None = None
+    zitadel_allowed_subjects: tuple[str, ...] = ()
+
+    @field_validator("zitadel_issuer", "zitadel_redirect_uri", "zitadel_post_logout_uri")
+    @classmethod
+    def validate_oidc_url(cls, value: str | None) -> str | None:
+        """Require explicit HTTPS operator endpoints without credentials/query/fragment."""
+        if value is None:
+            return None
+        try:
+            url = urlsplit(value)
+            _ = url.port
+        except ValueError:
+            raise ValueError("Invalid OIDC URL") from None
+        if (
+            url.scheme != "https"
+            or not url.hostname
+            or url.username
+            or url.password
+            or url.query
+            or url.fragment
+            or "\\" in value
+        ):
+            raise ValueError("Invalid OIDC URL")
+        return value
+
+    @model_validator(mode="after")
+    def validate_oidc_configuration(self) -> "Settings":
+        """Reject incomplete enabled providers instead of silently enabling another login method."""
+        if self.zitadel_enabled:
+            if (
+                not self.zitadel_issuer
+                or not self.zitadel_client_id
+                or not self.zitadel_redirect_uri
+            ):
+                raise ValueError("Enabled Zitadel requires issuer, client ID and callback")
+            if self.zitadel_issuer.endswith("/"):
+                raise ValueError("Use the exact canonical issuer without a trailing slash")
+            if not self.zitadel_redirect_uri.endswith("/auth/providers/zitadel/callback"):
+                raise ValueError("Zitadel callback must use the supported callback path")
+            if (
+                self.zitadel_token_auth_method == "client_secret_basic"
+                and not self.zitadel_client_secret
+            ):
+                raise ValueError("Confidential Zitadel clients require a secret")
+        return self
+
     worker_heartbeat_interval: float = Field(default=30.0, gt=0, le=60)
 
-    @field_validator("valkey_url", "cache_valkey_url")
+    @field_validator("valkey_url", "cache_valkey_url", "rate_limit_valkey_url")
     @classmethod
     def validate_valkey_url(cls, value: SecretStr | None) -> SecretStr | None:
         """Validate the scheme, hostname and optional port of a Valkey endpoint.
@@ -117,5 +174,7 @@ def load_settings() -> Settings:
     try:
         return Settings()
     except ValidationError as exc:
-        fields = sorted({str(error["loc"][0]) for error in exc.errors()})
+        fields = sorted(
+            {(str(error["loc"][0]) if error["loc"] else "authentication") for error in exc.errors()}
+        )
         raise ConfigurationError("Invalid settings: " + ", ".join(fields)) from None

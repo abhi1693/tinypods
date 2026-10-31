@@ -8,8 +8,11 @@ from uuid import UUID
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException
 from tinypods_api.http.contracts import ErrorResponse, ValidationIssue
+from tinypods_core.auth import AuthError
+from tinypods_core.rate_limit import RateLimitUnavailable
 
 ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     code: {"model": ErrorResponse, "description": HTTPStatus(code).phrase}
@@ -101,6 +104,23 @@ async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:
     return error_response(request, 500, "internal_error", "An unexpected error occurred")
 
 
+async def authentication_error(request: Request, exc: Exception) -> JSONResponse:
+    """Translate deliberate authentication/policy failures without exposing secrets."""
+    assert isinstance(exc, AuthError)
+    return await http_error(
+        request,
+        HTTPException(
+            exc.status,
+            headers={"Retry-After": str(exc.retry_after)} if exc.status == 429 else None,
+        ),
+    )
+
+
+async def storage_unavailable(request: Request, exc: Exception) -> JSONResponse:
+    """Fail closed when authentication, authorization or rate-limit storage fails."""
+    return await http_error(request, HTTPException(503))
+
+
 def install_error_handlers(app: FastAPI) -> None:
     """Register deliberate HTTP, validation and unexpected-error translations.
 
@@ -110,3 +130,6 @@ def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(HTTPException, http_error)
     app.add_exception_handler(RequestValidationError, validation_error)
     app.add_exception_handler(Exception, unexpected_error)
+    app.add_exception_handler(AuthError, authentication_error)
+    app.add_exception_handler(RateLimitUnavailable, storage_unavailable)
+    app.add_exception_handler(SQLAlchemyError, storage_unavailable)

@@ -24,7 +24,7 @@ These are project rules, not requirements imposed by FastAPI.
 
 ## Current coverage and remaining work
 
-The application routes are /healthz, /readyz and public /info. All have typed responses and published docstrings; none accepts a request body. Liveness returns 200. Readiness returns the same typed shape on 200 and 503 and awaits configured checks.
+The application exposes /healthz, /readyz, public /info and the local /auth routes. All have typed responses and published docstrings; login accepts a JSON body. Liveness returns 200. Readiness returns the same typed shape on 200 and 503 and awaits configured checks.
 
 The exporter enforces operation IDs, public route documentation and primary response DTOs, including nested APIRouter routes. Router traversal uses FastAPI's public route-context helper, so the package requires FastAPI 0.162.0 or newer. CI checks deterministic export, schema validity and version alignment. It does not yet enforce every future input annotation, DTO separation, dependency boundary or async I/O choice automatically; those still require review and feature-specific tests.
 
@@ -76,3 +76,56 @@ The default Compose service keeps its AOF and noeviction policy, stays on the pr
 Cache storage errors are handled at the narrow Redis/socket boundary so optional I/O can fail open. Invalid cached JSON/DTO values are handled separately as data errors. Endpoint exceptions and cancellation are not swallowed. Publication and lock cleanup suppress only CacheUnavailable; cleanup is awaited under a cancellation shield with the same bounded socket deadlines. Pool shutdown is awaited through the application lifespan even if another resource's cleanup fails.
 
 JSON identity construction, hashing and DTO serialization remain bounded synchronous CPU work. They do not perform network I/O. Cache methods, including invalidation and close, must be awaited; they are not thread-pool adapters.
+
+
+## Authentication and service authorization
+
+See [authentication setup and security](../../docs/authentication.md) for local and
+Zitadel configuration, public discovery, server-side OIDC transactions, identity
+admission/linking, logout semantics and precise integration evidence.
+
+`PrincipalDependency` depends on provider-independent sessions and checks bound
+CSRF on every method except GET/HEAD/OPTIONS. Resource services must call
+`AuthorizationService.require_access` with the resource's stored owner ID and
+`Scope.APP`, `CLUSTER` or `SECRET`; catalog administration uses `CATALOG_ADMIN`.
+`SessionService.require_access` delegates to that same policy. There are no app,
+cluster, secret or catalog CRUD services yet; future services must invoke this
+boundary before data access. Even an installation owner cannot cross another
+owner's resource scope. Unknown scopes, absent owners and stale/forged principals
+fail closed. Policy uses an injected `PrincipalValidator` and opaque credential
+context, so future non-browser authenticators need no password/cookie assumption.
+API keys themselves are deferred.
+
+The callback is an intentional HTTP 303 redirect with a documented Location
+header and no JSON response body. The exporter accepts this explicit redirect
+contract alongside ordinary typed JSON responses and HTTP 204 operations.
+
+## Endpoint rate policies
+
+Use `RateLimitedRoute` on feature APIRouters (the application root and auth router
+already do). It composes around `CachedReadRoute` so reservations run before cache
+hits, body validation and dependency execution:
+
+```python
+router = APIRouter(route_class=RateLimitedRoute)
+
+@router.post(
+    "/uploads", operation_id="createUpload", response_model=UploadResponse,
+    openapi_extra=EndpointRatePolicy(name="uploads", limit=20).openapi_extra(),
+)
+async def upload(...) -> UploadResponse:
+    ...
+```
+
+Policies default to a 60,000 ms window and use per-peer subjects. Merge
+`openapi_extra` dictionaries to combine rate and public-cache policies. Use a
+stable unique name per budget; deliberately reusing a name/configuration shares
+its budget. For non-HTTP jobs or user/account quotas, inject the common core
+limiter and call `await limiter.reserve(RatePolicy(...), subject)`; interpret the
+returned decision and never turn `RateLimitUnavailable` into an allowance.
+The optional global middleware budget includes unmatched paths and all HTTP
+methods, regardless of route class. It excludes `/healthz` and `/readyz` so probes
+remain useful during saturation. Endpoint and auth limits cannot be disabled by
+setting the global budget to zero. Pools close with the API lifespan even when
+another cleanup operation fails. The cache retains its independent fail-open
+semantics for eligible public data; rate limiting fails closed.
