@@ -126,6 +126,13 @@ def isolated_logging() -> Iterator[None]:
 
 @pytest.fixture(scope="session")
 def valkey_url() -> Iterator[str]:
+    """Start an isolated password-protected Valkey container for cache integration tests.
+
+    Blocking Docker/setup calls run in pytest fixture setup, outside application
+    request paths. The fixture owns and removes only its randomly named container.
+
+    Yields:
+        Loopback connection URL for the disposable server, with ephemeral credentials."""
     from redis import Redis
     from redis.exceptions import RedisError
 

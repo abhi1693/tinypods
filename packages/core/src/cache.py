@@ -1,26 +1,26 @@
-"""Optional response caching; PostgreSQL and queue state remain authoritative."""
+"""Async Valkey storage for bounded JSON responses, fill locks and cache generations."""
 
 import hashlib
 import json
 import logging
-import threading
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import NoReturn
 from uuid import uuid4
 
-from redis import Redis
+from redis.asyncio import Redis
+from redis.asyncio.retry import Retry
 from redis.backoff import NoBackoff
 from redis.exceptions import RedisError
 from redis.maint_notifications import MaintNotificationsConfig
-from redis.retry import Retry
 from tinypods_core import __version__
 from tinypods_core.settings import Settings
 
 logger = logging.getLogger("tinypods.cache")
 LOCK_SECONDS = 30
 RETRY_SECONDS = 5
+# The generation/token checks and SET must be atomic: invalidation can race a fill.
 PUBLISH = """
 if redis.call('GET', KEYS[1]) == ARGV[1]
    and redis.call('GET', KEYS[2]) == ARGV[2] then
@@ -29,7 +29,8 @@ if redis.call('GET', KEYS[1]) == ARGV[1]
 end
 return 0
 """
-RELEASE = """
+# Compare before deletion so an expired owner cannot erase a replacement lock/body.
+DELETE_IF_MATCH = """
 if redis.call('GET', KEYS[1]) == ARGV[1] then
     return redis.call('DEL', KEYS[1])
 end
@@ -38,15 +39,61 @@ return 0
 
 
 def reject_constant(value: str) -> NoReturn:
+    """Reject a non-standard numeric token during JSON decoding.
+
+    Args:
+        value: NaN or Infinity token supplied by the JSON decoder.
+
+    Raises:
+        ValueError: Always; these tokens are not valid cached JSON numbers."""
     raise ValueError("Non-finite JSON values are not cacheable")
 
 
+def json_body(value: object, max_bytes: int) -> bytes | None:
+    """Accept a bounded byte sequence containing finite JSON.
+
+    Args:
+        value: Stored response value returned by Valkey.
+        max_bytes: Maximum serialized response size accepted by this cache.
+
+    Returns:
+        The original bytes when valid, otherwise None. DTO validation belongs
+        to the route wrapper that knows the response model.
+    """
+    if not isinstance(value, bytes) or len(value) > max_bytes:
+        return None
+    try:
+        json.loads(value, parse_constant=reject_constant)
+    except (ValueError, UnicodeError, RecursionError):
+        return None
+    return value
+
+
 class CacheUnavailable(Exception):
-    """Read through to the source; optional cache failure must not fail the request."""
+    """Report unavailable cache storage or an unusable generation identifier.
+
+    Cache consumers can catch this exception and read from the authoritative
+    source. It does not include the connection URL or the underlying error text.
+    Cancellation and programming errors are not converted into this exception.
+    """
 
 
 @dataclass(frozen=True)
 class CacheLookup:
+    """Carry the response bytes and ownership state returned by a cache lookup.
+
+    A miss grants publication authority only when token is present. Pass the
+    generation and token back unchanged: Valkey checks both atomically before
+    accepting a fill. A hit has body bytes but does not acquire a fill lock.
+
+    Attributes:
+        generation_key: Key storing the namespace's current random generation.
+        generation: Generation observed before reading or acquiring a fill lock.
+        key: Hashed identity key within that generation.
+        lock_key: Expiring ownership key associated with this response.
+        token: Unique lock-owner value, or None when this lookup owns no lock.
+        body: Size-bounded JSON bytes on a hit, otherwise None."""
+
     generation_key: str
     generation: bytes
     key: str
@@ -56,9 +103,31 @@ class CacheLookup:
 
 
 class ResponseCache:
-    """Thread-safe synchronous client. Async callers must offload its methods."""
+    """Own an async Valkey pool and generation-scoped public response entries.
+
+    Use one instance within its application's event loop and await every storage
+    operation. The client connects lazily, uses bounded socket deadlines and has
+    no retry loop. A storage error opens a short circuit breaker shared by this
+    instance; requests can then read through without repeatedly contacting an
+    unavailable server. Keys are namespaced separately from durable queue data.
+
+    The application lifespan owns this object and must await close() at shutdown.
+    JSON decoding/hashing remain synchronous CPU work bounded by the body limit
+    and fixed-size cache keys; this class performs no synchronous network I/O.
+    """
 
     def __init__(self, settings: Settings) -> None:
+        """Configure a lazily connected async pool and a versioned storage namespace.
+
+        Args:
+            settings: Endpoint, namespace and payload limits. The cache-specific URL
+                takes precedence over the shared Valkey URL.
+
+        Returns:
+            None. The instance owns an unopened pool until its first awaited operation.
+
+        Raises:
+            ValueError: No endpoint is configured or its client options are invalid."""
         configured = settings.cache_valkey_url or settings.valkey_url
         if configured is None:
             raise ValueError("A Valkey URL is required for the response cache")
@@ -86,29 +155,65 @@ class ResponseCache:
         self.redis.connection_pool.max_connections = 32
         self.max_bytes = settings.cache_max_bytes
         self.blocked_until = 0.0
-        self.guard = threading.Lock()
 
-    def _run[T](self, operation: Callable[[], T]) -> T:
-        with self.guard:
-            if self.blocked_until > time.monotonic():
-                raise CacheUnavailable
+    async def _run[T](self, operation: Callable[[], Awaitable[T]]) -> T:
+        """Await an operation unless the local failure circuit breaker is open.
+
+        The breaker state belongs to the application's event loop. Updates contain
+        no await, so concurrent requests cannot interleave a partial state update.
+        Warnings contain the error type, not server messages or connection URLs.
+
+        Args:
+            operation: Factory returning the async Valkey operation to execute.
+
+        Returns:
+            The operation's result without additional conversion.
+
+        Raises:
+            CacheUnavailable: The breaker is open or a Redis/socket operation fails."""
+        if self.blocked_until > time.monotonic():
+            raise CacheUnavailable
         try:
-            return operation()
+            return await operation()
         except (RedisError, OSError) as exc:
-            with self.guard:
-                warn = self.blocked_until <= time.monotonic()
-                self.blocked_until = time.monotonic() + RETRY_SECONDS
+            warn = self.blocked_until <= time.monotonic()
+            self.blocked_until = time.monotonic() + RETRY_SECONDS
             if warn:
                 logger.warning("Cache unavailable", extra={"error_type": type(exc).__name__})
             raise CacheUnavailable from None
 
-    def lookup(self, identity: str) -> CacheLookup:
-        def operation() -> CacheLookup:
+    async def lookup(self, identity: str) -> CacheLookup:
+        """Read a generation-scoped response or acquire an expiring fill token.
+
+        Missing generations use random SET NX initialization, including after
+        eviction. Invalid-size, malformed or non-finite response bytes are misses.
+        A miss without a token belongs to another loader; callers may briefly wait
+        or render without publishing. Returned owners must release their token
+        after rendering. Abandoned acquisitions also expire on the server.
+
+        Args:
+            identity: Canonical route/path/query representation to hash into a key.
+
+        Returns:
+            Response bytes on a hit, or lookup state with an optional owner token.
+
+        Raises:
+            CacheUnavailable: Storage fails or the generation value is unusable."""
+
+        async def operation() -> CacheLookup:
+            """Read generation/body state and claim a miss without resetting another owner.
+
+            Returns:
+                Lookup state retaining the observed generation and any acquired token.
+
+            Raises:
+                CacheUnavailable: The stored generation is not a valid random identifier."""
             generation_key = f"{self.namespace}:public:generation"
-            generation = self.redis.get(generation_key)
+            generation = await self.redis.get(generation_key)
+            # Random generations prevent stale keys from reappearing after generation eviction.
             if generation is None:
-                self.redis.set(generation_key, uuid4().hex, nx=True)
-                generation = self.redis.get(generation_key)
+                await self.redis.set(generation_key, uuid4().hex, nx=True)
+                generation = await self.redis.get(generation_key)
             if (
                 not isinstance(generation, bytes)
                 or len(generation) != 32
@@ -118,32 +223,46 @@ class ResponseCache:
             digest = hashlib.sha256(identity.encode()).hexdigest()
             key = f"{self.namespace}:public:{generation.decode('ascii')}:{digest}"
             lock_key = f"{key}:lock"
-            body = self.redis.get(key)
+            body = await self.redis.get(key)
             if body is not None:
-                try:
-                    if not isinstance(body, bytes) or len(body) > self.max_bytes:
-                        raise ValueError("Invalid response size")
-                    json.loads(body, parse_constant=reject_constant)
-                except (ValueError, UnicodeError, RecursionError):
+                body = json_body(body, self.max_bytes)
+                if body is None:
                     logger.warning("Invalid cache entry")
-                    body = None
             token = None
             if body is None:
                 candidate = uuid4().hex
-                if self.redis.set(lock_key, candidate, nx=True, ex=LOCK_SECONDS):
+                # Server expiry bounds abandoned ownership when cleanup cannot reach Valkey.
+                if await self.redis.set(lock_key, candidate, nx=True, ex=LOCK_SECONDS):
                     token = candidate
             return CacheLookup(generation_key, generation, key, lock_key, token, body)
 
-        return self._run(operation)
+        return await self._run(operation)
 
-    def publish(self, lookup: CacheLookup, body: bytes, ttl: int) -> bool:
+    async def publish(self, lookup: CacheLookup, body: bytes, ttl: int) -> bool:
+        """Conditionally store a rendered response while ownership is still valid.
+
+        Generation comparison, lock comparison and publication run atomically in
+        Valkey. An invalidated or expired loader cannot replace a newer response.
+        The caller still owns cleanup after this method returns.
+
+        Args:
+            lookup: Unmodified lookup state and owner token from a prior miss.
+            body: Serialized public JSON response bytes.
+            ttl: Positive lifetime in seconds for a successfully published response.
+
+        Returns:
+            True if stored; False for missing ownership, stale generation or size overflow.
+
+        Raises:
+            ValueError: A publishable response is given a non-positive TTL.
+            CacheUnavailable: A Valkey operation fails or the breaker is open."""
         if lookup.token is None or len(body) > self.max_bytes:
             return False
         if ttl <= 0:
             raise ValueError("Cache TTL must be positive")
         token = lookup.token
         return bool(
-            self._run(
+            await self._run(
                 lambda: self.redis.eval(
                     PUBLISH,
                     3,
@@ -158,20 +277,54 @@ class ResponseCache:
             )
         )
 
-    def release(self, lookup: CacheLookup) -> None:
+    async def release(self, lookup: CacheLookup) -> None:
+        """Remove a fill lock only while the supplied token remains its owner.
+
+        Args:
+            lookup: Lookup whose token is being released; no token makes this a no-op.
+
+        Returns:
+            None. A replacement owner's lock is preserved.
+
+        Raises:
+            CacheUnavailable: Storage is unavailable during the ownership comparison."""
         token = lookup.token
         if token:
-            self._run(lambda: self.redis.eval(RELEASE, 1, lookup.lock_key, token))
+            await self._run(lambda: self.redis.eval(DELETE_IF_MATCH, 1, lookup.lock_key, token))
 
-    def discard(self, lookup: CacheLookup) -> None:
-        """Remove a corrupt observed body without deleting a newer publisher's value."""
+    async def discard(self, lookup: CacheLookup) -> None:
+        """Remove an invalid observed response only if its stored bytes have not changed.
+
+        Args:
+            lookup: Observation containing the invalid body and its exact response key.
+
+        Returns:
+            None. A newer publisher's value or a lookup without a body is unchanged.
+
+        Raises:
+            CacheUnavailable: Storage is unavailable during conditional deletion."""
         body = lookup.body
         if body is not None:
-            self._run(lambda: self.redis.eval(RELEASE, 1, lookup.key, body))
+            await self._run(lambda: self.redis.eval(DELETE_IF_MATCH, 1, lookup.key, body))
 
-    def invalidate(self) -> None:
-        """Rotate only this response namespace after a successful source commit."""
-        self._run(lambda: self.redis.set(f"{self.namespace}:public:generation", uuid4().hex))
+    async def invalidate(self) -> None:
+        """Rotate the namespace generation after an authoritative change commits.
 
-    def close(self) -> None:
-        self.redis.close()
+        New lookups use the new generation. Earlier fills cannot publish into it,
+        and old response keys expire naturally. Queue keys are never changed.
+        Callers must not invalidate on rollback; failed invalidation leaves TTL
+        as the fallback freshness bound.
+
+        Returns:
+            None. Subsequent lookups observe a new random generation.
+
+        Raises:
+            CacheUnavailable: The new generation cannot be stored."""
+        await self._run(lambda: self.redis.set(f"{self.namespace}:public:generation", uuid4().hex))
+
+    async def close(self) -> None:
+        """Close the owned async pool after the application stops cache operations.
+
+        Returns:
+            None. Open sockets are disconnected; stored responses and queue data remain."""
+        await self.redis.aclose()

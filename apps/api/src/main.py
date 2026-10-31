@@ -3,8 +3,9 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
+import anyio
 import uvicorn
 from fastapi import FastAPI, Response
 from starlette.types import ASGIApp
@@ -36,6 +37,18 @@ def create_app(
     *,
     readiness_checks: Mapping[str, ReadinessCheck] | None = None,
 ) -> FastAPI:
+    """Compose the API, optional cache pool, database and process lifecycle.
+
+    Args:
+        settings: Validated configuration, or None to load process environment settings.
+        readiness_checks: Additional asynchronous dependency probes, keyed by name.
+
+    Returns:
+        A FastAPI application with typed probe/info routes and owned resource cleanup.
+
+    Raises:
+        ValueError: A supplied readiness name conflicts with a reserved dependency.
+        ConfigurationError: Required process settings are invalid."""
     config = settings if settings is not None else load_settings()
     log_handler = configure_logging(config, service="api", non_blocking=True)
     checks = dict(readiness_checks or {})
@@ -60,18 +73,31 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        """Mark runtime readiness and close every owned resource during shutdown.
+
+        Args:
+            app: Application whose readiness state changes with the process lifespan.
+
+        Yields:
+            None while the process is serving requests.
+
+        Cleanup is shielded from cancellation. An async exit stack still closes the
+        cache when database disposal fails, and drains logging after resource cleanup."""
         app.state.ready = True
         logger.info("API started")
         try:
             yield
         finally:
             app.state.ready = False
-            if database is not None:
-                await database.close()
-            if response_cache is not None:
-                await asyncio.to_thread(response_cache.close)
-            logger.info("API stopped")
-            await asyncio.to_thread(log_handler.flush)
+            # Run every cleanup even if another resource fails, then drain log output.
+            with anyio.CancelScope(shield=True):
+                async with AsyncExitStack() as cleanup:
+                    cleanup.push_async_callback(asyncio.to_thread, log_handler.flush)
+                    if response_cache is not None:
+                        cleanup.push_async_callback(response_cache.close)
+                    if database is not None:
+                        cleanup.push_async_callback(database.close)
+                    logger.info("API stopped")
 
     app = LoggedFastAPI(
         title="TinyPods API", version=__version__, lifespan=lifespan, responses=ERROR_RESPONSES
@@ -92,12 +118,15 @@ def create_app(
         ).openapi_extra(),
     )
     async def platform_info() -> PlatformInfoResponse:
-        """Read public platform identity and the installed TinyPods version.
+        """Return public service identity and the installed TinyPods version.
 
-        Returns HTTP 200 with non-personalized service metadata. Eligible GET
-        requests may use the optional server-side cache; browsers and proxies
-        receive Cache-Control: no-store. Cookie and authorization requests bypass it.
-        """
+        The request has no path, query or body inputs. HTTP 200 returns service
+        and version fields. X-Cache reports HIT, MISS or BYPASS. Cookie and
+        Authorization requests bypass cache storage; Cache-Control: no-store
+        prevents independent browser/proxy retention.
+
+        Returns:
+            Public service metadata from the installed core package."""
         return PlatformInfoResponse(version=__version__)
 
     @app.get("/healthz", operation_id="getLiveness", response_model=LivenessResponse)

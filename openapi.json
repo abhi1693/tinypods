@@ -45,6 +45,7 @@
         "type": "object"
       },
       "PlatformInfoResponse": {
+        "description": "Expose public platform identity without process configuration or credentials.\n\nAttributes:\n    service: Static service display name.\n    version: Version of the installed TinyPods core distribution.",
         "properties": {
           "service": {
             "const": "TinyPods",
@@ -245,7 +246,7 @@
     },
     "/info": {
       "get": {
-        "description": "Read public platform identity and the installed TinyPods version.\n\nReturns HTTP 200 with non-personalized service metadata. Eligible GET\nrequests may use the optional server-side cache; browsers and proxies\nreceive Cache-Control: no-store. Cookie and authorization requests bypass it.",
+        "description": "Return public service identity and the installed TinyPods version.\n\nThe request has no path, query or body inputs. HTTP 200 returns service\nand version fields. X-Cache reports HIT, MISS or BYPASS. Cookie and\nAuthorization requests bypass cache storage; Cache-Control: no-store\nprevents independent browser/proxy retention.\n\nReturns:\n    Public service metadata from the installed core package.",
         "operationId": "getPlatformInfo",
         "responses": {
           "200": {

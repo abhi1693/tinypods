@@ -102,6 +102,13 @@ def compose_stack() -> Iterator[ComposeStack]:
 
 
 def test_compose_startup_health_and_private_services(compose_stack: ComposeStack) -> None:
+    """Verify startup, private networking, non-root services and live response caching.
+
+    Args:
+        compose_stack: Isolated built Compose project with disposable data volumes.
+
+    Returns:
+        None. Assertions cover service health, ownership and cache MISS/HIT behavior."""
     stack = compose_stack
     stack.assert_ready()
     assert "installation_id" in json.loads(stack.identity())
