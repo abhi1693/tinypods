@@ -74,9 +74,11 @@ async def login(
         raise HTTPException(403)
     policy = request_cookie_policy(request)
     previous = request.cookies.get(policy.session)
+    previous_refresh = request.cookies.get(policy.refresh)
     result = await service.login(
         Credentials(username=body.username, password=body.password),
         previous_digest=digest(previous) if previous is not None else None,
+        previous_refresh_digest=digest(previous_refresh) if previous_refresh is not None else None,
     )
     set_session_cookies(response, result, policy)
     return LoginResponse(

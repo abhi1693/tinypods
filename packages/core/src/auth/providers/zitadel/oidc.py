@@ -2,7 +2,11 @@
 
 import asyncio
 import logging
+import math
 import re
+import time
+from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Any, cast
 from urllib.parse import urlencode, urlsplit
 
@@ -13,8 +17,9 @@ from authlib.oidc.core import CodeIDToken  # type: ignore[import-untyped]
 from joserfc import jwt
 from joserfc.errors import JoseError
 from joserfc.jwk import KeySet, KeySetSerialization
-from pydantic import BaseModel, ConfigDict, ValidationError
-from tinypods_core.auth.contracts import AuthError, VerifiedIdentity
+from joserfc.jwt import JWTClaimsRegistry
+from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
+from tinypods_core.auth.contracts import AuthError, LogoutNotice, VerifiedIdentity
 from tinypods_core.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -127,6 +132,8 @@ class ZitadelOIDC:
     def _scope(self, identity_provider_id: str | None = None) -> str:
         """Select the configured organization and optionally an upstream identity provider."""
         scopes = ["openid"]
+        if self.settings.zitadel_refresh_enabled:
+            scopes.append("offline_access")
         if self.settings.zitadel_organization_id is not None:
             scopes.append("urn:zitadel:iam:org:id:" + self.settings.zitadel_organization_id)
         if self.settings.zitadel_organization_domain is not None:
@@ -205,49 +212,7 @@ class ZitadelOIDC:
                         code=code,
                         code_verifier=verifier,
                     )
-                encoded = token.get("id_token")
-                if not isinstance(encoded, str) or len(encoded) > 65_536:
-                    raise AuthError(401)
-                keys = await self._json(metadata.jwks_uri)
-                decoded = jwt.decode(
-                    encoded,
-                    KeySet.import_key_set(cast(KeySetSerialization, keys)),
-                    algorithms=["RS256"],
-                )
-                claims = CodeIDToken(
-                    decoded.claims,
-                    decoded.header,
-                    options={
-                        "iss": {"essential": True, "value": self.issuer},
-                        "sub": {"essential": True},
-                        "aud": {"essential": True, "value": self.client_id},
-                        "exp": {"essential": True},
-                        "iat": {"essential": True},
-                        "nonce": {"essential": True, "value": nonce},
-                    },
-                    params={
-                        "nonce": nonce,
-                        "client_id": self.client_id,
-                        "access_token": token.get("access_token"),
-                    },
-                )
-                claims.validate(leeway=0)
-                organization = self.settings.zitadel_organization_id
-                if (
-                    organization is not None
-                    and claims.get("urn:zitadel:iam:user:resourceowner:id") != organization
-                ):
-                    raise AuthError(403)
-                domain = self.settings.zitadel_organization_domain
-                if (
-                    domain is not None
-                    and claims.get("urn:zitadel:iam:user:resourceowner:primary_domain") != domain
-                ):
-                    raise AuthError(403)
-                subject = claims.get("sub")
-                if not isinstance(subject, str) or not subject or len(subject) > 255:
-                    raise AuthError(401)
-                return VerifiedIdentity(self.issuer, subject)
+                return await self._identity(token, nonce, metadata, require_nonce=True)
         except (httpx.HTTPError, TimeoutError):
             raise AuthError(503) from None
         except (OAuthError, JoseError, ValueError, KeyError, TypeError) as exc:
@@ -256,6 +221,191 @@ class ZitadelOIDC:
                 extra={"failure_type": type(exc).__name__},
             )
             raise AuthError(401) from None
+
+    @staticmethod
+    def _number(value: object) -> float:
+        """Reject non-finite or non-numeric signed timing claims."""
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+        ):
+            raise AuthError(401)
+        return float(value)
+
+    @staticmethod
+    def _identifier(value: object) -> str | None:
+        """Validate an optional opaque provider session identifier."""
+        if value is None:
+            return None
+        if not isinstance(value, str) or not value or len(value) > 255:
+            raise AuthError(401)
+        return value
+
+    async def _identity(
+        self, token: dict[str, Any], nonce: str, metadata: Discovery, *, require_nonce: bool
+    ) -> VerifiedIdentity:
+        """Validate a signed initial or refreshed ID token before returning server-only state."""
+        encoded = token.get("id_token")
+        if not isinstance(encoded, str) or len(encoded) > 65_536:
+            raise AuthError(401)
+        keys = await self._json(metadata.jwks_uri)
+        decoded = jwt.decode(
+            encoded, KeySet.import_key_set(cast(KeySetSerialization, keys)), algorithms=["RS256"]
+        )
+        claims = CodeIDToken(
+            decoded.claims,
+            decoded.header,
+            options={
+                "iss": {"essential": True, "value": self.issuer},
+                "sub": {"essential": True},
+                "aud": {"essential": True, "value": self.client_id},
+                "exp": {"essential": True},
+                "iat": {"essential": True},
+                "nonce": {"essential": require_nonce},
+            },
+            params={
+                "nonce": nonce if require_nonce else None,
+                "client_id": self.client_id,
+                "access_token": token.get("access_token"),
+            },
+        )
+        claims.validate(leeway=0)
+        if "nonce" in claims and claims["nonce"] != nonce:
+            raise AuthError(401)
+        organization = self.settings.zitadel_organization_id
+        if (
+            organization is not None
+            and claims.get("urn:zitadel:iam:user:resourceowner:id") != organization
+        ):
+            raise AuthError(403)
+        domain = self.settings.zitadel_organization_domain
+        if (
+            domain is not None
+            and claims.get("urn:zitadel:iam:user:resourceowner:primary_domain") != domain
+        ):
+            raise AuthError(403)
+        subject = claims.get("sub")
+        if not isinstance(subject, str) or not subject or len(subject) > 255:
+            raise AuthError(401)
+        issued_at = self._number(claims["iat"])
+        auth_time = self._number(claims["auth_time"]) if "auth_time" in claims else None
+        if auth_time is not None and auth_time > issued_at:
+            raise AuthError(401)
+        refresh: SecretStr | None = None
+        if self.settings.zitadel_refresh_enabled and "refresh_token" in token:
+            value = token["refresh_token"]
+            if not isinstance(value, str) or not value or len(value) > 16_384:
+                raise AuthError(401)
+            refresh = SecretStr(value)
+        return VerifiedIdentity(
+            self.issuer,
+            subject,
+            self._identifier(claims.get("sid")),
+            refresh,
+            nonce,
+            auth_time,
+            issued_at,
+        )
+
+    async def refresh(
+        self,
+        refresh_token: SecretStr,
+        nonce: str,
+        *,
+        subject: str,
+        session_id: str | None,
+        auth_time: float | None,
+    ) -> VerifiedIdentity:
+        """Refresh through the provider and validate identity continuity before rotation."""
+        try:
+            async with asyncio.timeout(10):
+                metadata = await self._discovery()
+                async with self._client() as client:
+                    token = await client.fetch_token(
+                        metadata.token_endpoint,
+                        grant_type="refresh_token",
+                        refresh_token=refresh_token.get_secret_value(),
+                    )
+                identity = await self._identity(token, nonce, metadata, require_nonce=False)
+                if identity.subject != subject:
+                    raise AuthError(401)
+                if (
+                    identity.session_id is not None
+                    and session_id is not None
+                    and identity.session_id != session_id
+                ):
+                    raise AuthError(401)
+                if identity.auth_time is not None and identity.auth_time != auth_time:
+                    raise AuthError(401)
+                return replace(
+                    identity,
+                    refresh_token=identity.refresh_token or refresh_token,
+                    session_id=identity.session_id or session_id,
+                    auth_time=auth_time,
+                )
+        except (httpx.HTTPError, TimeoutError):
+            raise AuthError(503) from None
+        except (OAuthError, JoseError, ValueError, KeyError, TypeError):
+            raise AuthError(401) from None
+
+    async def validate_logout_token(self, encoded: str) -> LogoutNotice:
+        """Validate the distinct signed logout-token profile without accepting ID tokens."""
+        if not encoded or len(encoded) > 65_536:
+            raise AuthError(400)
+        try:
+            async with asyncio.timeout(10):
+                metadata = await self._discovery()
+                keys = await self._json(metadata.jwks_uri)
+                decoded = jwt.decode(
+                    encoded,
+                    KeySet.import_key_set(cast(KeySetSerialization, keys)),
+                    algorithms=["RS256"],
+                )
+                claims = decoded.claims
+                JWTClaimsRegistry(
+                    iss={"essential": True, "value": self.issuer},
+                    aud={"essential": True, "value": self.client_id},
+                    iat={"essential": True},
+                    exp={"essential": True},
+                    jti={"essential": True},
+                ).validate(claims)
+                issued_at, expires_at = self._number(claims["iat"]), self._number(claims["exp"])
+                events = claims.get("events")
+                if (
+                    "nonce" in claims
+                    or not isinstance(events, dict)
+                    or not isinstance(
+                        events.get("http://schemas.openid.net/event/backchannel-logout"), dict
+                    )
+                    or issued_at < time.time() - 900
+                    or expires_at <= time.time()
+                    or decoded.header.get("typ")
+                    not in (None, "JWT", "logout+jwt", "application/logout+jwt")
+                ):
+                    raise AuthError(400)
+                subject = self._identifier(claims.get("sub"))
+                sid = self._identifier(claims.get("sid"))
+                event = self._identifier(claims["jti"])
+                if (subject is None and sid is None) or event is None:
+                    raise AuthError(400)
+                return LogoutNotice(
+                    self.issuer,
+                    self.client_id,
+                    event,
+                    datetime.fromtimestamp(issued_at, UTC),
+                    datetime.fromtimestamp(expires_at, UTC),
+                    subject,
+                    sid,
+                )
+        except (httpx.HTTPError, TimeoutError):
+            raise AuthError(503) from None
+        except (OAuthError, JoseError, ValueError, KeyError, TypeError, OverflowError):
+            raise AuthError(400) from None
+        except AuthError as exc:
+            if exc.status == 401:
+                raise AuthError(400) from None
+            raise
 
     async def logout_url(self) -> str | None:
         """Build optional RP logout navigation using client ID, never an ID token hint.

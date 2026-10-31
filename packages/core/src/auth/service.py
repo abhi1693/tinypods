@@ -40,7 +40,13 @@ class AuthService[Proof]:
         if not decision.allowed:
             raise AuthError(429, retry_after=decision.retry_after)
 
-    async def login(self, proof: Proof, *, previous_digest: str | None = None) -> Login:
+    async def login(
+        self,
+        proof: Proof,
+        *,
+        previous_digest: str | None = None,
+        previous_refresh_digest: str | None = None,
+    ) -> Login:
         """Issue a random revocable session after rate-limited provider verification.
 
         The installation-wide limit is 30 attempts/minute including successes.
@@ -53,4 +59,9 @@ class AuthService[Proof]:
                 raise AuthError(503)
             installation_id = str(installation.installation_id)
         await self._reserve(LOGIN_GLOBAL, installation_id)
-        return await self.sessions.login(self.provider, proof, previous_digest=previous_digest)
+        user_id = await self.provider.verify(proof)
+        return await self.sessions.issue(
+            user_id,
+            previous_digest=previous_digest,
+            previous_refresh_digest=previous_refresh_digest,
+        )

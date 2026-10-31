@@ -16,6 +16,7 @@ class CookiePolicy:
     session: str
     csrf: str
     oidc: str
+    refresh: str
 
 
 def cookie_policy(settings: Settings) -> CookiePolicy:
@@ -23,7 +24,11 @@ def cookie_policy(settings: Settings) -> CookiePolicy:
     secure = settings.environment == "production"
     prefix = "__Host-" if secure else ""
     return CookiePolicy(
-        secure, prefix + "tinypods-session", prefix + "tinypods-csrf", prefix + "tinypods-oidc"
+        secure,
+        prefix + "tinypods-session",
+        prefix + "tinypods-csrf",
+        prefix + "tinypods-oidc",
+        prefix + "tinypods-refresh",
     )
 
 
@@ -42,5 +47,24 @@ def set_session_cookies(response: Response, result: Login, policy: CookiePolicy)
             httponly=name == policy.session,
             samesite="strict",
             path="/",
-            expires=result.expires_at.astimezone(UTC),
+            expires=(
+                result.expires_at
+                if name == policy.session
+                else (result.refresh_expires_at or result.expires_at)
+            ).astimezone(UTC),
+        )
+
+    if result.refresh_token is not None and result.refresh_expires_at is not None:
+        response.set_cookie(
+            policy.refresh,
+            result.refresh_token,
+            secure=policy.secure,
+            httponly=True,
+            samesite="strict",
+            path="/",
+            expires=result.refresh_expires_at.astimezone(UTC),
+        )
+    else:
+        response.delete_cookie(
+            policy.refresh, secure=policy.secure, httponly=True, samesite="strict", path="/"
         )

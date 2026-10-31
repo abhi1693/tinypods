@@ -58,6 +58,9 @@ async def providers(request: Request) -> ProvidersResponse:
                 ],
                 type="redirect",
                 login_path="/auth/providers/zitadel/start",
+                refresh_path="/auth/providers/zitadel/refresh"
+                if settings.zitadel_refresh_enabled
+                else None,
             )
         )
     return ProvidersResponse(data=data)

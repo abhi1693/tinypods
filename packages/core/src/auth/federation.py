@@ -136,6 +136,21 @@ class IdentityMappings:
             )
 
 
+class ProviderSessionLifecycle(Protocol):
+    """Commit optional provider-specific state alongside shared browser sessions."""
+
+    async def issue(
+        self,
+        identity: VerifiedIdentity,
+        user_id: UUID,
+        *,
+        previous_digest: str | None,
+        previous_refresh_digest: str | None,
+    ) -> Login:
+        """Issue a normalized session after trusted identity verification."""
+        ...
+
+
 class BrowserLogin:
     """Own single-use browser transactions independently of the selected supported adapter."""
 
@@ -153,6 +168,7 @@ class BrowserLogin:
         self.limiter = limiter
         self.identities = IdentityMappings(database, settings)
         self.sessions = SessionService(database, settings=settings)
+        self.lifecycle: ProviderSessionLifecycle | None = None
 
     def configuration_digest(self) -> str:
         """Bind transactions to exact configuration, including access and client secrets."""
@@ -161,6 +177,7 @@ class BrowserLogin:
             json.dumps(
                 [
                     self.settings.zitadel_enabled,
+                    self.settings.zitadel_refresh_enabled,
                     self.settings.zitadel_issuer,
                     self.settings.zitadel_client_id,
                     self.settings.zitadel_organization_id,
@@ -180,6 +197,7 @@ class BrowserLogin:
         *,
         browser_token: str | None = None,
         identity_provider_id: str | None = None,
+        previous_refresh_token: str | None = None,
     ) -> LoginStart:
         """Reserve a start, persist five-minute secrets and return a fresh challenge."""
         if not self.settings.zitadel_enabled:
@@ -224,6 +242,9 @@ class BrowserLogin:
                     configuration_digest=self.configuration_digest(),
                     return_to=return_to,
                     expires_at=now + timedelta(minutes=5),
+                    previous_refresh_digest=digest(previous_refresh_token)
+                    if previous_refresh_token is not None
+                    else None,
                     previous_session_digest=digest(previous_token)
                     if previous_token is not None
                     else None,
@@ -273,11 +294,22 @@ class BrowserLogin:
         logger.debug("Login callback correlation accepted; exchanging authorization code")
         identity = await self.provider.exchange(code, transaction.nonce, transaction.verifier)
         user_id = await self.identities.resolve(identity)
-        login = await self.sessions.issue(
-            user_id,
-            previous_digest=transaction.previous_session_digest,
-            source_provider="zitadel",
-            external_issuer=identity.issuer,
-            external_subject=identity.subject,
-        )
+        if self.lifecycle is not None:
+            login = await self.lifecycle.issue(
+                identity,
+                user_id,
+                previous_digest=transaction.previous_session_digest,
+                previous_refresh_digest=transaction.previous_refresh_digest,
+            )
+        else:
+            login = await self.sessions.issue(
+                user_id,
+                previous_digest=transaction.previous_session_digest,
+                previous_refresh_digest=transaction.previous_refresh_digest,
+                source_provider="zitadel",
+                external_issuer=identity.issuer,
+                external_subject=identity.subject,
+                external_client_id=self.settings.zitadel_client_id,
+                external_session_id=identity.session_id,
+            )
         return login, transaction.return_to

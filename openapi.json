@@ -1,6 +1,19 @@
 {
   "components": {
     "schemas": {
+      "BackchannelErrorResponse": {
+        "description": "A sign-out notification that could not be verified.",
+        "properties": {
+          "error": {
+            "const": "invalid_request",
+            "default": "invalid_request",
+            "title": "Error",
+            "type": "string"
+          }
+        },
+        "title": "BackchannelErrorResponse",
+        "type": "object"
+      },
       "ErrorResponse": {
         "description": "An explanation of why the request could not be completed.",
         "properties": {
@@ -148,6 +161,18 @@
             "title": "Is Owner",
             "type": "boolean"
           },
+          "refresh_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refresh Expires At"
+          },
           "user_id": {
             "format": "uuid",
             "title": "User Id",
@@ -286,6 +311,17 @@
             "default": "/auth/logout",
             "title": "Logout Path",
             "type": "string"
+          },
+          "refresh_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refresh Path"
           },
           "type": {
             "enum": [
@@ -791,6 +827,152 @@
         ]
       }
     },
+    "/auth/providers/zitadel/backchannel-logout": {
+      "post": {
+        "description": "Sign out the browsers identified by a verified notification from Zitadel.\n\nThis endpoint is called by Zitadel directly and does not require browser cookies.",
+        "operationId": "authZitadelBackchannelLogout",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "properties": {
+                  "logout_token": {
+                    "maxLength": 65536,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "logout_token"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackchannelErrorResponse"
+                }
+              }
+            },
+            "description": "The sign-out notification could not be verified."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Receive a Zitadel sign-out notification",
+        "tags": [
+          "Authentication"
+        ],
+        "x-tinypods-rate-limit": {
+          "limit": 300,
+          "name": "oidc_backchannel",
+          "window_ms": 60000
+        }
+      }
+    },
     "/auth/providers/zitadel/callback": {
       "get": {
         "description": "Complete sign-in after returning from Zitadel.\n\nSigns this browser in and sends you to the page chosen when sign-in started.\nThe sign-in attempt must still be valid.",
@@ -1101,6 +1283,130 @@
         "tags": [
           "Authentication"
         ]
+      }
+    },
+    "/auth/providers/zitadel/refresh": {
+      "post": {
+        "description": "Keep this browser signed in without entering your credentials again.\n\nSend the current CSRF header. A successful renewal replaces the browser's\nsign-in credentials; expired or reused renewal credentials require a new login.",
+        "operationId": "authZitadelSessionRefresh",
+        "parameters": [
+          {
+            "description": "Copy the current CSRF cookie value into this header.",
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Sign in again to renew this browser session."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "description": "A renewal is already in progress for this browser."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Renew your sign-in",
+        "tags": [
+          "Authentication"
+        ],
+        "x-tinypods-rate-limit": {
+          "limit": 30,
+          "name": "oidc_refresh",
+          "window_ms": 60000
+        }
       }
     },
     "/auth/providers/zitadel/start": {

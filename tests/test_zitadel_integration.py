@@ -7,7 +7,9 @@ A generated trusted test CA terminates TLS; certificate verification stays enabl
 
 import asyncio
 import http.client
+import ipaddress
 import json
+import os
 import secrets
 import socket
 import ssl
@@ -19,18 +21,21 @@ import urllib.request
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from threading import Thread
 from typing import Any
 
 import httpx2 as httpx
 import pytest
 from conftest import POSTGRES
+from cryptography.fernet import Fernet
 from pydantic import SecretStr
 from test_auth import auth_settings as auth_settings
 from tinypods_core.auth import AuthError, Scope
 from tinypods_core.auth.authorization import AuthorizationService
 from tinypods_core.auth.federation import BrowserLogin
 from tinypods_core.auth.providers.zitadel.oidc import ZitadelOIDC
+from tinypods_core.auth.providers.zitadel.sessions import ZitadelSessions
 from tinypods_core.auth.tokens import digest
 from tinypods_core.db import Database
 from tinypods_core.db.models import AuthSession, LocalCredential
@@ -79,9 +84,17 @@ class ZitadelFixture:
     project_id: str
     user_id: str
     password: str = field(repr=False)
+    network: str = ""
+    directory: Path | None = None
+    sessions: list[tuple[str, str]] = field(default_factory=list, repr=False)
 
     def request(
-        self, path: str, data: dict[str, Any] | None = None, *, login: bool = False
+        self,
+        path: str,
+        data: dict[str, Any] | None = None,
+        *,
+        login: bool = False,
+        method: str | None = None,
     ) -> dict[str, Any]:
         """Call fixture administration; redact upstream bodies on failure."""
         token = self.login_pat if login else self.admin_pat
@@ -89,6 +102,7 @@ class ZitadelFixture:
             self.issuer + path,
             data=json.dumps(data).encode() if data is not None else None,
             headers={"Content-Type": "application/json", "Authorization": "Bearer " + token},
+            method=method,
         )
         try:
             with urllib.request.urlopen(request, context=self.tls, timeout=10) as response:
@@ -96,7 +110,9 @@ class ZitadelFixture:
         except urllib.error.HTTPError as error:
             raise AssertionError(f"Disposable Zitadel {path} returned {error.code}") from None
 
-    def application(self, method: str) -> dict[str, Any]:
+    def application(
+        self, method: str, *, refresh: bool = False, backchannel_uri: str = ""
+    ) -> dict[str, Any]:
         """Register an upstream Web client using exact production HTTPS redirects."""
         return self.request(
             "/management/v1/projects/" + self.project_id + "/apps/oidc",
@@ -104,13 +120,15 @@ class ZitadelFixture:
                 "name": "TinyPods integration " + method + secrets.token_hex(4),
                 "redirectUris": [CALLBACK],
                 "responseTypes": ["OIDC_RESPONSE_TYPE_CODE"],
-                "grantTypes": ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE"],
+                "grantTypes": ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE"]
+                + (["OIDC_GRANT_TYPE_REFRESH_TOKEN"] if refresh else []),
                 "appType": "OIDC_APP_TYPE_WEB",
                 "authMethodType": "OIDC_AUTH_METHOD_TYPE_BASIC"
                 if method == "client_secret_basic"
                 else "OIDC_AUTH_METHOD_TYPE_NONE",
                 "postLogoutRedirectUris": ["https://tinypods.example/"],
-                "devMode": False,
+                "devMode": bool(backchannel_uri),
+                "backChannelLogoutUri": backchannel_uri,
             },
         )
 
@@ -146,6 +164,7 @@ class ZitadelFixture:
                 "lifetime": "600s",
             },
         )
+        self.sessions.append((checked["sessionId"], checked["sessionToken"]))
         completed = self.request(
             "/v2/oidc/auth_requests/" + auth_request,
             {
@@ -225,6 +244,7 @@ def real_zitadel(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ZitadelFi
 
         do_GET = proxy
         do_POST = proxy
+        do_DELETE = proxy
 
     server_tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     server_tls.load_cert_chain(cert, key)
@@ -266,7 +286,30 @@ def real_zitadel(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ZitadelFi
         ).returncode:
             assert time.monotonic() < deadline, "Disposable Zitadel database unavailable"
             time.sleep(0.1)
+        subnet = ipaddress.ip_network(
+            json.loads(docker("network", "inspect", name))[0]["IPAM"]["Config"][0]["Subnet"]
+        )
+        private = ipaddress.ip_network("172.16.0.0/12")
+        assert isinstance(subnet, ipaddress.IPv4Network) and subnet.subnet_of(private)
+        # The only private destination exception is this disposable test network.
+        # Keep loopback, metadata endpoints and every other private range blocked.
+        denylist = [
+            "localhost",
+            "0.0.0.0/8",
+            "10.0.0.0/8",
+            "100.64.0.0/10",
+            "127.0.0.0/8",
+            "169.254.0.0/16",
+            "192.168.0.0/16",
+            "198.18.0.0/15",
+            "::/128",
+            "::1/128",
+            "fc00::/7",
+            "fe80::/10",
+        ]
+        denylist.extend(str(network) for network in private.address_exclude(subnet))
         environment = {
+            "ZITADEL_HTTPCLIENT_DENYLIST": ",".join(denylist),
             "ZITADEL_PORT": "8080",
             "ZITADEL_EXTERNALDOMAIN": "localhost",
             "ZITADEL_EXTERNALPORT": str(port),
@@ -309,7 +352,7 @@ def real_zitadel(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ZitadelFi
             "--masterkey",
             secrets.token_hex(16),
             "--tlsMode",
-            "disabled",
+            "external",
         ]
         docker(*arguments)
         pat_path = directory / "admin.pat"
@@ -347,7 +390,15 @@ def real_zitadel(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ZitadelFi
             },
         )
         yield ZitadelFixture(
-            issuer, tls, base.admin_pat, base.login_pat, project["id"], user["userId"], password
+            issuer,
+            tls,
+            base.admin_pat,
+            base.login_pat,
+            project["id"],
+            user["userId"],
+            password,
+            name,
+            directory,
         )
     finally:
         cleanup_failures: list[str] = []
@@ -486,5 +537,190 @@ def test_real_zitadel_rejects_bad_proof_and_replayed_codes(
                 secrets.token_urlsafe(48) if attack == "pkce" else verifier,
             )
         assert error.value.status == 401
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("method", ["none", "client_secret_basic"])
+def test_real_zitadel_refresh_rotation_and_family_revocation(
+    real_zitadel: ZitadelFixture, auth_settings: Settings, method: str
+) -> None:
+    """Exchange real provider refresh tokens over verified TLS and rotate browser credentials."""
+    application = real_zitadel.application(method, refresh=True)
+    settings = Settings.model_validate(
+        {
+            **auth_settings.model_dump(),
+            "zitadel_enabled": True,
+            "zitadel_issuer": real_zitadel.issuer,
+            "zitadel_client_id": application["clientId"],
+            "zitadel_redirect_uri": CALLBACK,
+            "zitadel_token_auth_method": method,
+            "zitadel_client_secret": SecretStr(application["clientSecret"])
+            if method == "client_secret_basic"
+            else None,
+            "zitadel_refresh_enabled": True,
+            "zitadel_refresh_encryption_keys": (SecretStr(Fernet.generate_key().decode()),),
+        }
+    )
+
+    async def scenario() -> None:
+        database, limiter = Database(settings), RateLimiter(settings)
+        adapter = ZitadelOIDC(settings, transport=httpx.AsyncHTTPTransport(verify=real_zitadel.tls))
+        browser = BrowserLogin(database, settings, adapter, limiter)
+        lifecycle = ZitadelSessions(
+            database, settings, adapter, browser.sessions, browser.configuration_digest, limiter
+        )
+        browser.lifecycle = lifecycle
+        try:
+            start = await browser.start()
+            response = await asyncio.to_thread(real_zitadel.approve, start.authorization_url)
+            login, _ = await browser.finish(
+                response["state"][0], start.browser_token, response["code"][0]
+            )
+            assert login.refresh_token is not None and login.refresh_expires_at is not None
+            renewed = await lifecycle.refresh(login.refresh_token, login.csrf_token)
+            assert (
+                renewed.refresh_token is not None and renewed.refresh_token != login.refresh_token
+            )
+            assert (
+                renewed.token != login.token
+                and renewed.refresh_expires_at == login.refresh_expires_at
+            )
+            assert await browser.sessions.authenticate(renewed.token) == renewed.principal
+            with pytest.raises(AuthError):
+                await browser.sessions.authenticate(login.token)
+            await browser.sessions.logout(renewed.principal)
+            with pytest.raises(AuthError):
+                await lifecycle.refresh(renewed.refresh_token, renewed.csrf_token)
+        finally:
+            await limiter.close()
+            await database.close()
+
+    asyncio.run(scenario())
+
+
+@pytest.fixture
+def real_logout_receiver(real_zitadel: ZitadelFixture) -> Iterator[tuple[str, Path]]:
+    """Receive genuine logout notifications on the fixture's private Docker network only."""
+    assert real_zitadel.directory is not None and real_zitadel.network
+    name = "tinypods-logout-" + secrets.token_hex(6)
+    script = real_zitadel.directory / (name + ".py")
+    sink = real_zitadel.directory / (name + ".jwt")
+    script.write_text(
+        "from http.server import BaseHTTPRequestHandler, HTTPServer\n"
+        "from pathlib import Path\nfrom urllib.parse import parse_qs\n"
+        "class Handler(BaseHTTPRequestHandler):\n"
+        " def log_message(self, *args): pass\n"
+        " def do_GET(self):\n  self.send_response(200); self.end_headers()\n"
+        " def do_POST(self):\n"
+        "  length=int(self.headers.get('Content-Length','0'))\n"
+        "  if length > 65536: self.send_error(400); return\n"
+        "  value=parse_qs(self.rfile.read(length).decode())['logout_token'][0]\n"
+        + "  path=Path("
+        + repr(str(sink))
+        + ")\n"
+        + "  path=Path('/probe')/path.name\n  path.write_text(value); path.chmod(0o600)\n"
+        "  self.send_response(200); self.end_headers()\n"
+        "HTTPServer(('0.0.0.0',8080), Handler).serve_forever()\n"
+    )
+    image = (
+        "python:3.13-slim-bookworm@sha256:"
+        "281d39ff02e3b389401586134ff9e6572954687822a58055ec07a60ded4e0b7f"
+    )
+    try:
+        docker(
+            "run",
+            "-d",
+            "--name",
+            name,
+            "--network",
+            real_zitadel.network,
+            "--user",
+            str(os.getuid()) + ":" + str(os.getgid()),
+            "-v",
+            str(real_zitadel.directory) + ":/probe",
+            image,
+            "python",
+            "/probe/" + script.name,
+        )
+        deadline = time.monotonic() + 20
+        while subprocess.run(
+            [
+                "docker",
+                "exec",
+                name,
+                "python",
+                "-c",
+                "import urllib.request; urllib.request.urlopen('http://localhost:8080')",
+            ],
+            capture_output=True,
+            timeout=10,
+        ).returncode:
+            assert time.monotonic() < deadline, "Disposable logout receiver unavailable"
+            time.sleep(0.1)
+        yield "http://" + name + ":8080/logout", sink
+    finally:
+        result = subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=30)
+        assert result.returncode == 0, "Disposable logout receiver cleanup failed"
+
+
+def test_real_zitadel_backchannel_notification_revokes_session_and_refresh(
+    real_zitadel: ZitadelFixture, real_logout_receiver: tuple[str, Path], auth_settings: Settings
+) -> None:
+    """Validate a genuine provider-generated logout token and revoke its matching local family."""
+    url, sink = real_logout_receiver
+    application = real_zitadel.application("client_secret_basic", refresh=True, backchannel_uri=url)
+    settings = Settings.model_validate(
+        {
+            **auth_settings.model_dump(),
+            "zitadel_enabled": True,
+            "zitadel_issuer": real_zitadel.issuer,
+            "zitadel_client_id": application["clientId"],
+            "zitadel_redirect_uri": CALLBACK,
+            "zitadel_token_auth_method": "client_secret_basic",
+            "zitadel_client_secret": SecretStr(application["clientSecret"]),
+            "zitadel_refresh_enabled": True,
+            "zitadel_refresh_encryption_keys": (SecretStr(Fernet.generate_key().decode()),),
+        }
+    )
+
+    async def scenario() -> None:
+        database, limiter = Database(settings), RateLimiter(settings)
+        adapter = ZitadelOIDC(settings, transport=httpx.AsyncHTTPTransport(verify=real_zitadel.tls))
+        browser = BrowserLogin(database, settings, adapter, limiter)
+        lifecycle = ZitadelSessions(
+            database, settings, adapter, browser.sessions, browser.configuration_digest, limiter
+        )
+        browser.lifecycle = lifecycle
+        try:
+            start = await browser.start()
+            response = await asyncio.to_thread(real_zitadel.approve, start.authorization_url)
+            login, _ = await browser.finish(
+                response["state"][0], start.browser_token, response["code"][0]
+            )
+            assert login.refresh_token is not None
+            session_id, session_token = real_zitadel.sessions[-1]
+            await asyncio.to_thread(
+                real_zitadel.request,
+                "/v2/sessions/" + session_id,
+                {"sessionToken": session_token},
+                method="DELETE",
+            )
+            deadline = time.monotonic() + 20
+            while not sink.exists():
+                assert time.monotonic() < deadline, "Real provider logout notification missing"
+                await asyncio.sleep(0.1)
+            encoded = sink.read_text()
+            notice = await adapter.validate_logout_token(encoded)
+            assert notice.subject == real_zitadel.user_id and notice.session_id is not None
+            await lifecycle.backchannel_logout(encoded)
+            with pytest.raises(AuthError):
+                await browser.sessions.authenticate(login.token)
+            with pytest.raises(AuthError):
+                await lifecycle.refresh(login.refresh_token, login.csrf_token)
+            await lifecycle.backchannel_logout(encoded)
+        finally:
+            await limiter.close()
+            await database.close()
 
     asyncio.run(scenario())

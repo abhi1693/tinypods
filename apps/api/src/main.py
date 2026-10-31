@@ -21,6 +21,7 @@ from tinypods_core import __version__
 from tinypods_core.auth import AuthService, Credentials, LocalPasswordProvider, SessionService
 from tinypods_core.auth.federation import BrowserLogin
 from tinypods_core.auth.providers.zitadel.oidc import ZitadelOIDC
+from tinypods_core.auth.providers.zitadel.sessions import ZitadelSessions
 from tinypods_core.cache import ResponseCache
 from tinypods_core.db import Database
 from tinypods_core.logging import configure_logging, shutdown_logging
@@ -151,6 +152,19 @@ def create_app(
         if database is not None and config.zitadel_enabled
         else None
     )
+    app.state.zitadel_sessions = None
+    if database is not None and app.state.browser_login is not None:
+        browser = app.state.browser_login
+        lifecycle = ZitadelSessions(
+            database,
+            config,
+            browser.provider,
+            browser.sessions,
+            browser.configuration_digest,
+            limiter,
+        )
+        browser.lifecycle = lifecycle
+        app.state.zitadel_sessions = lifecycle
     app.state.ready = False
     app.include_router(build_router(config, include_disabled_providers=include_disabled_providers))
 

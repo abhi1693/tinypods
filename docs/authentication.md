@@ -110,8 +110,9 @@ No organization administration or automatic provider-admin role mapping is added
    Authlib validates issuer, audience/authorized party, expiration/issued-at, nonce,
    subject and optional access-token hash. Only verified issuer/subject proceeds to
    admission. Client secrets, provider tokens and verifier never enter browser
-   cookies/storage. No UserInfo or email claims are needed. No offline_access,
-   refresh tokens or provider API access is requested or retained.
+   cookies/storage. No UserInfo or email claims are needed. When renewal is enabled,
+   `offline_access` is requested and provider refresh state is encrypted on the server.
+   Access tokens and ID tokens are discarded after validation.
 5. The shared session service issues fresh random session and CSRF secrets,
    rotates any prior app session captured at start, then returns 303 to the stored
    local path. Auth responses have no-store and no-referrer headers, and request
@@ -128,8 +129,9 @@ Production requires HTTPS. Development HTTP uses the cookie policy described bel
 scheme/host forwarding only from trusted proxies so Origin checks reflect the
 public API origin. Do not enable wildcard credentialed CORS.
 
-PostgreSQL stores only digests of the random session/CSRF secrets. Absolute session
-expiry is 12 hours using database time. Every use reloads live session/account
+PostgreSQL stores only digests of the random browser session, refresh and CSRF
+secrets. Each access session lasts at most 12 hours using database time. Renewed
+sessions cannot outlive the refresh family's fixed absolute expiry. Every use reloads live session/account
 state; configured API validation also checks whether its source provider remains
 enabled and, for external sessions, exact current issuer.
 Changing the issuer or disabling the provider denies existing affected sessions after
@@ -153,11 +155,11 @@ local revocation is already committed. Discovery descriptors advertise the ordin
 application logout action, so provider failure cannot trap a user in local login.
 
 Zitadel [RP-initiated logout](https://zitadel.com/docs/guides/integrate/login/oidc/logout)
-can affect all accounts in that browser. No automatic upstream logout, back-channel
-logout endpoint, provider-session polling, global-device revocation or refresh is
-claimed. Upstream account deletion alone is not continuously polled; use TinyPods
-provider configuration removal or local revocation as appropriate. The app session cannot
-outlive its own absolute expiry, but is not coupled to provider token expiry.
+can affect all accounts in that browser. Local logout also revokes the browser's
+refresh family and clears its encrypted provider state, even if its access cookie
+has expired. Upstream account deletion alone is not continuously polled; use
+provider logout notifications, configuration removal or local revocation as
+appropriate. Access-session expiry remains independent of provider token expiry.
 
 Local login allows 30 attempts/minute per installation and five per normalized
 login name, whether or not an account exists; endpoint limits allow ten attempts/minute per transport peer, including
@@ -191,3 +193,55 @@ with the selected `identity_provider_id`. They never collect upstream passwords.
 ```dotenv
 TINYPODS_ZITADEL_IDENTITY_PROVIDERS=[{"id":"google-id","type":"google","label":"Google","icon_url":"https://example.com/google.png"},{"id":"github-id","type":"github","label":"GitHub"}]
 ```
+
+## Renewing sign-in
+
+Enable `TINYPODS_ZITADEL_REFRESH_ENABLED` and provide an operator-managed JSON key
+ring in `TINYPODS_ZITADEL_REFRESH_ENCRYPTION_KEYS`. Generate keys with
+`cryptography.fernet.Fernet.generate_key()`. Keep them outside source control and
+share the same key ring across API replicas. The first key encrypts new state;
+previous keys decrypt existing state during rotation. Remove an old key only
+after its grants have renewed or expired. Losing every matching key requires a
+new sign-in. Passwords remain one-way Argon2id hashes; these encryption keys are
+only for provider refresh credentials that must be sent back to Zitadel.
+
+The Zitadel application must allow the refresh-token grant and `offline_access`.
+Discovery advertises `refresh_path` when renewal is enabled. The browser calls
+`POST /auth/providers/zitadel/refresh` with its current CSRF header; no request
+body or provider token is needed. This works after the access cookie expires.
+Success replaces access, refresh and CSRF cookies. Provider refresh tokens never
+enter browser storage. If the provider does not issue a refresh token, the login
+has no renewal cookie and requires a new sign-in when its access session expires.
+
+`TINYPODS_ZITADEL_REFRESH_MAX_AGE_SECONDS` defaults to 30 days and caps the whole
+family from the initial login. Renewal does not extend that deadline. Reuse of a
+consumed renewal credential after rotation revokes the family. A simultaneous
+renewal reports a conflict without making a second upstream request. An abandoned
+claim requires a new sign-in after 30 seconds. An ambiguous provider exchange or
+failed commit revokes the family rather than retrying a possibly rotated token.
+While renewal is in progress, clients should wait before sending other protected
+requests. Local sign-out and provider logout notifications prevent an in-flight
+renewal from restoring the session.
+
+## Provider-initiated sign-out
+
+Register the API origin plus `/auth/providers/zitadel/backchannel-logout` as the
+Zitadel application's back-channel logout URI. This is a server-to-server
+notification: the Zitadel server must be able to reach the address, and its
+outbound destination policy must permit it. Browser access to a LAN callback does
+not establish server reachability. Development-mode browser HTTP callbacks remain
+supported independently of this requirement.
+
+Zitadel posts a signed `logout_token` as form data. TinyPods checks its signature,
+issuer, client audience, expiry, issuance time, event type, and subject or provider
+session ID. Authentication nonces are prohibited in logout tokens. Notifications
+older than fifteen minutes are rejected. Duplicate valid events succeed without
+repeating revocation. Invalid notifications return a fixed protocol error and
+never reflect the signed token or provider details.
+
+A session-specific notice revokes only the matching issuer/client/session and
+optional subject. A subject-only notice revokes that subject's earlier sessions
+for the configured provider. Local-password sessions and unrelated provider
+sessions remain valid. Logout events fence delayed login completion as well as
+renewal. Browser cookies may remain on disk after a server-side notification, but
+all affected access and renewal credentials are rejected by the backend.

@@ -27,6 +27,7 @@ class LoginResponse(IdentityResponse):
     """Signed-in account details and sign-in expiry."""
 
     expires_at: datetime
+    refresh_expires_at: datetime | None = None
 
 
 class LogoutResponse(BaseModel):
@@ -54,6 +55,7 @@ class ProviderDescriptor(BaseModel):
     identity_providers: list[IdentityProviderDescriptor] | None = None
     login_path: str
     logout_path: str = "/auth/logout"
+    refresh_path: str | None = None
 
 
 class ProvidersResponse(BaseModel):
@@ -80,3 +82,9 @@ class ProviderLogoutResponse(BaseModel):
 
     logged_out: bool = True
     logout_url: str | None
+
+
+class BackchannelErrorResponse(BaseModel):
+    """A sign-out notification that could not be verified."""
+
+    error: Literal["invalid_request"] = "invalid_request"

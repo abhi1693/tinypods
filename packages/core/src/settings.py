@@ -3,6 +3,7 @@
 from typing import Literal
 from urllib.parse import urlsplit
 
+from cryptography.fernet import Fernet
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -83,6 +84,9 @@ class Settings(BaseSettings):
     zitadel_icon_url: HttpUrl | None = None
     auth_local_enabled: bool = True
     zitadel_enabled: bool = False
+    zitadel_refresh_enabled: bool = False
+    zitadel_refresh_encryption_keys: tuple[SecretStr, ...] = Field(default=(), max_length=5)
+    zitadel_refresh_max_age_seconds: int = Field(default=2_592_000, ge=3600, le=7_776_000)
     zitadel_issuer: str | None = None
     zitadel_organization_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,255}$")
     zitadel_organization_domain: str | None = Field(
@@ -99,6 +103,17 @@ class Settings(BaseSettings):
     zitadel_token_auth_method: Literal["none", "client_secret_basic"] = "none"
     zitadel_redirect_uri: str | None = None
     zitadel_post_logout_uri: str | None = None
+
+    @field_validator("zitadel_refresh_encryption_keys")
+    @classmethod
+    def validate_refresh_keys(cls, values: tuple[SecretStr, ...]) -> tuple[SecretStr, ...]:
+        """Require supported authenticated-encryption keys without exposing their values."""
+        try:
+            for value in values:
+                Fernet(value.get_secret_value().encode("ascii"))
+        except (ValueError, UnicodeError):
+            raise ValueError("Invalid refresh-token encryption key") from None
+        return values
 
     @field_validator("zitadel_issuer", "zitadel_redirect_uri", "zitadel_post_logout_uri")
     @classmethod
@@ -151,6 +166,8 @@ class Settings(BaseSettings):
         provider_ids = [provider.id for provider in self.zitadel_identity_providers]
         if len(set(provider_ids)) != len(provider_ids):
             raise ValueError("Zitadel identity provider IDs must be unique")
+        if self.zitadel_refresh_enabled and not self.zitadel_refresh_encryption_keys:
+            raise ValueError("Refresh support requires an operator encryption key")
         if self.zitadel_enabled:
             if (
                 not self.zitadel_issuer

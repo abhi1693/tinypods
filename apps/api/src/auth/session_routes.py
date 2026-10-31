@@ -7,9 +7,11 @@ from tinypods_api.auth.contracts import (
 )
 from tinypods_api.auth.cookies import request_cookie_policy
 from tinypods_api.auth.dependencies import (
+    CSRF_HEADER,
     SESSION_CSRF_METADATA,
     PrincipalDependency,
     SessionDependency,
+    check_origin,
 )
 from tinypods_api.http.operations import build_operation_id
 from tinypods_api.rate_limit import RateLimitedRoute
@@ -43,17 +45,22 @@ async def session_identity(principal: PrincipalDependency) -> IdentityResponse:
     },
 )
 async def logout(
-    request: Request, response: Response, principal: PrincipalDependency, service: SessionDependency
+    request: Request, response: Response, service: SessionDependency
 ) -> LogoutResponse:
     """Sign this browser out of TinyPods.
 
     Other browsers stay signed in. Signing out here does not sign you out of an
     external identity provider.
     """
-    await service.logout(principal)
+    check_origin(request)
     policy = request_cookie_policy(request)
-    for name in (policy.session, policy.csrf):
+    await service.logout_browser(
+        request.cookies.get(policy.session, ""),
+        request.headers.get(CSRF_HEADER, ""),
+        request.cookies.get(policy.refresh),
+    )
+    for name in (policy.session, policy.csrf, policy.refresh):
         response.delete_cookie(
-            name, secure=policy.secure, httponly=name == policy.session, samesite="strict", path="/"
+            name, secure=policy.secure, httponly=name != policy.csrf, samesite="strict", path="/"
         )
     return LogoutResponse()

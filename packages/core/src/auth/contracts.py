@@ -51,6 +51,8 @@ class Login:
     expires_at: datetime
     token: str = field(repr=False)
     csrf_token: str = field(repr=False)
+    refresh_token: str | None = field(default=None, repr=False)
+    refresh_expires_at: datetime | None = None
 
 
 class Scope(StrEnum):
@@ -64,7 +66,25 @@ class Scope(StrEnum):
 
 @dataclass(frozen=True)
 class VerifiedIdentity:
-    """Carry only a verified issuer/subject pair, never provider tokens or profile claims."""
+    """Carry verified identity and server-only session state without profile-based privileges."""
 
     issuer: str
     subject: str
+    session_id: str | None = field(default=None, compare=False, repr=False)
+    refresh_token: SecretStr | None = field(default=None, compare=False, repr=False)
+    nonce: str | None = field(default=None, compare=False, repr=False)
+    auth_time: float | None = field(default=None, compare=False, repr=False)
+    issued_at: float | None = field(default=None, compare=False, repr=False)
+
+
+@dataclass(frozen=True)
+class LogoutNotice:
+    """Carry a validated provider logout event without retaining the signed token."""
+
+    issuer: str
+    client_id: str
+    event_id: str = field(repr=False)
+    issued_at: datetime
+    expires_at: datetime
+    subject: str | None = field(default=None, repr=False)
+    session_id: str | None = field(default=None, repr=False)
