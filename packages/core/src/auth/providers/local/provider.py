@@ -45,17 +45,16 @@ class LocalPasswordProvider:
 
     async def verify(self, proof: Credentials) -> UUID:
         """Reject absent credentials, external-only identities and bad passwords uniformly."""
+        if self.limiter is None:
+            raise AuthError(503)
+        decision = await self.limiter.reserve(LOGIN_ACCOUNT, proof.username)
+        if not decision.allowed:
+            raise AuthError(429, retry_after=decision.retry_after)
         async with self.database.session() as session:
             user = (
                 await session.exec(select(User).where(User.username == proof.username))
             ).one_or_none()
             credential = await session.get(LocalCredential, user.id) if user else None
-        if self.limiter is None:
-            raise AuthError(503)
-        if user is not None:
-            decision = await self.limiter.reserve(LOGIN_ACCOUNT, str(user.id))
-            if not decision.allowed:
-                raise AuthError(429, retry_after=decision.retry_after)
         valid = await verify_password(
             credential.password_hash if credential else None, proof.password.get_secret_value()
         )

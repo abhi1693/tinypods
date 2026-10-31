@@ -152,8 +152,8 @@ claimed. Upstream account deletion alone is not continuously polled; use TinyPod
 provider configuration removal or local revocation as appropriate. The app session cannot
 outlive its own absolute expiry, but is not coupled to provider token expiry.
 
-Local login allows 30 attempts/minute per installation and five per existing
-account; endpoint limits allow ten attempts/minute per transport peer, including
+Local login allows 30 attempts/minute per installation and five per normalized
+login name, whether or not an account exists; endpoint limits allow ten attempts/minute per transport peer, including
 malformed requests. OIDC start similarly has installation and per-peer budgets.
 Denials include Retry-After; missing/unavailable Valkey rejects, independent of the
 optional public cache. Use non-evicting Valkey persistence: data loss resets budgets.

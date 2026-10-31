@@ -118,19 +118,19 @@ def test_local_credentials_and_limits(auth_settings: Settings) -> None:
             with pytest.raises(AuthError) as error:
                 await services[0].login(credentials())
             assert error.value.status == 429 and 1 <= error.value.retry_after <= 60
-            # Unknown usernames cannot evade the installation-wide budget or create account keys.
-            for _ in range(23):
+            # Missing accounts use the same name budget and cannot evade the global limit.
+            for attempt in range(23):
                 with pytest.raises(AuthError) as error:
                     await services[0].login(credentials("missing"))
-                assert error.value.status == 401
+                assert error.value.status == (401 if attempt < 4 else 429)
             with pytest.raises(AuthError) as error:
-                await services[1].login(credentials("missing"))
+                await services[1].login(credentials("fresh-name"))
             assert error.value.status == 429
             async with database.session() as session:
                 assert (
                     await session.exec(text("SELECT count(*) FROM auth_session"))
                 ).scalar_one() == 4
-            assert len(await limiter.redis.keys(limiter.namespace + ":*")) == 2
+            assert len(await limiter.redis.keys(limiter.namespace + ":*")) == 3
         finally:
             await limiter.close()
             await database.close()
@@ -499,6 +499,34 @@ def test_injected_provider_uses_generic_login_without_local_passwords(
             with pytest.raises(AuthError) as error:
                 await auth.sessions.authenticate(result.token)
             assert error.value.status == 401
+        finally:
+            await limiter.close()
+            await database.close()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("username", ["owner", "unknown-account"])
+def test_account_throttle_does_not_disclose_account_existence(
+    auth_settings: Settings, username: str
+) -> None:
+    """Existing and missing account names exhaust identical budgets and public responses."""
+
+    async def scenario() -> None:
+        database = Database(auth_settings)
+        limiter = RateLimiter(auth_settings)
+        try:
+            await LocalPasswordProvider(database).bootstrap(credentials())
+            provider = LocalPasswordProvider(database, limiter)
+            for attempt in range(6):
+                with pytest.raises(AuthError) as error:
+                    await provider.verify(
+                        credentials(
+                            username.upper() if attempt % 2 else username,
+                            "incorrect password value",
+                        )
+                    )
+                assert error.value.status == (401 if attempt < 5 else 429)
         finally:
             await limiter.close()
             await database.close()
