@@ -67,7 +67,8 @@ class Settings(BaseSettings):
             The unchanged secret URL, or None.
 
         Raises:
-            ValueError: The URL lacks a supported scheme/host or has an invalid port."""
+            ValueError: The URL lacks a supported scheme/host or has an invalid port.
+        """
         if value is None:
             return None
         try:
@@ -82,6 +83,17 @@ class Settings(BaseSettings):
     @field_validator("database_url", "migration_database_url")
     @classmethod
     def validate_database_url(cls, value: SecretStr | None) -> SecretStr | None:
+        """Validate supported PostgreSQL drivers while retaining secret-valued URLs.
+
+        Args:
+            value: Secret PostgreSQL URL, or None when database access is disabled.
+
+        Returns:
+            The unchanged secret endpoint, or None when not configured.
+
+        Raises:
+            ValueError: The configured URL is malformed or uses an unsupported driver.
+        """
         if value is None:
             return None
         try:
@@ -94,6 +106,14 @@ class Settings(BaseSettings):
 
 
 def load_settings() -> Settings:
+    """Validate environment settings and report field names without rejected values.
+
+    Returns:
+        Validated deployment settings.
+
+    Raises:
+        ConfigurationError: Deployment settings fail validation.
+    """
     try:
         return Settings()
     except ValidationError as exc:

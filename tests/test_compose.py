@@ -20,12 +20,22 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @dataclass
 class ComposeStack:
+    """Own the generated name, environment and configuration of a disposable Compose project."""
+
     name: str
     environment: dict[str, str] = field(repr=False)
     extra_files: tuple[Path, ...] = ()
     directory: Path = ROOT
 
     def command(self, *arguments: str) -> list[str]:
+        """Build a Compose invocation using explicit files and no operator environment file.
+
+        Args:
+            arguments: Compose subcommand and flags for this isolated project.
+
+        Returns:
+            Executable and explicit Compose arguments.
+        """
         files = [
             self.directory / name
             for name in ["compose.yaml", "compose.build.yaml", "compose.workers.yaml"]
@@ -37,6 +47,15 @@ class ComposeStack:
         return command + list(arguments)
 
     def run(self, *arguments: str, timeout: int = 120) -> str:
+        """Run Compose with bounded execution and include diagnostic output on failure.
+
+        Args:
+            timeout: Maximum subprocess execution time in seconds.
+            arguments: Compose subcommand and flags for this isolated project.
+
+        Returns:
+            Captured subprocess output or the formatted value described above.
+        """
         result = subprocess.run(
             self.command(*arguments),
             env=self.environment,
@@ -48,9 +67,15 @@ class ComposeStack:
         return result.stdout.strip()
 
     def identity(self) -> str:
+        """Read the migrated installation identity through the API container CLI.
+
+        Returns:
+            Captured subprocess output or the formatted value described above.
+        """
         return self.run("exec", "-T", "api", "tinypods", "doctor", "--database")
 
     def assert_ready(self) -> None:
+        """Assert that the published loopback readiness endpoint reports ready."""
         port = self.run("port", "api", "8000").rsplit(":", 1)[1]
         with urlopen(f"http://127.0.0.1:{port}/readyz", timeout=5) as response:
             assert json.load(response)["status"] == "ready"
@@ -58,6 +83,11 @@ class ComposeStack:
 
 @pytest.fixture(scope="module")
 def compose_stack() -> Iterator[ComposeStack]:
+    """Build and start an isolated stack, then remove only its generated resources.
+
+    Yields:
+        Started stack; teardown removes only its generated resources.
+    """
     name = "tinypods-compose-tests-" + uuid4().hex[:10]
     password, queue_password = uuid4().hex, uuid4().hex
     environment = {
@@ -108,7 +138,8 @@ def test_compose_startup_health_and_private_services(compose_stack: ComposeStack
         compose_stack: Isolated built Compose project with disposable data volumes.
 
     Returns:
-        None. Assertions cover service health, ownership and cache MISS/HIT behavior."""
+        None. Assertions cover service health, ownership and cache MISS/HIT behavior.
+    """
     stack = compose_stack
     stack.assert_ready()
     assert "installation_id" in json.loads(stack.identity())
@@ -143,6 +174,11 @@ def test_compose_startup_health_and_private_services(compose_stack: ComposeStack
 
 
 def test_compose_recreation_preserves_database_and_queue(compose_stack: ComposeStack) -> None:
+    """Verify compose recreation preserves database and queue.
+
+    Args:
+        compose_stack: Isolated Compose project with generated credentials and disposable volumes.
+    """
     stack = compose_stack
     identity = json.loads(stack.identity())
     stack.run("exec", "-T", "valkey", "valkey-cli", "SET", "tinypods:test:persist", "retained")
@@ -161,6 +197,12 @@ def test_external_services_do_not_start_local_dependencies(
     tmp_path: Path,
 ) -> None:
     # Reuse only this test's infrastructure through its network as external services.
+    """Verify external services do not start local dependencies.
+
+    Args:
+        compose_stack: Isolated Compose project with generated credentials and disposable volumes.
+        tmp_path: Pytest-owned temporary directory for disposable artifacts.
+    """
     override = tmp_path / "external.yaml"
     override.write_text(
         f"networks:\n  data: !override\n    external: true\n    name: {compose_stack.name}_data\n"
@@ -178,6 +220,11 @@ def test_external_services_do_not_start_local_dependencies(
 
 
 def test_publish_host_and_port_are_configurable(compose_stack: ComposeStack) -> None:
+    """Verify publish host and port are configurable.
+
+    Args:
+        compose_stack: Isolated Compose project with generated credentials and disposable volumes.
+    """
     environment = dict(compose_stack.environment)
     environment.pop("TINYPODS_PUBLISH_HOST")
     environment.pop("TINYPODS_PUBLISH_PORT")
@@ -196,6 +243,11 @@ def test_publish_host_and_port_are_configurable(compose_stack: ComposeStack) -> 
 def test_optional_registry_rewrites_upstream_images_and_build_args(
     compose_stack: ComposeStack,
 ) -> None:
+    """Verify optional registry rewrites upstream images and build args.
+
+    Args:
+        compose_stack: Isolated Compose project with generated credentials and disposable volumes.
+    """
     stack = ComposeStack(
         compose_stack.name, dict(compose_stack.environment, TINYPODS_IMAGE_REGISTRY="registry.home")
     )
@@ -217,6 +269,12 @@ def test_watch_rebuilds_api_worker_and_runs_new_migrations(
     compose_stack: ComposeStack,
     tmp_path: Path,
 ) -> None:
+    """Verify watch rebuilds api worker and runs new migrations.
+
+    Args:
+        compose_stack: Isolated Compose project with generated credentials and disposable volumes.
+        tmp_path: Pytest-owned temporary directory for disposable artifacts.
+    """
     directory = tmp_path / "checkout"
     directory.mkdir()
     for name in ["apps", "packages", "migrations"]:

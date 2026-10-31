@@ -1,3 +1,5 @@
+"""Shared runtime version and generated workspace metadata consistency."""
+
 import os
 import subprocess
 import tomllib
@@ -11,7 +13,8 @@ from tinypods_core.settings import Settings
 SCRIPT = Path("scripts/sync_version.py").resolve()
 
 
-def test_shared_version_matches_packages_and_openapi():
+def test_shared_version_matches_packages_and_openapi() -> None:
+    """Verify shared version matches packages and openapi."""
     expected = Path("VERSION").read_text().strip()
     assert __version__ == expected
     for project in [
@@ -26,7 +29,12 @@ def test_shared_version_matches_packages_and_openapi():
     assert create_app(Settings()).openapi()["info"]["version"] == expected
 
 
-def test_sync_updates_only_project_versions_and_detects_drift(tmp_path):
+def test_sync_updates_only_project_versions_and_detects_drift(tmp_path: Path) -> None:
+    """Verify sync updates only project versions and detects drift.
+
+    Args:
+        tmp_path: Pytest-owned temporary directory for disposable artifacts.
+    """
     (tmp_path / "VERSION").write_text("0.0.2")
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "tinypods-test"\nversion = "0.0.1"\n'
@@ -47,7 +55,12 @@ def test_sync_updates_only_project_versions_and_detects_drift(tmp_path):
     assert subprocess.run(command, capture_output=True).returncode == 2
 
 
-def test_runtime_version_does_not_depend_on_checkout(tmp_path):
+def test_runtime_version_does_not_depend_on_checkout(tmp_path: Path) -> None:
+    """Verify runtime version does not depend on checkout.
+
+    Args:
+        tmp_path: Pytest-owned temporary directory for disposable artifacts.
+    """
     result = subprocess.run(
         ["python", "-c", "from tinypods_core import __version__; print(__version__)"],
         cwd=tmp_path,
@@ -58,3 +71,53 @@ def test_runtime_version_does_not_depend_on_checkout(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == __version__
+
+
+def test_version_sync_validates_all_projects_before_writing(tmp_path: Path) -> None:
+    """Preserve metadata when another workspace member cannot be synchronized.
+
+    Args:
+        tmp_path: Disposable workspace containing a deliberately incomplete member.
+
+    Returns:
+        None. Validation failure leaves previously inspected metadata unchanged.
+    """
+    root = tmp_path / "pyproject.toml"
+    original = (
+        '[project]\nname="tinypods-test"\nversion = "0.0.1"\n'
+        '[tool.uv.workspace]\nmembers=["apps/*"]\n'
+    )
+    root.write_text(original)
+    (tmp_path / "VERSION").write_text("0.0.2")
+    member = tmp_path / "apps/api"
+    member.mkdir(parents=True)
+    (member / "pyproject.toml").write_text('[project]\nname="tinypods-api"\n')
+    result = subprocess.run(
+        ["python", str(SCRIPT), "--root", str(tmp_path)], capture_output=True, text=True, timeout=10
+    )
+    assert result.returncode == 2
+    assert root.read_text() == original
+
+
+def test_version_sync_does_not_rewrite_tool_versions(tmp_path: Path) -> None:
+    """Update the project field without modifying unrelated TOML version values.
+
+    Args:
+        tmp_path: Disposable workspace with a single-quoted package version.
+
+    Returns:
+        None. Only the project's version changes.
+    """
+    (tmp_path / "VERSION").write_text("0.0.2")
+    project = tmp_path / "pyproject.toml"
+    project.write_text(
+        "[project]\nname='tinypods-test'\nversion = '0.0.1' # package version\n"
+        '[tool.uv.workspace]\nmembers=[]\n[tool.other]\nversion="9.8.7"\n'
+    )
+    result = subprocess.run(
+        ["python", str(SCRIPT), "--root", str(tmp_path)], capture_output=True, text=True, timeout=10
+    )
+    assert result.returncode == 0, result.stderr
+    metadata = tomllib.loads(project.read_text())
+    assert metadata["project"]["version"] == "0.0.2"
+    assert metadata["tool"]["other"]["version"] == "9.8.7"

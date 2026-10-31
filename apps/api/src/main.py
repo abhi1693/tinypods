@@ -12,6 +12,7 @@ from starlette.types import ASGIApp
 from tinypods_api.cache import CachedReadRoute, CachePolicy
 from tinypods_api.contracts import LivenessResponse, PlatformInfoResponse, ReadinessResponse
 from tinypods_api.errors import ERROR_RESPONSES, install_error_handlers
+from tinypods_api.http_constants import LIVENESS_PATH, READINESS_PATH
 from tinypods_api.logging import RequestLoggingMiddleware
 from tinypods_core import __version__
 from tinypods_core.cache import ResponseCache
@@ -27,6 +28,11 @@ class LoggedFastAPI(FastAPI):
     """Keep request context outside the error handler, including generated 500 responses."""
 
     def build_middleware_stack(self) -> ASGIApp:
+        """Wrap the full ASGI stack so handled and unexpected errors retain correlation.
+
+        Returns:
+            Wrapped application with request logging outside error translation.
+        """
         return RequestLoggingMiddleware(
             super().build_middleware_stack(), service="api", logger=logger
         )
@@ -48,7 +54,8 @@ def create_app(
 
     Raises:
         ValueError: A supplied readiness name conflicts with a reserved dependency.
-        ConfigurationError: Required process settings are invalid."""
+        ConfigurationError: Required process settings are invalid.
+    """
     config = settings if settings is not None else load_settings()
     log_handler = configure_logging(config, service="api", non_blocking=True)
     checks = dict(readiness_checks or {})
@@ -67,6 +74,11 @@ def create_app(
             raise ValueError("database is a reserved readiness check name")
 
         async def database_ready() -> bool:
+            """Probe the application-owned database through its async availability boundary.
+
+            Returns:
+                True when the configured migrated database responds successfully.
+            """
             return await database.ping()
 
         checks["database"] = database_ready
@@ -82,7 +94,8 @@ def create_app(
             None while the process is serving requests.
 
         Cleanup is shielded from cancellation. An async exit stack still closes the
-        cache when database disposal fails, and drains logging after resource cleanup."""
+        cache when database disposal fails, and drains logging after resource cleanup.
+        """
         app.state.ready = True
         logger.info("API started")
         try:
@@ -126,20 +139,24 @@ def create_app(
         prevents independent browser/proxy retention.
 
         Returns:
-            Public service metadata from the installed core package."""
+            Public service metadata from the installed core package.
+        """
         return PlatformInfoResponse(version=__version__)
 
-    @app.get("/healthz", operation_id="getLiveness", response_model=LivenessResponse)
+    @app.get(LIVENESS_PATH, operation_id="getLiveness", response_model=LivenessResponse)
     async def liveness() -> LivenessResponse:
         """Check that the API process can respond to HTTP requests.
 
         Returns HTTP 200 with status `alive`. This probe does not check startup
         readiness or dependencies; use `/readyz` to decide whether to send traffic.
+
+        Returns:
+            Process liveness without dependency checks.
         """
         return LivenessResponse()
 
     @app.get(
-        "/readyz",
+        READINESS_PATH,
         operation_id="getReadiness",
         response_model=ReadinessResponse,
         responses={503: {"model": ReadinessResponse, "description": "Not ready"}},
@@ -152,9 +169,24 @@ def create_app(
         for each check, including `runtime` and PostgreSQL when configured.
         Failed or timed-out dependencies are reported as false without their
         exception details. Readiness failures do not change `/healthz`.
+
+        Args:
+            response: HTTP response whose status reflects aggregate readiness.
+
+        Returns:
+            Aggregate readiness plus individual dependency outcomes.
         """
 
         async def evaluate(name: str, check: ReadinessCheck) -> tuple[str, bool]:
+            """Evaluate one readiness probe with a deadline and isolated dependency failures.
+
+            Args:
+                name: Stable dependency name included in readiness results.
+                check: Async dependency probe invoked under the readiness deadline.
+
+            Returns:
+                Dependency name and whether its bounded probe succeeded.
+            """
             try:
                 async with asyncio.timeout(config.readiness_timeout):
                     return name, bool(await check())
@@ -172,6 +204,7 @@ def create_app(
 
 
 def main() -> None:
+    """Load settings, run the HTTP server and tear down process logging."""
     try:
         settings = load_settings()
     except ConfigurationError as exc:

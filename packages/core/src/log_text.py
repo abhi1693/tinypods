@@ -1,69 +1,111 @@
-"""DevFeed-style human summaries of structured operational events."""
+"""Human-readable summaries of structured operational events."""
 
 import json
-import re
 from datetime import datetime
 
 from tinypods_core.json_types import JsonRecord, JsonValue
+from tinypods_core.log_constants import CONTEXT_IDENTIFIERS, ERROR_LEVELS, LogEvent, LogField
+from tinypods_core.log_values import encode_json
 
 
 def inline(value: JsonValue) -> str:
+    """Escape JSON-compatible diagnostic data for a single-line text log.
+
+    Args:
+        value: JSON-compatible diagnostic value to escape.
+
+    Returns:
+        Escaped text with control characters represented rather than emitted.
+    """
     if isinstance(value, str):
         return json.dumps(value, ensure_ascii=True)[1:-1]
-    return json.dumps(value, ensure_ascii=True, allow_nan=False)
+    return encode_json(value)
 
 
-def short_id(value: JsonValue) -> str:
-    text = str(value)
-    return text[:8] if re.fullmatch(r"[0-9a-f-]{32,64}", text) else inline(value)[:40]
+def identifier_text(value: JsonValue) -> str:
+    """Preserve full correlation identifiers while escaping control characters.
+
+    Args:
+        value: Correlation identifier or other JSON-compatible label.
+
+    Returns:
+        Complete escaped identifier or label.
+    """
+    return inline(value)
 
 
 def local_time(value: JsonValue) -> str:
+    """Render an ISO timestamp in the process local timezone.
+
+    Args:
+        value: ISO-formatted event timestamp.
+
+    Returns:
+        Local hours, minutes and seconds in HH:MM:SS format.
+    """
     return datetime.fromisoformat(str(value)).astimezone().strftime("%H:%M:%S")
 
 
 def event_text(payload: JsonRecord) -> str:
-    if payload["event"] == "request_completed":
+    """Translate structured operational events into compact human summaries.
+
+    Args:
+        payload: Structured event fields used to compose the text summary.
+
+    Returns:
+        Request summary, known failure label or escaped application message.
+    """
+    if payload[LogField.EVENT] == LogEvent.REQUEST_COMPLETED:
         return (
-            f"{inline(payload.get('method', 'HTTP'))} "
-            f"{inline(payload.get('route', '<unmatched>'))} -> {payload.get('status_code', '?')}"
+            f"{inline(payload.get(LogField.METHOD, 'HTTP'))} "
+            f"{inline(payload.get(LogField.ROUTE, '<unmatched>'))} -> "
+            f"{payload.get(LogField.STATUS, '?')}"
         )
-    if payload["event"] == "request_failed":
+    if payload[LogField.EVENT] == LogEvent.REQUEST_CANCELLED:
+        return "Request cancelled"
+    if payload[LogField.EVENT] == LogEvent.REQUEST_FAILED:
         return "Request failed"
-    return inline(payload.get("message") or str(payload["event"]).replace("_", " "))
+    return inline(payload.get(LogField.MESSAGE) or str(payload[LogField.EVENT]).replace("_", " "))
 
 
 def error_text(payload: JsonRecord) -> str:
+    """Summarize structured exception messages for the text formatter.
+
+    Args:
+        payload: Structured event fields used to compose the text summary.
+
+    Returns:
+        Joined exception types and messages, or an empty string without exception details.
+    """
     details = payload.get("exception")
     if not isinstance(details, list):
         return ""
-    return inline(
-        "; ".join(
-            f"{item.get('type')}: {item.get('message')}"
-            for item in details
-            if isinstance(item, dict)
-        )
-    )
+    # Include every chain frame and group child, not just exception summaries.
+    return inline(details)
 
 
 def context_text(payload: JsonRecord) -> list[str]:
+    """Select useful operational context without repeating the request summary.
+
+    Args:
+        payload: Structured event fields used to compose the text summary.
+
+    Returns:
+        Selected human-readable context fragments.
+    """
     parts: list[str] = []
-    if payload.get("route") and payload["event"] != "request_completed":
-        parts.append(f"{inline(payload.get('method', 'HTTP'))} {inline(payload['route'])}")
-    for key, label in [
-        ("operation_id", "operation"),
-        ("job_id", "job"),
-        ("app_id", "app"),
-        ("cluster_id", "cluster"),
-    ]:
+    if payload.get(LogField.ROUTE) and payload[LogField.EVENT] != LogEvent.REQUEST_COMPLETED:
+        parts.append(
+            f"{inline(payload.get(LogField.METHOD, 'HTTP'))} {inline(payload[LogField.ROUTE])}"
+        )
+    for key, label in CONTEXT_IDENTIFIERS:
         if payload.get(key):
-            parts.append(f"{label} {short_id(payload[key])}")
-            break
+            parts.append(f"{label} {identifier_text(payload[key])}")
     if payload.get("dependency"):
         parts.append(inline(payload["dependency"]))
-    duration = payload.get("duration_ms")
+    duration = payload.get(LogField.DURATION)
     if isinstance(duration, (int, float)):
         parts.append(f"{duration:.0f} ms" if duration < 1000 else f"{duration / 1000:.2f} s")
-    if payload.get("request_id") and payload["level"] in {"WARNING", "ERROR", "CRITICAL"}:
-        parts.append(f"request {short_id(payload['request_id'])}")
+    if payload.get(LogField.REQUEST_ID) and payload[LogField.LEVEL] in ERROR_LEVELS:
+        parts.append(f"request {identifier_text(payload[LogField.REQUEST_ID])}")
     return parts

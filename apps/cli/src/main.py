@@ -11,7 +11,8 @@ import typer
 from alembic.util.exc import CommandError
 from sqlalchemy.exc import SQLAlchemyError
 from tinypods_core.db import Database
-from tinypods_core.logging import configure_logging, log_context, shutdown_logging
+from tinypods_core.log_constants import LogEvent
+from tinypods_core.logging import configure_logging, failure_fields, log_context, shutdown_logging
 from tinypods_core.migrations import MigrationManager
 from tinypods_core.settings import ConfigurationError, Settings, load_settings
 
@@ -23,13 +24,26 @@ ConfigOption = Annotated[Path, typer.Option("--config", help="Alembic configurat
 
 
 def command_settings() -> Settings:
+    """Validate configuration and initialize logging for the current CLI command.
+
+    Returns:
+        Validated deployment settings.
+    """
     settings = load_settings()
     configure_logging(settings, service="cli")
-    logger.info("command_started")
+    logger.info(LogEvent.COMMAND_STARTED)
     return settings
 
 
 async def check_database(settings: Settings) -> str:
+    """Read installation identity and always dispose the temporary async engine.
+
+    Args:
+        settings: Validated runtime settings controlling the resource configuration.
+
+    Returns:
+        JSON containing the installation identifier and creation time.
+    """
     database = Database(settings)
     try:
         return (await database.installation()).model_dump_json()
@@ -43,7 +57,11 @@ def doctor(
         bool, typer.Option("--database", help="Check the migrated database.")
     ] = False,
 ) -> None:
-    """Validate configuration, optionally checking PostgreSQL."""
+    """Validate configuration, optionally checking PostgreSQL.
+
+    Args:
+        database: Whether to check migrated database connectivity.
+    """
     settings = command_settings()
     if database:
         typer.echo(asyncio.run(check_database(settings)))
@@ -53,41 +71,54 @@ def doctor(
 
 @database_app.command()
 def upgrade(config: ConfigOption = Path("alembic.ini")) -> None:
-    """Apply pending core migrations."""
+    """Apply pending core migrations.
+
+    Args:
+        config: Path to the Alembic configuration used by the command.
+    """
     MigrationManager(command_settings(), config).upgrade()
     typer.echo(json.dumps({"migration": "upgraded"}))
 
 
 @database_app.command()
 def check(config: ConfigOption = Path("alembic.ini")) -> None:
-    """Check whether core models need a new migration."""
+    """Check whether core models need a new migration.
+
+    Args:
+        config: Path to the Alembic configuration used by the command.
+    """
     MigrationManager(command_settings(), config).check()
 
 
 @database_app.command()
 def current(config: ConfigOption = Path("alembic.ini")) -> None:
-    """Show applied core migration revisions."""
+    """Show applied core migration revisions.
+
+    Args:
+        config: Path to the Alembic configuration used by the command.
+    """
     revisions = MigrationManager(command_settings(), config).current()
     typer.echo(json.dumps({"revisions": revisions}))
 
 
 def main() -> None:
+    """Run a correlated command with process-safe errors and logging cleanup."""
     with log_context(command_id=str(uuid4())):
         try:
             app()
         except SystemExit as exc:
             if exc.code in (0, None):
-                logger.info("command_completed")
+                logger.info(LogEvent.COMMAND_COMPLETED)
             raise
         except ConfigurationError as exc:
             raise SystemExit(str(exc)) from None
-        except (SQLAlchemyError, CommandError):
-            logger.exception("command_failed")
+        except (SQLAlchemyError, CommandError) as exc:
+            logger.error(LogEvent.COMMAND_FAILED, extra=failure_fields(exc))
             raise SystemExit(
                 "Database operation failed; check connectivity and migration state"
             ) from None
-        except Exception:
-            logger.exception("command_failed")
+        except Exception as exc:
+            logger.error(LogEvent.COMMAND_FAILED, extra=failure_fields(exc))
             raise SystemExit("Command failed; check application logs") from None
         finally:
             shutdown_logging()

@@ -7,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class RequestDTO(BaseModel):
+    """Reject undeclared fields in public request payloads."""
+
     model_config = ConfigDict(extra="forbid")
 
 
@@ -18,6 +20,8 @@ class PageParams(RequestDTO):
 
 
 class Page[T](BaseModel):
+    """Carry typed page items, total count and the pagination values used to select them."""
+
     items: list[T]
     total: int = Field(ge=0)
     limit: int = Field(ge=1, le=100)
@@ -25,25 +29,35 @@ class Page[T](BaseModel):
 
 
 class OperationStatus(BaseModel):
+    """Expose an operation identifier and its queued, running or terminal state."""
+
     operation_id: UUID
     status: Literal["queued", "running", "succeeded", "failed"]
 
 
 class LivenessResponse(BaseModel):
+    """Report process liveness independently of dependency availability."""
+
     status: Literal["alive"] = "alive"
 
 
 class ReadinessResponse(BaseModel):
+    """Report aggregate readiness and the individual boolean dependency outcomes."""
+
     status: Literal["ready", "not_ready"]
     checks: dict[str, bool]
 
 
 class ValidationIssue(BaseModel):
+    """Expose a rejected input location and code without echoing its value."""
+
     location: list[str | int]
     code: str
 
 
 class ErrorResponse(BaseModel):
+    """Carry a public error code, message, correlation ID and optional validation issues."""
+
     code: str
     message: str
     request_id: UUID
@@ -55,7 +69,8 @@ class PlatformInfoResponse(BaseModel):
 
     Attributes:
         service: Static service display name.
-        version: Version of the installed TinyPods core distribution."""
+        version: Version of the installed TinyPods core distribution.
+    """
 
     service: Literal["TinyPods"] = "TinyPods"
     version: str

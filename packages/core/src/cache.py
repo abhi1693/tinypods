@@ -6,7 +6,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import NoReturn
+from typing import NoReturn, TypedDict
 from uuid import uuid4
 
 from redis.asyncio import Redis
@@ -15,6 +15,7 @@ from redis.backoff import NoBackoff
 from redis.exceptions import RedisError
 from redis.maint_notifications import MaintNotificationsConfig
 from tinypods_core import __version__
+from tinypods_core.cache_constants import CACHE_TRANSPORT
 from tinypods_core.settings import Settings
 
 logger = logging.getLogger("tinypods.cache")
@@ -45,7 +46,8 @@ def reject_constant(value: str) -> NoReturn:
         value: NaN or Infinity token supplied by the JSON decoder.
 
     Raises:
-        ValueError: Always; these tokens are not valid cached JSON numbers."""
+        ValueError: Always; these tokens are not valid cached JSON numbers.
+    """
     raise ValueError("Non-finite JSON values are not cacheable")
 
 
@@ -92,7 +94,8 @@ class CacheLookup:
         key: Hashed identity key within that generation.
         lock_key: Expiring ownership key associated with this response.
         token: Unique lock-owner value, or None when this lookup owns no lock.
-        body: Size-bounded JSON bytes on a hit, otherwise None."""
+        body: Size-bounded JSON bytes on a hit, otherwise None.
+    """
 
     generation_key: str
     generation: bytes
@@ -100,6 +103,15 @@ class CacheLookup:
     lock_key: str
     token: str | None = None
     body: bytes | None = None
+
+
+class RedisConnectionOptions(TypedDict):
+    """Describe the library configuration mapping shared by pool creation and URL overrides."""
+
+    socket_connect_timeout: float
+    socket_timeout: float
+    retry: Retry
+    decode_responses: bool
 
 
 class ResponseCache:
@@ -127,32 +139,31 @@ class ResponseCache:
             None. The instance owns an unopened pool until its first awaited operation.
 
         Raises:
-            ValueError: No endpoint is configured or its client options are invalid."""
+            ValueError: No endpoint is configured or its client options are invalid.
+        """
         configured = settings.cache_valkey_url or settings.valkey_url
         if configured is None:
             raise ValueError("A Valkey URL is required for the response cache")
+        options: RedisConnectionOptions = {
+            "socket_connect_timeout": CACHE_TRANSPORT.socket_timeout,
+            "socket_timeout": CACHE_TRANSPORT.socket_timeout,
+            "retry": Retry(NoBackoff(), 0),
+            "decode_responses": False,
+        }
         self.redis = Redis.from_url(
             configured.get_secret_value(),
-            socket_connect_timeout=0.2,
-            socket_timeout=0.2,
-            retry=Retry(NoBackoff(), 0),
-            max_connections=32,
-            decode_responses=False,
+            max_connections=CACHE_TRANSPORT.max_connections,
             maint_notifications_config=MaintNotificationsConfig(enabled=False),
+            **options,
         )
-        # URL query options must not enlarge I/O bounds or turn binary responses into strings.
-        self.redis.connection_pool.connection_kwargs.update(
-            socket_connect_timeout=0.2,
-            socket_timeout=0.2,
-            retry=Retry(NoBackoff(), 0),
-            decode_responses=False,
-        )
+        # URL query options cannot enlarge I/O bounds or change binary response types.
+        self.redis.connection_pool.connection_kwargs.update(options)
         source = (
             settings.database_url.get_secret_value() if settings.database_url else "unconfigured"
         )
         identity = hashlib.sha256(source.encode()).hexdigest()[:16]
         self.namespace = f"{settings.cache_namespace}:{__version__}:{identity}"
-        self.redis.connection_pool.max_connections = 32
+        self.redis.connection_pool.max_connections = CACHE_TRANSPORT.max_connections
         self.max_bytes = settings.cache_max_bytes
         self.blocked_until = 0.0
 
@@ -170,7 +181,8 @@ class ResponseCache:
             The operation's result without additional conversion.
 
         Raises:
-            CacheUnavailable: The breaker is open or a Redis/socket operation fails."""
+            CacheUnavailable: The breaker is open or a Redis/socket operation fails.
+        """
         if self.blocked_until > time.monotonic():
             raise CacheUnavailable
         try:
@@ -198,7 +210,8 @@ class ResponseCache:
             Response bytes on a hit, or lookup state with an optional owner token.
 
         Raises:
-            CacheUnavailable: Storage fails or the generation value is unusable."""
+            CacheUnavailable: Storage fails or the generation value is unusable.
+        """
 
         async def operation() -> CacheLookup:
             """Read generation/body state and claim a miss without resetting another owner.
@@ -207,7 +220,8 @@ class ResponseCache:
                 Lookup state retaining the observed generation and any acquired token.
 
             Raises:
-                CacheUnavailable: The stored generation is not a valid random identifier."""
+                CacheUnavailable: The stored generation is not a valid random identifier.
+            """
             generation_key = f"{self.namespace}:public:generation"
             generation = await self.redis.get(generation_key)
             # Random generations prevent stale keys from reappearing after generation eviction.
@@ -255,7 +269,8 @@ class ResponseCache:
 
         Raises:
             ValueError: A publishable response is given a non-positive TTL.
-            CacheUnavailable: A Valkey operation fails or the breaker is open."""
+            CacheUnavailable: A Valkey operation fails or the breaker is open.
+        """
         if lookup.token is None or len(body) > self.max_bytes:
             return False
         if ttl <= 0:
@@ -287,7 +302,8 @@ class ResponseCache:
             None. A replacement owner's lock is preserved.
 
         Raises:
-            CacheUnavailable: Storage is unavailable during the ownership comparison."""
+            CacheUnavailable: Storage is unavailable during the ownership comparison.
+        """
         token = lookup.token
         if token:
             await self._run(lambda: self.redis.eval(DELETE_IF_MATCH, 1, lookup.lock_key, token))
@@ -302,7 +318,8 @@ class ResponseCache:
             None. A newer publisher's value or a lookup without a body is unchanged.
 
         Raises:
-            CacheUnavailable: Storage is unavailable during conditional deletion."""
+            CacheUnavailable: Storage is unavailable during conditional deletion.
+        """
         body = lookup.body
         if body is not None:
             await self._run(lambda: self.redis.eval(DELETE_IF_MATCH, 1, lookup.key, body))
@@ -319,12 +336,14 @@ class ResponseCache:
             None. Subsequent lookups observe a new random generation.
 
         Raises:
-            CacheUnavailable: The new generation cannot be stored."""
+            CacheUnavailable: The new generation cannot be stored.
+        """
         await self._run(lambda: self.redis.set(f"{self.namespace}:public:generation", uuid4().hex))
 
     async def close(self) -> None:
         """Close the owned async pool after the application stops cache operations.
 
         Returns:
-            None. Open sockets are disconnected; stored responses and queue data remain."""
+            None. Open sockets are disconnected; stored responses and queue data remain.
+        """
         await self.redis.aclose()

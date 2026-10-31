@@ -16,6 +16,14 @@ PGBOUNCER = (
 
 
 def docker(*args: str) -> str:
+    """Run a bounded Docker command against only generated test resources.
+
+    Args:
+        args: Docker subcommand and arguments for the isolated test resources.
+
+    Returns:
+        Captured subprocess output or the formatted value described above.
+    """
     result = subprocess.run(
         ["docker", *args],
         capture_output=True,
@@ -28,12 +36,19 @@ def docker(*args: str) -> str:
 
 @dataclass(frozen=True)
 class PostgresEndpoints:
+    """Carry direct and pooled URLs for the disposable database fixtures."""
+
     direct: str
     pooled: str
 
 
 @pytest.fixture(scope="session")
 def postgres_endpoints() -> Iterator[PostgresEndpoints]:
+    """Start isolated PostgreSQL and PgBouncer containers and remove them after the session.
+
+    Yields:
+        Disposable direct and pooled URLs; teardown removes generated containers.
+    """
     name = "tinypods-tests-" + uuid4().hex[:12]
     password = uuid4().hex
     containers = [name + "-postgres", name + "-pool"]
@@ -97,6 +112,11 @@ def postgres_endpoints() -> Iterator[PostgresEndpoints]:
 
 
 def wait_for_postgres(url: str) -> None:
+    """Wait for a disposable database endpoint with a bounded retry deadline.
+
+    Args:
+        url: Connection URL of the disposable PostgreSQL or PgBouncer endpoint.
+    """
     deadline = time.monotonic() + 30
     while True:
         try:
@@ -110,6 +130,11 @@ def wait_for_postgres(url: str) -> None:
 
 @pytest.fixture(autouse=True)
 def isolated_logging() -> Iterator[None]:
+    """Restore process logging state around each test without retaining owned handlers.
+
+    Yields:
+        None while isolated test logging state is active.
+    """
     import logging
 
     from tinypods_core.logging import shutdown_logging
@@ -132,7 +157,8 @@ def valkey_url() -> Iterator[str]:
     request paths. The fixture owns and removes only its randomly named container.
 
     Yields:
-        Loopback connection URL for the disposable server, with ephemeral credentials."""
+        Loopback connection URL for the disposable server, with ephemeral credentials.
+    """
     from redis import Redis
     from redis.exceptions import RedisError
 
