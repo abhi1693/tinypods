@@ -32,7 +32,7 @@ Feature APIRouter modules, annotated input/dependency aliases and collection/ope
 
 ## Export
 
-Run from the workspace root:
+After changing public API routes, DTOs, parameter constraints, response schemas or descriptions, regenerate the contract from the workspace root before committing:
 
 ```sh
 uv run tinypods-openapi
@@ -41,6 +41,8 @@ uv run openapi-spec-validator openapi.json
 ```
 
 The exporter uses explicit built-in defaults without loading deployment settings, starting lifespan or connecting to PostgreSQL. It rejects missing or duplicate operation IDs and missing response models. The checked-in openapi.json is the core client input for future Orval generation. Regenerate it when routes change; CI rejects drift and invalid OpenAPI. Plugin schemas are exported separately by their own packages.
+
+The existing CI workflow runs on every pull request without path filters. It runs `tinypods-openapi --check`, which builds a fresh application schema (including nested routers) and compares it with the checked-in JSON, then validates the document. A stale or missing file fails CI. Internal implementation changes that leave the public schema unchanged need no artificial JSON diff.
 
 ## Project version
 

@@ -263,3 +263,39 @@ def test_export_ignores_routers_excluded_from_public_schema():
     app = FastAPI()
     app.include_router(router, include_in_schema=False)
     assert not export_schema(app)["paths"]
+
+
+def test_check_rejects_api_contract_changes_until_regenerated(tmp_path, monkeypatch):
+    from tinypods_api import main as api_main
+    from tinypods_api.contracts import LivenessResponse
+    from tinypods_api.openapi import app as export_command
+    from typer.testing import CliRunner
+
+    output = tmp_path / "openapi.json"
+    runner = CliRunner()
+    arguments = ["--output", str(output)]
+    assert runner.invoke(export_command, arguments).exit_code == 0
+    assert runner.invoke(export_command, arguments + ["--check"]).exit_code == 0
+    before = output.read_bytes()
+
+    def changed_application(settings):
+        app = create_app(settings)
+        feature = APIRouter()
+
+        @feature.get("/new", operation_id="getNewFeature", response_model=LivenessResponse)
+        async def new_feature() -> LivenessResponse:
+            """Return HTTP 200 with the new feature's liveness result."""
+            return LivenessResponse()
+
+        parent = APIRouter()
+        parent.include_router(feature, prefix="/feature")
+        app.include_router(parent, prefix="/api")
+        return app
+
+    monkeypatch.setattr(api_main, "create_app", changed_application)
+    assert runner.invoke(export_command, arguments + ["--check"]).exit_code == 1
+    assert output.read_bytes() == before
+    assert runner.invoke(export_command, arguments).exit_code == 0
+    assert "/api/feature/new" in json.loads(output.read_text())["paths"]
+    assert output.read_bytes() != before
+    assert runner.invoke(export_command, arguments + ["--check"]).exit_code == 0
