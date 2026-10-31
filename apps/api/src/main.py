@@ -9,15 +9,23 @@ import anyio
 import uvicorn
 from fastapi import FastAPI, Response
 from starlette.types import ASGIApp
-from tinypods_api.cache import CachedReadRoute, CachePolicy
+from tinypods_api.auth import build_router
+from tinypods_api.cache import CachePolicy
 from tinypods_api.http.constants import LIVENESS_PATH, READINESS_PATH
 from tinypods_api.http.contracts import LivenessResponse, PlatformInfoResponse, ReadinessResponse
 from tinypods_api.http.errors import ERROR_RESPONSES, install_error_handlers
 from tinypods_api.http.middleware import RequestLoggingMiddleware
+from tinypods_api.http.operations import build_operation_id
+from tinypods_api.rate_limit import GlobalRateLimitMiddleware, RateLimitedRoute
 from tinypods_core import __version__
+from tinypods_core.auth import AuthService, Credentials, LocalPasswordProvider, SessionService
+from tinypods_core.auth.federation import BrowserLogin
+from tinypods_core.auth.providers.zitadel.oidc import ZitadelOIDC
+from tinypods_core.auth.providers.zitadel.sessions import ZitadelSessions
 from tinypods_core.cache import ResponseCache
 from tinypods_core.db import Database
 from tinypods_core.logging import configure_logging, shutdown_logging
+from tinypods_core.rate_limit import RateLimiter
 from tinypods_core.settings import ConfigurationError, Settings, load_settings
 
 ReadinessCheck = Callable[[], Awaitable[bool]]
@@ -42,12 +50,14 @@ def create_app(
     settings: Settings | None = None,
     *,
     readiness_checks: Mapping[str, ReadinessCheck] | None = None,
+    include_disabled_providers: bool = False,
 ) -> FastAPI:
     """Compose the API, optional cache pool, database and process lifecycle.
 
     Args:
         settings: Validated configuration, or None to load process environment settings.
         readiness_checks: Additional asynchronous dependency probes, keyed by name.
+        include_disabled_providers: Offline contract export only; include supported disabled routes.
 
     Returns:
         A FastAPI application with typed probe/info routes and owned resource cleanup.
@@ -69,6 +79,11 @@ def create_app(
         raise ValueError("runtime is a reserved readiness check name")
 
     database = Database(config) if config.database_url is not None else None
+    limiter = (
+        RateLimiter(config)
+        if config.rate_limit_valkey_url is not None or config.valkey_url is not None
+        else None
+    )
     if database is not None:
         if "database" in checks:
             raise ValueError("database is a reserved readiness check name")
@@ -110,71 +125,83 @@ def create_app(
                         cleanup.push_async_callback(response_cache.close)
                     if database is not None:
                         cleanup.push_async_callback(database.close)
+                    if limiter is not None:
+                        cleanup.push_async_callback(limiter.close)
                     logger.info("API stopped")
 
     app = LoggedFastAPI(
         title="TinyPods API", version=__version__, lifespan=lifespan, responses=ERROR_RESPONSES
     )
-    app.router.route_class = CachedReadRoute
+    app.router.route_class = RateLimitedRoute
+    app.add_middleware(
+        GlobalRateLimitMiddleware, limiter=limiter, limit=config.rate_limit_global_per_minute
+    )
+    app.state.rate_limiter = limiter
     app.state.settings = config
     app.state.response_cache = response_cache
     install_error_handlers(app)
     app.state.database = database
+    app.state.auth = (
+        AuthService[Credentials](database, LocalPasswordProvider(database, limiter), limiter)
+        if database is not None and config.auth_local_enabled
+        else None
+    )
+    app.state.sessions = SessionService(database, settings=config) if database is not None else None
+    app.state.browser_login = (
+        BrowserLogin(database, config, ZitadelOIDC(config), limiter)
+        if database is not None and config.zitadel_enabled
+        else None
+    )
+    app.state.zitadel_sessions = None
+    if database is not None and app.state.browser_login is not None:
+        browser = app.state.browser_login
+        lifecycle = ZitadelSessions(
+            database,
+            config,
+            browser.provider,
+            browser.sessions,
+            browser.configuration_digest,
+            limiter,
+        )
+        browser.lifecycle = lifecycle
+        app.state.zitadel_sessions = lifecycle
     app.state.ready = False
+    app.include_router(build_router(config, include_disabled_providers=include_disabled_providers))
 
     @app.get(
         "/info",
-        operation_id="getPlatformInfo",
+        operation_id=build_operation_id("platform", "info", "get"),
+        summary="Show service information",
         response_model=PlatformInfoResponse,
         openapi_extra=CachePolicy(
             namespace="platform_info", revision=1, ttl="metadata"
         ).openapi_extra(),
     )
     async def platform_info() -> PlatformInfoResponse:
-        """Return public service identity and the installed TinyPods version.
-
-        The request has no path, query or body inputs. HTTP 200 returns service
-        and version fields. X-Cache reports HIT, MISS or BYPASS. Cookie and
-        Authorization requests bypass cache storage; Cache-Control: no-store
-        prevents independent browser/proxy retention.
-
-        Returns:
-            Public service metadata from the installed core package.
-        """
+        """Show the service name and installed TinyPods version."""
         return PlatformInfoResponse(version=__version__)
 
-    @app.get(LIVENESS_PATH, operation_id="getLiveness", response_model=LivenessResponse)
+    @app.get(
+        LIVENESS_PATH,
+        operation_id=build_operation_id("health", "liveness", "get"),
+        summary="Check whether the service is running",
+        response_model=LivenessResponse,
+    )
     async def liveness() -> LivenessResponse:
-        """Check that the API process can respond to HTTP requests.
-
-        Returns HTTP 200 with status `alive`. This probe does not check startup
-        readiness or dependencies; use `/readyz` to decide whether to send traffic.
-
-        Returns:
-            Process liveness without dependency checks.
-        """
+        """Check whether the service is running. Connected services are not checked."""
         return LivenessResponse()
 
     @app.get(
         READINESS_PATH,
-        operation_id="getReadiness",
+        operation_id=build_operation_id("health", "readiness", "get"),
+        summary="Check whether the service is ready",
         response_model=ReadinessResponse,
         responses={503: {"model": ReadinessResponse, "description": "Not ready"}},
     )
     async def readiness(response: Response) -> ReadinessResponse:
-        """Check whether the API runtime and configured dependencies are ready.
+        """Check whether the service is ready to handle requests.
 
-        Returns HTTP 200 with status `ready` when every check passes, otherwise
-        HTTP 503 with status `not_ready`. Both responses include boolean results
-        for each check, including `runtime` and PostgreSQL when configured.
-        Failed or timed-out dependencies are reported as false without their
-        exception details. Readiness failures do not change `/healthz`.
-
-        Args:
-            response: HTTP response whose status reflects aggregate readiness.
-
-        Returns:
-            Aggregate readiness plus individual dependency outcomes.
+        The response shows whether the service and its required connections are available.
         """
 
         async def evaluate(name: str, check: ReadinessCheck) -> tuple[str, bool]:

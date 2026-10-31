@@ -65,8 +65,8 @@ Separate runtime and migration roles can be used when deploying with restricted
 runtime permissions. The migration lock prevents concurrent core migrators.
 
 The worker starts an idle, signal-aware process with a heartbeat. Queue dispatch
-and operation handlers are separate issues. Plugin SDK, runtime and authentication packages will be added with their own
-implementation issues rather than as placeholder packages.
+and operation handlers are separate issues. The general plugin SDK and runtime remain deferred.
+Supported authentication adapters and shared session policy live in core as described below.
 
 ## Checks
 
@@ -87,7 +87,7 @@ localhost ports, then remove only those test containers. No existing database is
 used. Tests cover installed commands, HTTP lifecycle, async request sessions,
 transaction rollback, populated upgrades, failed migration rollback, migration
 locking, plugin-table preservation, logging and event-loop responsiveness. Pytest enforces
-90% branch-aware coverage across the implemented backend packages and writes
+100% statement and branch coverage across the implemented backend packages and writes
 JUnit and coverage XML into `reports/`. CI uses the pinned shared Python workflow
 from `abhi1693/actions` and uploads those reports. Strict mypy checks include all
 backend source packages; generated migration files are excluded.
@@ -246,3 +246,37 @@ Select the project `.venv/bin/python` interpreter (Python 3.13) in the IDE.
 The backend uses modern typing syntax, including `bytes | None` and literal types.
 An older or unrelated interpreter can report invalid annotations even when the
 installed project checks pass; verify the selected SDK before changing valid types.
+
+
+## Authentication
+
+TinyPods supports built-in local username/password and Zitadel OIDC authentication.
+Local-only is the default; each method is explicitly enabled by deployment settings.
+Public `GET /auth/providers` describes enabled methods for a future login page.
+There is no web console in this backend slice. See [authentication setup and security
+boundaries](docs/authentication.md) and the [API guide](apps/api/README.md).
+
+After explicit migrations, run `uv run --no-sync tinypods auth bootstrap` on the
+backend host. It prompts for credentials without default accounts or password
+arguments. For external-only installations, the operator can explicitly link an
+allowlisted Zitadel subject to that existing owner with `tinypods auth link`.
+
+## Shared request rate limits
+
+`tinypods_core.rate_limit` provides reusable async Valkey `RateLimiter`,
+`RatePolicy` and `RateDecision` contracts. One Lua reservation atomically updates a
+fixed-window counter and expiry across processes. Denials do not extend windows;
+transport/storage failure rejects rather than granting a fallback allowance.
+`TINYPODS_RATE_LIMIT_VALKEY_URL` overrides `TINYPODS_VALKEY_URL` independently of
+optional response caching. Set a unique `TINYPODS_RATE_LIMIT_NAMESPACE` per
+installation sharing Valkey, and the same value on all of its API replicas.
+
+`TINYPODS_RATE_LIMIT_GLOBAL_PER_MINUTE` optionally limits aggregate HTTP requests;
+default 0 disables only this global budget. Health/readiness probes and WebSockets
+are excluded. Login endpoint/account and OIDC start budgets remain active. Use
+`EndpointRatePolicy(...).openapi_extra()` on `RateLimitedRoute` feature routers,
+or reserve a core policy directly for non-HTTP work. Rate checks precede cache
+hits. Per-peer policies use the trusted ASGI transport peer, never raw forwarded
+headers. Users behind a NAT share a peer budget. All replicas must share policy
+settings. Valkey needs non-evicting persistence; eviction/data loss resets budgets.
+The pool has 16 connections, 200 ms socket/connect waits and no automatic retries.

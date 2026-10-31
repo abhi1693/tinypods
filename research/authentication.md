@@ -1,0 +1,37 @@
+# Authentication protocol research
+
+Reviewed 2026-10-31 against official ZITADEL, Authlib and OpenID/IETF sources before implementing supported authentication providers. This records protocol decisions, not a claim that every optional OIDC feature is implemented.
+
+## Supported providers and product policy
+
+TinyPods selects supported adapters in its composition root. Default configuration enables local login only. Enabling ZITADEL is explicit; an unavailable external provider must not enable local login or choose another adapter. A public discovery endpoint should return safe configured provider identifiers, labels and login behavior. It must not create authorization transactions, reveal secrets, enumerate identities, or copy a static authorization URL containing reusable state. Provider configuration belongs to a trusted operator boundary or an authorized administrator API.
+
+A browser-provider contract needs discovery, start/challenge, callback and logout, beyond proof verification. Core identity and authorization must also permit future non-browser credentials. API keys, unrelated plugin loading and billing are outside this slice.
+
+## ZITADEL registration and discovery
+
+Register a server-side **Web** application in a dedicated project. Register the exact HTTPS callback and post-logout URLs. Development-mode wildcard redirects are unsuitable for production. ZITADEL recommends PKCE for every app profile. A backend can keep its client secret and use `client_secret_basic`; PKCE supplements client authentication rather than replacing it for a configured confidential client. [Application setup](https://zitadel.com/docs/guides/manage/console/applications-overview), [login flow](https://zitadel.com/docs/guides/integrate/login/oidc/login-users), [client authentication](https://zitadel.com/docs/apis/openidoauth/authn-methods).
+
+Retrieve discovery from the configured issuer's `/.well-known/openid-configuration`. Match returned issuer exactly, keep TLS verification, and validate discovered HTTPS endpoints against the supported deployment policy before requests. Use authorization code with `S256`, never implicit/password grants. The identical registered redirect URI must appear at authorization and exchange. Discovery and JWKS are server-side inputs, not values accepted from unauthenticated callback parameters. ZITADEL rotates signing keys; a bounded JWKS-refresh strategy must accommodate unknown key IDs without unbounded retries. [ZITADEL endpoints](https://zitadel.com/docs/apis/openidoauth/endpoints).
+
+## Browser transaction and token checks
+
+Generate unpredictable state, nonce, browser-binding secret and PKCE verifier for each start. Store transaction secrets server-side with a short expiry, selected provider/configuration binding and an allowlisted local return target. Atomically consume once before code exchange; storage failure or consumed/expired state fails closed. Keep the ordinary session cookie Strict. A separate Secure, HttpOnly, host-only correlation cookie may use Lax for the top-level GET callback. This is an application design choice allowing callback navigation while preserving ordinary CSRF checks. Start/logout remain protected same-origin mutations. Reject duplicate or ambiguous callback parameters and avoid reflecting provider error descriptions. Exact redirect checks, transaction-specific PKCE and prevention of open redirects follow [OAuth Security BCP, RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html).
+
+Use maintained OAuth/JOSE implementations rather than implementing cryptography. Require a signed ID token from the pinned issuer, trusted signing algorithm/key, client audience, valid authorized party where present, unexpired token, acceptable issuance time and matching nonce. Require a nonempty subject and reject malformed/missing claims. Validate any fetched UserInfo subject against the ID-token subject. Identify accounts by the verified `(issuer, subject)` pair, never email or display-name equality. [OIDC Core validation and stable identifiers](https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation).
+
+Authlib 1.9 documentation uses `AsyncOAuth2Client` and current HTTPX2 integration. Its low-level client handles PKCE when the verifier is supplied both at authorization and exchange. Returned ID-token text still requires JOSE verification and OIDC claim validation; current examples use `joserfc` and `CodeIDToken`. Framework examples that place flow state in signed client-side sessions must not be copied when PKCE verifiers must remain server-side. [Authlib HTTP/OIDC client](https://docs.authlib.org/en/stable/oauth2/client/http/index.html).
+
+## Provisioning and organization access
+
+Default external policy should deny unknown identities until explicitly admitted. A deliberate provisioning mode can create a separate non-owner identity after validated issuer/subject and access policy checks. Linking to an existing account requires explicit administrator authorization or a separately authenticated linking ceremony; matching verified email is insufficient. Provider roles or organization administration must never implicitly create a TinyPods installation owner.
+
+ZITADEL's `urn:zitadel:iam:org:id:{id}` scope restricts login to members of that organization and asserts resource-owner information. Verify any required organization claim rather than treating a login hint as authorization. Request only necessary scopes. `offline_access` requests refresh tokens; omit it when refresh is not implemented. [Scopes and organization restriction](https://zitadel.com/docs/apis/openidoauth/scopes).
+
+ZITADEL project settings can enforce role assignment and organization project access at authentication. They are useful defense in depth and must be configured deliberately: authentication alone does not establish a TinyPods access grant. Application role claims are distinct from ZITADEL administrative roles. Keep core resource-owner checks authoritative. [Projects and access checks](https://zitadel.com/docs/guides/manage/console/projects-overview), [roles](https://zitadel.com/docs/guides/integrate/retrieve-user-roles).
+
+## Logout, sessions and refresh limits
+
+Revoke TinyPods sessions durably before reporting local logout. A local session is separate from the provider's SSO session; ending one does not inherently end the other. ZITADEL supports RP-initiated logout through discovered `end_session_endpoint`, with registered return URLs and client identification. Do not expose provider tokens in browser URLs when tokens must stay server-side; a client-ID-based logout request can require user confirmation. Describe completion semantics accurately. [ZITADEL endpoint contract](https://zitadel.com/docs/apis/openidoauth/endpoints), [RP-initiated logout specification](https://openid.net/specs/openid-connect-rpinitiated-1_0.html).
+
+Back-channel logout is a separate optional feature requiring registration, signed logout-token validation and mapping provider session IDs to local sessions. Do not claim provider-side termination immediately revokes local sessions unless this mechanism is implemented and tested. Likewise, dropping refresh support means no silent renewal: omit offline access and discard unused provider tokens after validation. Bound local session lifetime and document that external membership changes are not automatically polled. [ZITADEL back-channel logout](https://zitadel.com/docs/guides/integrate/back-channel-logout).

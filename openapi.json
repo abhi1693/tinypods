@@ -1,8 +1,21 @@
 {
   "components": {
     "schemas": {
+      "BackchannelErrorResponse": {
+        "description": "A sign-out notification that could not be verified.",
+        "properties": {
+          "error": {
+            "const": "invalid_request",
+            "default": "invalid_request",
+            "title": "Error",
+            "type": "string"
+          }
+        },
+        "title": "BackchannelErrorResponse",
+        "type": "object"
+      },
       "ErrorResponse": {
-        "description": "Carry a public error code, message, correlation ID and optional validation issues.",
+        "description": "An explanation of why the request could not be completed.",
         "properties": {
           "code": {
             "title": "Code",
@@ -33,8 +46,71 @@
         "title": "ErrorResponse",
         "type": "object"
       },
+      "IdentityProviderDescriptor": {
+        "description": "An external sign-in option available through the configured authentication provider.",
+        "properties": {
+          "icon_url": {
+            "anyOf": [
+              {
+                "format": "uri",
+                "maxLength": 2083,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Url"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "label"
+        ],
+        "title": "IdentityProviderDescriptor",
+        "type": "object"
+      },
+      "IdentityResponse": {
+        "description": "The currently signed-in account.",
+        "properties": {
+          "is_owner": {
+            "title": "Is Owner",
+            "type": "boolean"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "username",
+          "is_owner"
+        ],
+        "title": "IdentityResponse",
+        "type": "object"
+      },
       "LivenessResponse": {
-        "description": "Report process liveness independently of dependency availability.",
+        "description": "Whether the service is running.",
         "properties": {
           "status": {
             "const": "alive",
@@ -46,8 +122,130 @@
         "title": "LivenessResponse",
         "type": "object"
       },
+      "LoginRequest": {
+        "additionalProperties": false,
+        "description": "Username and password for a local account.",
+        "properties": {
+          "password": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 15,
+            "title": "Password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "username": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_.-]+$",
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "LoginResponse": {
+        "description": "Signed-in account details and sign-in expiry.",
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "is_owner": {
+            "title": "Is Owner",
+            "type": "boolean"
+          },
+          "refresh_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refresh Expires At"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "username",
+          "is_owner",
+          "expires_at"
+        ],
+        "title": "LoginResponse",
+        "type": "object"
+      },
+      "LoginStartRequest": {
+        "additionalProperties": false,
+        "description": "The page to open after signing in.",
+        "properties": {
+          "identity_provider_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9_-]{1,255}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Provider Id"
+          },
+          "return_to": {
+            "default": "/",
+            "maxLength": 256,
+            "title": "Return To",
+            "type": "string"
+          }
+        },
+        "title": "LoginStartRequest",
+        "type": "object"
+      },
+      "LoginStartResponse": {
+        "description": "A link to open to sign in.",
+        "properties": {
+          "authorization_url": {
+            "title": "Authorization Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorization_url"
+        ],
+        "title": "LoginStartResponse",
+        "type": "object"
+      },
+      "LogoutResponse": {
+        "description": "Whether this browser has been signed out.",
+        "properties": {
+          "logged_out": {
+            "default": true,
+            "title": "Logged Out",
+            "type": "boolean"
+          }
+        },
+        "title": "LogoutResponse",
+        "type": "object"
+      },
       "PlatformInfoResponse": {
-        "description": "Expose public platform identity without process configuration or credentials.\n\nAttributes:\n    service: Static service display name.\n    version: Version of the installed TinyPods core distribution.",
+        "description": "Service name and installed version.",
         "properties": {
           "service": {
             "const": "TinyPods",
@@ -66,8 +264,128 @@
         "title": "PlatformInfoResponse",
         "type": "object"
       },
+      "ProviderDescriptor": {
+        "description": "A sign-in method available for this installation.",
+        "properties": {
+          "icon_url": {
+            "anyOf": [
+              {
+                "format": "uri",
+                "maxLength": 2083,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Url"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "identity_providers": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/IdentityProviderDescriptor"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Providers"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "login_path": {
+            "title": "Login Path",
+            "type": "string"
+          },
+          "logout_path": {
+            "default": "/auth/logout",
+            "title": "Logout Path",
+            "type": "string"
+          },
+          "refresh_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refresh Path"
+          },
+          "type": {
+            "enum": [
+              "password",
+              "redirect"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "type",
+          "login_path"
+        ],
+        "title": "ProviderDescriptor",
+        "type": "object"
+      },
+      "ProviderLogoutResponse": {
+        "description": "Sign-out result and an optional link to finish external sign-out.",
+        "properties": {
+          "logged_out": {
+            "default": true,
+            "title": "Logged Out",
+            "type": "boolean"
+          },
+          "logout_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logout Url"
+          }
+        },
+        "required": [
+          "logout_url"
+        ],
+        "title": "ProviderLogoutResponse",
+        "type": "object"
+      },
+      "ProvidersResponse": {
+        "description": "Available sign-in methods.",
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderDescriptor"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "ProvidersResponse",
+        "type": "object"
+      },
       "ReadinessResponse": {
-        "description": "Report aggregate readiness and the individual boolean dependency outcomes.",
+        "description": "Whether the service and its required connections are ready.",
         "properties": {
           "checks": {
             "additionalProperties": {
@@ -93,7 +411,7 @@
         "type": "object"
       },
       "ValidationIssue": {
-        "description": "Expose a rejected input location and code without echoing its value.",
+        "description": "A field that needs to be corrected.",
         "properties": {
           "code": {
             "title": "Code",
@@ -129,10 +447,1238 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/auth/login": {
+      "post": {
+        "description": "Sign in with a local username and password.\n\nReturns your account details and signs this browser in. Provide the sign-in header\nshown in the request parameters.",
+        "operationId": "authLocalLogin",
+        "parameters": [
+          {
+            "description": "Set this header to login when starting sign-in.",
+            "example": "login",
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": true,
+            "schema": {
+              "const": "login",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "examples": {
+                "local": {
+                  "summary": "Local account login",
+                  "value": {
+                    "password": "<your-password-at-least-15-characters>",
+                    "username": "owner"
+                  }
+                }
+              },
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            },
+            "description": "Signed in. Browser sign-in details have been updated."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "The username or password was not accepted."
+          },
+          "403": {
+            "description": "This sign-in request could not be verified."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "description": "Too many sign-in attempts. Wait before trying again.",
+            "headers": {
+              "Retry-After": {
+                "description": "How long to wait, in seconds.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "description": "Sign-in is temporarily unavailable. Try again later."
+          }
+        },
+        "summary": "Sign in with a local account",
+        "tags": [
+          "Authentication"
+        ],
+        "x-tinypods-rate-limit": {
+          "limit": 10,
+          "name": "login",
+          "window_ms": 60000
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "description": "Sign this browser out of TinyPods.\n\nOther browsers stay signed in. Signing out here does not sign you out of an\nexternal identity provider.",
+        "operationId": "authSessionLogout",
+        "parameters": [
+          {
+            "description": "Copy the current CSRF cookie value into this header.",
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutResponse"
+                }
+              }
+            },
+            "description": "This browser is signed out of TinyPods."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Sign in before using this action."
+          },
+          "403": {
+            "description": "This sign-out request could not be verified."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Sign out of TinyPods",
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/auth/providers": {
+      "get": {
+        "description": "Show the sign-in methods available for this installation.\n\nUse this list to display a local account form or an external sign-in button.",
+        "operationId": "authProvidersList",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvidersResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "List available sign-in methods",
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/auth/providers/zitadel/backchannel-logout": {
+      "post": {
+        "description": "Sign out the browsers identified by a verified notification from Zitadel.\n\nThis endpoint is called by Zitadel directly and does not require browser cookies.",
+        "operationId": "authZitadelBackchannelLogout",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "properties": {
+                  "logout_token": {
+                    "maxLength": 65536,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "logout_token"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackchannelErrorResponse"
+                }
+              }
+            },
+            "description": "The sign-out notification could not be verified."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Receive a Zitadel sign-out notification",
+        "tags": [
+          "Authentication"
+        ],
+        "x-tinypods-rate-limit": {
+          "limit": 300,
+          "name": "oidc_backchannel",
+          "window_ms": 60000
+        }
+      }
+    },
+    "/auth/providers/zitadel/callback": {
+      "get": {
+        "description": "Complete sign-in after returning from Zitadel.\n\nSigns this browser in and sends you to the page chosen when sign-in started.\nThe sign-in attempt must still be valid.",
+        "operationId": "authZitadelLoginCallback",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "State",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Error"
+            }
+          },
+          {
+            "in": "query",
+            "name": "iss",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Iss"
+            }
+          }
+        ],
+        "responses": {
+          "303": {
+            "description": "Signed in. Continue to the requested page.",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Complete Zitadel sign-in",
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/auth/providers/zitadel/logout": {
+      "post": {
+        "description": "Sign this browser out of TinyPods and get a link to sign out of Zitadel.\n\nOpen the returned link to finish signing out of Zitadel. This can also sign you\nout of other applications using Zitadel in the same browser.",
+        "operationId": "authZitadelLogout",
+        "parameters": [
+          {
+            "description": "Copy the current CSRF cookie value into this header.",
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderLogoutResponse"
+                }
+              }
+            },
+            "description": "Signed out of TinyPods. Open the returned link to sign out of Zitadel."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "description": "Signed out of TinyPods; Zitadel sign-out is unavailable."
+          }
+        },
+        "summary": "Sign out of TinyPods and Zitadel",
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/auth/providers/zitadel/refresh": {
+      "post": {
+        "description": "Keep this browser signed in without entering your credentials again.\n\nSend the current CSRF header. A successful renewal replaces the browser's\nsign-in credentials; expired or reused renewal credentials require a new login.",
+        "operationId": "authZitadelSessionRefresh",
+        "parameters": [
+          {
+            "description": "Copy the current CSRF cookie value into this header.",
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Sign in again to renew this browser session."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "description": "A renewal is already in progress for this browser."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Renew your sign-in",
+        "tags": [
+          "Authentication"
+        ],
+        "x-tinypods-rate-limit": {
+          "limit": 30,
+          "name": "oidc_refresh",
+          "window_ms": 60000
+        }
+      }
+    },
+    "/auth/providers/zitadel/start": {
+      "post": {
+        "description": "Start signing in with Zitadel.\n\nOpen the returned link in the same browser. After signing in, you will return\nto the page chosen in this request. Select an identity provider from the available\nsign-in methods to go directly to that provider, or omit it to use Zitadel’s login page.",
+        "operationId": "authZitadelLoginStart",
+        "parameters": [
+          {
+            "description": "Set this header to login when starting sign-in.",
+            "example": "login",
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": true,
+            "schema": {
+              "const": "login",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "examples": {
+                "application": {
+                  "summary": "Return to applications after login",
+                  "value": {
+                    "return_to": "/apps"
+                  }
+                },
+                "identity_provider": {
+                  "summary": "Choose a configured external sign-in option",
+                  "value": {
+                    "identity_provider_id": "configured-provider-id",
+                    "return_to": "/apps"
+                  }
+                }
+              },
+              "schema": {
+                "$ref": "#/components/schemas/LoginStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginStartResponse"
+                }
+              }
+            },
+            "description": "Open the returned link to sign in with Zitadel."
+          },
+          "400": {
+            "description": "Choose a page within this installation to return to after sign-in."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "This sign-in request could not be verified."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "description": "Too many sign-in attempts. Wait before trying again.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "description": "Zitadel sign-in is temporarily unavailable. Try again later."
+          }
+        },
+        "summary": "Start Zitadel sign-in",
+        "tags": [
+          "Authentication"
+        ],
+        "x-tinypods-rate-limit": {
+          "limit": 10,
+          "name": "oidc_start",
+          "window_ms": 60000
+        }
+      }
+    },
+    "/auth/session": {
+      "get": {
+        "description": "Show the account currently signed in to this browser.",
+        "operationId": "authSessionGet",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Show the signed-in account",
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
     "/healthz": {
       "get": {
-        "description": "Check that the API process can respond to HTTP requests.\n\nReturns HTTP 200 with status `alive`. This probe does not check startup\nreadiness or dependencies; use `/readyz` to decide whether to send traffic.\n\nReturns:\n    Process liveness without dependency checks.",
-        "operationId": "getLiveness",
+        "description": "Check whether the service is running. Connected services are not checked.",
+        "operationId": "healthLivenessGet",
         "responses": {
           "200": {
             "content": {
@@ -245,13 +1791,13 @@
             "description": "Service Unavailable"
           }
         },
-        "summary": "Liveness"
+        "summary": "Check whether the service is running"
       }
     },
     "/info": {
       "get": {
-        "description": "Return public service identity and the installed TinyPods version.\n\nThe request has no path, query or body inputs. HTTP 200 returns service\nand version fields. X-Cache reports HIT, MISS or BYPASS. Cookie and\nAuthorization requests bypass cache storage; Cache-Control: no-store\nprevents independent browser/proxy retention.\n\nReturns:\n    Public service metadata from the installed core package.",
-        "operationId": "getPlatformInfo",
+        "description": "Show the service name and installed TinyPods version.",
+        "operationId": "platformInfoGet",
         "responses": {
           "200": {
             "content": {
@@ -364,7 +1910,7 @@
             "description": "Service Unavailable"
           }
         },
-        "summary": "Platform Info",
+        "summary": "Show service information",
         "x-tinypods-cache": {
           "namespace": "platform_info",
           "revision": 1,
@@ -374,8 +1920,8 @@
     },
     "/readyz": {
       "get": {
-        "description": "Check whether the API runtime and configured dependencies are ready.\n\nReturns HTTP 200 with status `ready` when every check passes, otherwise\nHTTP 503 with status `not_ready`. Both responses include boolean results\nfor each check, including `runtime` and PostgreSQL when configured.\nFailed or timed-out dependencies are reported as false without their\nexception details. Readiness failures do not change `/healthz`.\n\nArgs:\n    response: HTTP response whose status reflects aggregate readiness.\n\nReturns:\n    Aggregate readiness plus individual dependency outcomes.",
-        "operationId": "getReadiness",
+        "description": "Check whether the service is ready to handle requests.\n\nThe response shows whether the service and its required connections are available.",
+        "operationId": "healthReadinessGet",
         "responses": {
           "200": {
             "content": {
@@ -488,7 +2034,7 @@
             "description": "Not ready"
           }
         },
-        "summary": "Readiness"
+        "summary": "Check whether the service is ready"
       }
     }
   }

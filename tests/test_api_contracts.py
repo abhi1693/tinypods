@@ -131,9 +131,11 @@ def test_pagination_and_operation_dtos() -> None:
 
 def test_export_is_valid_deterministic_and_has_explicit_responses() -> None:
     """Verify export is valid deterministic and has explicit responses."""
-    application = create_app(Settings())
+    application = create_app(Settings(), include_disabled_providers=True)
     first = render_schema(application)
-    assert first == render_schema(create_app(Settings(service_name="Different deployment")))
+    assert first == render_schema(
+        create_app(Settings(service_name="Different deployment"), include_disabled_providers=True)
+    )
     schema = json.loads(first)
     validate(schema)
     assert schema["paths"]["/readyz"]["get"]["responses"]["503"]["content"]["application/json"][
@@ -144,7 +146,13 @@ def test_export_is_valid_deterministic_and_has_explicit_responses() -> None:
     ]["$ref"].endswith("/ErrorResponse")
     assert all(
         name not in first
-        for name in ("database_url", "migration_database_url", "password", "Installation", "plugin")
+        for name in (
+            "database_url",
+            "migration_database_url",
+            "password_hash",
+            "Installation",
+            "plugin",
+        )
     )
     assert first == Path("openapi.json").read_text()
 
@@ -233,9 +241,9 @@ def test_route_docstrings_are_published_in_openapi() -> None:
             assert description == getdoc(route.endpoint)
             assert description.strip()
     for path in ("/healthz", "/readyz"):
-        assert "HTTP 200" in schema["paths"][path]["get"]["description"]
-    assert "HTTP 503" in schema["paths"]["/readyz"]["get"]["description"]
-    assert "dependencies" in schema["paths"]["/healthz"]["get"]["description"]
+        assert "HTTP 200" not in schema["paths"][path]["get"]["description"]
+    assert "HTTP 503" not in schema["paths"]["/readyz"]["get"]["description"]
+    assert "running" in schema["paths"]["/healthz"]["get"]["description"]
     with TestClient(app) as client:
         served = client.get("/openapi.json").json()
     for route in routes:
@@ -359,16 +367,19 @@ def test_check_rejects_api_contract_changes_until_regenerated(
     assert runner.invoke(export_command, arguments + ["--check"]).exit_code == 0
     before = output.read_bytes()
 
-    def changed_application(settings: Settings) -> FastAPI:
+    def changed_application(
+        settings: Settings, *, include_disabled_providers: bool = False
+    ) -> FastAPI:
         """Create a deliberately changed public contract for freshness-check coverage.
 
         Args:
             settings: Validated settings pointing only at isolated test infrastructure.
+            include_disabled_providers: Whether to include supported offline provider contracts.
 
         Returns:
             Synthetic application configured for the enclosing contract test.
         """
-        app = create_app(settings)
+        app = create_app(settings, include_disabled_providers=include_disabled_providers)
         feature = APIRouter()
 
         @feature.get("/new", operation_id="getNewFeature", response_model=LivenessResponse)
@@ -439,3 +450,47 @@ def test_literal_http_contracts_preserve_validated_wire_values(
     with pytest.raises(ValidationError) as failure:
         model.model_validate({**payload, field: "unsupported-wire-value"})
     assert failure.value.errors()[0]["type"] == "literal_error"
+
+
+def test_login_contract_exposes_required_header_and_request_example() -> None:
+    """Present callable login requirements through OpenAPI metadata rather than status prose."""
+    schema = export_schema(create_app(Settings(), include_disabled_providers=True))
+    for path in ("/auth/login", "/auth/providers/zitadel/start"):
+        operation = schema["paths"][path]["post"]
+        header = next(item for item in operation["parameters"] if item["name"] == "x-csrf-token")
+        assert header["required"] and header["example"] == "login"
+        assert operation["requestBody"]["content"]["application/json"]["examples"]
+        assert "HTTP 401" not in operation["description"]
+        assert "Retry-After" in operation["responses"]["429"]["headers"]
+
+
+def test_operation_id_standard_is_stable_and_validated() -> None:
+    """Keep generated-client identifiers stable across function/package refactors."""
+    from tinypods_api.http.contracts import LivenessResponse
+    from tinypods_api.http.operations import build_operation_id
+
+    assert build_operation_id("auth", "session", "get") == "authSessionGet"
+    assert build_operation_id("auth", "zitadelLogin", "start") == "authZitadelLoginStart"
+    for domain, resource, action in (
+        ("", "session", "get"),
+        ("Auth", "session", "get"),
+        ("auth", "session_id", "get"),
+        ("auth", "session", ""),
+    ):
+        with pytest.raises(ValueError):
+            build_operation_id(domain, resource, action)
+    app = FastAPI()
+
+    async def endpoint() -> LivenessResponse:
+        """Check whether the service is running."""
+        return LivenessResponse()
+
+    app.add_api_route(
+        "/probe",
+        endpoint,
+        methods=["GET"],
+        response_model=LivenessResponse,
+        operation_id="auth_session_get",
+    )
+    with pytest.raises(ValueError, match="lowerCamelCase"):
+        export_schema(app)

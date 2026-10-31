@@ -72,6 +72,10 @@ class RequestLoggingMiddleware:
                     (k, v) for k, v in message.get("headers", []) if k.lower() not in replaced
                 ]
                 headers.extend(self.response_headers)
+                if scope["path"].startswith("/auth/"):
+                    headers = [(k, v) for k, v in headers if k.lower() != b"cache-control"]
+                    headers.append((b"cache-control", b"no-store"))
+                    headers.append((b"referrer-policy", b"no-referrer"))
                 headers.append((REQUEST_ID_HEADER_BYTES, request_id.encode("ascii")))
                 message = {**message, "headers": headers}
             await send(message)

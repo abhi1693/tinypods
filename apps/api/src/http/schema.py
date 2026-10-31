@@ -2,11 +2,13 @@
 
 import inspect
 import json
+import re
 from pathlib import Path
 from typing import Annotated, cast
 
 import typer
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from fastapi.routing import APIRoute, iter_route_contexts
 from pydantic import BaseModel
 from tinypods_core.json_types import JsonRecord
@@ -35,14 +37,21 @@ def export_schema(application: FastAPI) -> JsonRecord:
             continue
         if not route.operation_id or route.operation_id in ids:
             raise ValueError("Each API operation needs a unique explicit operation_id")
+        if not re.fullmatch(r"[a-z][A-Za-z0-9]*", route.operation_id):
+            raise ValueError("Operation IDs must use lowerCamelCase")
         if len(route.methods or set()) != 1:
             raise ValueError("Each API operation must declare exactly one method")
         if not inspect.getdoc(route.endpoint) or not route.description.strip():
             raise ValueError("Each API operation needs a docstring and public description")
         ids.add(route.operation_id)
-        if route.status_code != 204 and (
-            not isinstance(route.response_model, type)
-            or not issubclass(route.response_model, BaseModel)
+        redirect = route.response_class is RedirectResponse and route.status_code == 303
+        if (
+            route.status_code != 204
+            and not redirect
+            and (
+                not isinstance(route.response_model, type)
+                or not issubclass(route.response_model, BaseModel)
+            )
         ):
             raise ValueError("Each API operation needs an explicit response model")
     application.openapi_schema = None
@@ -83,7 +92,9 @@ def main(
 
     try:
         # Explicit defaults bypass deployment settings and never connect to infrastructure.
-        rendered = render_schema(create_app(Settings.model_construct()))
+        rendered = render_schema(
+            create_app(Settings.model_construct(), include_disabled_providers=True)
+        )
         if check:
             if not output.is_file() or output.read_text(encoding="utf-8") != rendered:
                 raise typer.Exit(1)
