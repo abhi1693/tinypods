@@ -8,11 +8,10 @@ from tinypods_api.auth.contracts import (
     LoginRequest,
     LoginResponse,
 )
-from tinypods_api.auth.cookies import set_session_cookies
+from tinypods_api.auth.cookies import request_cookie_policy, set_session_cookies
 from tinypods_api.auth.dependencies import (
     CSRF_HEADER,
     LOGIN_CSRF_METADATA,
-    SESSION_COOKIE,
     AuthDependency,
     check_origin,
 )
@@ -67,18 +66,19 @@ async def login(
 ) -> LoginResponse:
     """Sign in with a local username and password.
 
-    Returns your account details and signs this browser in. Use a secure connection
-    and provide the sign-in header shown in the request parameters.
+    Returns your account details and signs this browser in. Provide the sign-in header
+    shown in the request parameters.
     """
     check_origin(request)
     if request.headers.get(CSRF_HEADER) != "login":
         raise HTTPException(403)
-    previous = request.cookies.get(SESSION_COOKIE)
+    policy = request_cookie_policy(request)
+    previous = request.cookies.get(policy.session)
     result = await service.login(
         Credentials(username=body.username, password=body.password),
         previous_digest=digest(previous) if previous is not None else None,
     )
-    set_session_cookies(response, result)
+    set_session_cookies(response, result, policy)
     return LoginResponse(
         user_id=result.principal.user_id,
         username=result.principal.username,

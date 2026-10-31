@@ -482,9 +482,21 @@ def test_discovery_defaults_without_database_or_zitadel() -> None:
         assert [item["id"] for item in response.json()["data"]] == ["local"]
 
 
-def test_oidc_http_cross_site_callback_multitab_csrf_and_logout(auth_settings: Settings) -> None:
+@pytest.mark.parametrize("development", [False, True])
+def test_oidc_http_cross_site_callback_multitab_csrf_and_logout(
+    auth_settings: Settings, development: bool
+) -> None:
     """Use a Lax correlation cookie while retaining Strict application cookies and rotation."""
-    settings = enabled(auth_settings)
+    base_url = "http://testserver" if development else "https://testserver"
+    settings = enabled(
+        auth_settings,
+        environment="development" if development else "production",
+        zitadel_redirect_uri=base_url + "/auth/providers/zitadel/callback",
+    )
+    prefix = "" if development else "__Host-"
+    session_cookie = prefix + "tinypods-session"
+    csrf_cookie = prefix + "tinypods-csrf"
+    binding_cookie = prefix + "tinypods-oidc"
 
     async def initialize() -> str:
         database = Database(settings)
@@ -498,14 +510,14 @@ def test_oidc_http_cross_site_callback_multitab_csrf_and_logout(auth_settings: S
     app = create_app(settings)
     fake = FakeProvider()
     app.state.browser_login.provider = fake
-    with TestClient(app, base_url="https://testserver") as client:
+    with TestClient(app, base_url=base_url) as client:
         login = client.post(
             "/auth/login",
             json={"username": "owner", "password": PASSWORD},
             headers={"x-csrf-token": "login"},
         )
         assert login.status_code == 200
-        previous = client.cookies[SESSION_COOKIE]
+        previous = client.cookies[session_cookie]
         for headers in (
             {},
             {"x-csrf-token": "wrong"},
@@ -515,16 +527,16 @@ def test_oidc_http_cross_site_callback_multitab_csrf_and_logout(auth_settings: S
                 client.post("/auth/providers/zitadel/start", json={}, headers=headers).status_code
                 == 403
             )
-        headers = {"x-csrf-token": "login", "origin": "https://testserver"}
+        headers = {"x-csrf-token": "login", "origin": base_url}
         first = client.post(
             "/auth/providers/zitadel/start", json={"return_to": "/apps"}, headers=headers
         )
         assert first.status_code == 200
         state = state_from(first.json()["authorization_url"])
-        binding = client.cookies[BINDING_COOKIE]
+        binding = client.cookies[binding_cookie]
         cookie = first.headers["set-cookie"]
         assert (
-            "Secure" in cookie
+            ("Secure" in cookie) is not development
             and "HttpOnly" in cookie
             and "SameSite=lax" in cookie
             and "Max-Age=300" in cookie
@@ -534,13 +546,13 @@ def test_oidc_http_cross_site_callback_multitab_csrf_and_logout(auth_settings: S
             "/auth/providers/zitadel/start", json={"return_to": "/clusters"}, headers=headers
         )
         assert second.status_code == 200
-        assert client.cookies[BINDING_COOKIE] == binding
+        assert client.cookies[binding_cookie] == binding
         second_state = state_from(second.json()["authorization_url"])
         assert state != second_state and fake.challenges[-1][1:] != fake.challenges[-2][1:]
         # Simulate the browser withholding Strict application cookies on an external top-level GET.
         # The independent Lax binding cookie remains available for correlation.
-        client.cookies.delete(SESSION_COOKIE)
-        client.cookies.delete(CSRF_COOKIE)
+        client.cookies.delete(session_cookie)
+        client.cookies.delete(csrf_cookie)
         callback = client.get(
             "/auth/providers/zitadel/callback",
             params={"state": state, "code": "accepted", "iss": ISSUER},
@@ -549,10 +561,10 @@ def test_oidc_http_cross_site_callback_multitab_csrf_and_logout(auth_settings: S
         )
         assert callback.status_code == 303 and callback.headers["location"] == "/apps"
         assert all(
-            "SameSite=strict" in value and "Secure" in value
+            "SameSite=strict" in value and (("Secure" in value) is not development)
             for value in callback.headers.get_list("set-cookie")
         )
-        assert client.cookies[BINDING_COOKIE] == binding
+        assert client.cookies[binding_cookie] == binding
         assert "access_token" not in callback.text and "id_token" not in callback.text
         identity = client.get("/auth/session").json()
         assert identity["user_id"] != owner_id and identity["is_owner"] is False
@@ -571,15 +583,15 @@ def test_oidc_http_cross_site_callback_multitab_csrf_and_logout(auth_settings: S
             follow_redirects=False,
         )
         assert other.status_code == 303 and other.headers["location"] == "/clusters"
-        csrf = client.cookies[CSRF_COOKIE]
-        token = client.cookies[SESSION_COOKIE]
+        csrf = client.cookies[csrf_cookie]
+        token = client.cookies[session_cookie]
         assert client.post("/auth/providers/zitadel/logout").status_code == 403
         logged_out = client.post("/auth/providers/zitadel/logout", headers={"x-csrf-token": csrf})
         assert logged_out.status_code == 200 and logged_out.json()["logged_out"] is True
         assert logged_out.json()["logout_url"].startswith(ISSUER + "/logout?")
         assert "id_token" not in logged_out.text
-        assert SESSION_COOKIE not in client.cookies
-        client.cookies.set(SESSION_COOKIE, token)
+        assert session_cookie not in client.cookies
+        client.cookies.set(session_cookie, token)
         assert client.get("/auth/session").status_code == 401
     with psycopg.connect(settings.database_url.get_secret_value()) as connection:
         assert connection.execute(
@@ -969,3 +981,16 @@ def test_provider_dependencies_reject_disabled_settings_after_composition(
             == 404
         )
         assert client.post("/auth/providers/zitadel/start", json={}).status_code == 404
+
+
+@pytest.mark.parametrize("field", ["zitadel_redirect_uri", "zitadel_post_logout_uri"])
+def test_development_redirect_validation(field: str) -> None:
+    """Allow HTTP browser redirects explicitly while retaining HTTPS issuer validation."""
+    url = "http://192.168.1.101:8000/auth/providers/zitadel/callback"
+    assert getattr(Settings(environment="development", **{field: url}), field) == url
+    with pytest.raises(ValidationError):
+        Settings(**{field: url})
+    with pytest.raises(ValidationError):
+        Settings(environment="development", zitadel_issuer="http://identity.example")
+    with pytest.raises(ValidationError):
+        Settings(environment="development", **{field: "ftp://example/callback"})

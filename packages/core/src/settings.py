@@ -3,7 +3,14 @@
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, ValidationError, field_validator, model_validator
+from pydantic import (
+    Field,
+    SecretStr,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
@@ -32,6 +39,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="TINYPODS_", hide_input_in_errors=True)
 
+    environment: Literal["production", "development"] = "production"
     service_name: str = Field(default="TinyPods", min_length=1, max_length=80)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     log_format: Literal["text", "json"] = "text"
@@ -59,6 +67,10 @@ class Settings(BaseSettings):
     auth_local_enabled: bool = True
     zitadel_enabled: bool = False
     zitadel_issuer: str | None = None
+    zitadel_organization_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,255}$")
+    zitadel_identity_provider_id: str | None = Field(
+        default=None, pattern=r"^[A-Za-z0-9_-]{1,255}$"
+    )
     zitadel_client_id: str | None = Field(default=None, min_length=1, max_length=255)
     zitadel_client_secret: SecretStr | None = None
     zitadel_token_auth_method: Literal["none", "client_secret_basic"] = "none"
@@ -68,8 +80,8 @@ class Settings(BaseSettings):
 
     @field_validator("zitadel_issuer", "zitadel_redirect_uri", "zitadel_post_logout_uri")
     @classmethod
-    def validate_oidc_url(cls, value: str | None) -> str | None:
-        """Require explicit HTTPS operator endpoints without credentials/query/fragment."""
+    def validate_oidc_url(cls, value: str | None, info: ValidationInfo) -> str | None:
+        """Require HTTPS, allowing development HTTP browser redirects."""
         if value is None:
             return None
         try:
@@ -78,7 +90,14 @@ class Settings(BaseSettings):
         except ValueError:
             raise ValueError("Invalid OIDC URL") from None
         if (
-            url.scheme != "https"
+            (
+                url.scheme != "https"
+                and not (
+                    info.data.get("environment") == "development"
+                    and info.field_name != "zitadel_issuer"
+                    and url.scheme == "http"
+                )
+            )
             or not url.hostname
             or url.username
             or url.password
@@ -92,6 +111,8 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_oidc_configuration(self) -> "Settings":
         """Reject incomplete enabled providers instead of silently enabling another login method."""
+        if self.zitadel_identity_provider_id is not None and self.zitadel_organization_id is None:
+            raise ValueError("A selected Zitadel identity provider requires an organization")
         if self.zitadel_enabled:
             if (
                 not self.zitadel_issuer

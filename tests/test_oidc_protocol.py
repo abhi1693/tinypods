@@ -353,3 +353,51 @@ def test_missing_config_bad_internal_proof_and_unexpected_failure() -> None:
     issuer.override = cancelled
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(issuer.adapter().authorization_url(STATE, NONCE, VERIFIER))
+
+
+@pytest.mark.parametrize("upstream", [None, "upstream-idp"])
+def test_organization_selection_and_optional_upstream_provider(upstream: str | None) -> None:
+    """Select the organization without requiring an upstream IdP or exposing its configuration."""
+    issuer = Issuer()
+    organization = "organization-id"
+    issuer.claims["urn:zitadel:iam:user:resourceowner:id"] = organization
+
+    async def scenario() -> None:
+        adapter = issuer.adapter(
+            zitadel_organization_id=organization, zitadel_identity_provider_id=upstream
+        )
+        target = await adapter.authorization_url(STATE, NONCE, VERIFIER)
+        scopes = parse_qs(urlsplit(target).query)["scope"][0].split()
+        assert "urn:zitadel:iam:org:id:" + organization in scopes
+        assert any(scope.startswith("urn:zitadel:iam:org:idp:id:") for scope in scopes) is (
+            upstream is not None
+        )
+        assert await adapter.exchange("code-123", NONCE, VERIFIER) == VerifiedIdentity(
+            ISSUER, "subject-123"
+        )
+        issuer.claims["urn:zitadel:iam:user:resourceowner:id"] = "another-organization"
+        with pytest.raises(AuthError) as error:
+            await adapter.exchange("code-123", NONCE, VERIFIER)
+        assert error.value.status == 403
+        issuer.claims.pop("urn:zitadel:iam:user:resourceowner:id")
+        with pytest.raises(AuthError) as error:
+            await adapter.exchange("code-123", NONCE, VERIFIER)
+        assert error.value.status == 403
+
+    asyncio.run(scenario())
+
+
+def test_upstream_selection_requires_an_organization() -> None:
+    """Reject incomplete IdP selection and scope-injection characters in operator IDs."""
+    from pydantic import ValidationError
+
+    for settings in (
+        {"zitadel_identity_provider_id": "selected"},
+        {"zitadel_organization_id": "invalid scope"},
+        {
+            "zitadel_identity_provider_id": "id with spaces",
+            "zitadel_organization_id": "organization",
+        },
+    ):
+        with pytest.raises(ValidationError):
+            Settings(**settings)

@@ -32,7 +32,7 @@ outside the event loop. Account identity and optional local credentials are sepa
 Create a **Web** application with Authorization Code and **PKCE** authentication
 in Zitadel. Supported baseline: token endpoint auth `none`, PKCE **S256**. This is
 the explicit PKCE setup in the [official login guide](https://zitadel.com/docs/guides/integrate/login/oidc/login-users).
-Register the exact HTTPS callback and optional post-logout URL, then configure:
+Register the exact callback (HTTPS in production) and optional post-logout URL, then configure:
 
 ```sh
 TINYPODS_ZITADEL_ENABLED=true
@@ -55,6 +55,16 @@ and the configured token authentication method must be advertised. For a
 confidential Web client configured for Basic, set `client_secret_basic` and load
 `TINYPODS_ZITADEL_CLIENT_SECRET` through the operator's secret mechanism. PKCE
 remains mandatory. Do not use an SPA's client secret in frontend code.
+
+`TINYPODS_ZITADEL_ORGANIZATION_ID` selects the organization's login policy and
+restricts sign-in to that organization. The signed organization claim must match.
+`TINYPODS_ZITADEL_IDENTITY_PROVIDER_ID` is optional and requires an organization;
+when set, sign-in can go directly to that upstream provider. When omitted, Zitadel
+shows its own login page. Both cases remain a redirect flow: the frontend renders
+a sign-in button and follows the fresh link returned by the start action. Only
+local accounts use the frontend's username/password form. Organization selection
+is checked at sign-in; it does not continuously poll membership for existing
+sessions. Subject admission and installation-owner rights remain separate.
 
 Empty allowed subjects denies every external identity. An admitted verified
 `(issuer, sub)` may create a new non-owner core account with no local password.
@@ -80,8 +90,8 @@ No organization administration or automatic provider-admin role mapping is added
    hyphen/slash are accepted; no query, scheme, traversal or encoded destinations.
 2. The backend fetches verified discovery, creates random state, nonce and PKCE
    verifier, and persists a five-minute transaction in PostgreSQL. It returns a
-   fresh authorization URL and sets only an opaque `__Host-tinypods-oidc` browser
-   binding cookie (Secure, HttpOnly, SameSite=Lax). State is stored as a digest;
+   fresh authorization URL and sets only an opaque browser
+   binding cookie (HttpOnly, SameSite=Lax, and Secure in production). State is stored as a digest;
    nonce/verifier remain server-side. Multiple tabs share this opaque browser
    binding but have independent single-use challenges and expiry. The binding
    cookie remains until its five-minute TTL so one callback does not break another.
@@ -105,10 +115,10 @@ No organization administration or automatic provider-admin role mapping is added
    against a malicious trusted provider.
 
 Local login is `POST /auth/login` with JSON credentials and `X-CSRF-Token: login`.
-It uses the same rotated session issuance. Every normal app session cookie uses
+It uses the same rotated session issuance. In production, every app session cookie uses
 Secure, HttpOnly, SameSite=Strict, Path=/ and a `__Host-` name; the separate readable
 CSRF cookie is Secure/Strict. Send its value in X-CSRF-Token for mutations.
-HTTPS is required; there is no insecure-cookie option. Configure reverse-proxy
+Production requires HTTPS. Development HTTP uses the cookie policy described below. Configure reverse-proxy
 scheme/host forwarding only from trusted proxies so Origin checks reflect the
 public API origin. Do not enable wildcard credentialed CORS.
 
@@ -157,3 +167,7 @@ provider discovery, session routes, cookies, identity contracts, transactions an
 authorization remain outside individual providers. Functions inside each package
 use local names such as `start`, `callback` and `logout`; public API paths and
 operation IDs remain stable.
+
+## Development over HTTP
+
+`TINYPODS_ENVIRONMENT` defaults to `production`, which requires HTTPS browser redirects and Secure cookies with the `__Host-` prefix. Explicit `development` mode allows HTTP callback and post-logout URLs and uses unprefixed cookies without Secure. HttpOnly, SameSite, CSRF checks and session verification still apply. The Zitadel issuer and upstream endpoints require HTTPS in both modes. Use development mode only on trusted development networks. Cookies from one mode are not accepted in the other; sign in again after switching modes.

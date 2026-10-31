@@ -1,13 +1,12 @@
 """Provider-independent session identity and application logout routes."""
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Request, Response
 from tinypods_api.auth.contracts import (
     IdentityResponse,
     LogoutResponse,
 )
+from tinypods_api.auth.cookies import request_cookie_policy
 from tinypods_api.auth.dependencies import (
-    CSRF_COOKIE,
-    SESSION_COOKIE,
     SESSION_CSRF_METADATA,
     PrincipalDependency,
     SessionDependency,
@@ -44,7 +43,7 @@ async def session_identity(principal: PrincipalDependency) -> IdentityResponse:
     },
 )
 async def logout(
-    response: Response, principal: PrincipalDependency, service: SessionDependency
+    request: Request, response: Response, principal: PrincipalDependency, service: SessionDependency
 ) -> LogoutResponse:
     """Sign this browser out of TinyPods.
 
@@ -52,8 +51,9 @@ async def logout(
     external identity provider.
     """
     await service.logout(principal)
-    for name in (SESSION_COOKIE, CSRF_COOKIE):
+    policy = request_cookie_policy(request)
+    for name in (policy.session, policy.csrf):
         response.delete_cookie(
-            name, secure=True, httponly=name == SESSION_COOKIE, samesite="strict", path="/"
+            name, secure=policy.secure, httponly=name == policy.session, samesite="strict", path="/"
         )
     return LogoutResponse()

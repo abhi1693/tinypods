@@ -3,6 +3,7 @@
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request
+from tinypods_api.auth.cookies import request_cookie_policy
 from tinypods_core.auth import AuthService, Credentials, Principal, SessionService
 from tinypods_core.json_types import JsonRecord
 
@@ -44,7 +45,7 @@ def check_origin(request: Request) -> None:
 
 async def get_principal(request: Request, service: SessionDependency) -> Principal:
     """Require a live cookie session and a bound CSRF header for every unsafe method."""
-    token = request.cookies.get(SESSION_COOKIE, "")
+    token = request.cookies.get(request_cookie_policy(request).session, "")
     csrf = None
     if request.method not in {"GET", "HEAD", "OPTIONS"}:
         check_origin(request)
@@ -73,7 +74,7 @@ SESSION_CSRF_METADATA: JsonRecord = {
             "name": CSRF_HEADER,
             "in": "header",
             "required": True,
-            "description": "Copy the current __Host-tinypods-csrf cookie value into this header.",
+            "description": "Copy the current CSRF cookie value into this header.",
             "schema": {"type": "string"},
         }
     ]

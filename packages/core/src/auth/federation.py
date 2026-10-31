@@ -163,6 +163,8 @@ class BrowserLogin:
                     self.settings.zitadel_enabled,
                     self.settings.zitadel_issuer,
                     self.settings.zitadel_client_id,
+                    self.settings.zitadel_organization_id,
+                    self.settings.zitadel_identity_provider_id,
                     self.settings.zitadel_redirect_uri,
                     self.settings.zitadel_token_auth_method,
                     secret.get_secret_value() if secret is not None else None,

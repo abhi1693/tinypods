@@ -335,7 +335,7 @@
   "paths": {
     "/auth/login": {
       "post": {
-        "description": "Sign in with a local username and password.\n\nReturns your account details and signs this browser in. Use a secure connection\nand provide the sign-in header shown in the request parameters.",
+        "description": "Sign in with a local username and password.\n\nReturns your account details and signs this browser in. Provide the sign-in header\nshown in the request parameters.",
         "operationId": "authLocalLogin",
         "parameters": [
           {
@@ -478,7 +478,7 @@
         "operationId": "authSessionLogout",
         "parameters": [
           {
-            "description": "Copy the current __Host-tinypods-csrf cookie value into this header.",
+            "description": "Copy the current CSRF cookie value into this header.",
             "in": "header",
             "name": "x-csrf-token",
             "required": true,
@@ -905,7 +905,7 @@
         "operationId": "authZitadelLogout",
         "parameters": [
           {
-            "description": "Copy the current __Host-tinypods-csrf cookie value into this header.",
+            "description": "Copy the current CSRF cookie value into this header.",
             "in": "header",
             "name": "x-csrf-token",
             "required": true,

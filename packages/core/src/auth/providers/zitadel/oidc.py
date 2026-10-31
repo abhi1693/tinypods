@@ -121,6 +121,17 @@ class ZitadelOIDC:
             self._endpoint(metadata.end_session_endpoint)
         return metadata
 
+    def _scope(self) -> str:
+        """Select the configured organization and optionally an upstream identity provider."""
+        scopes = ["openid"]
+        if self.settings.zitadel_organization_id is not None:
+            scopes.append("urn:zitadel:iam:org:id:" + self.settings.zitadel_organization_id)
+        if self.settings.zitadel_identity_provider_id is not None:
+            scopes.append(
+                "urn:zitadel:iam:org:idp:id:" + self.settings.zitadel_identity_provider_id
+            )
+        return " ".join(scopes)
+
     def _client(self) -> AsyncOAuth2Client:
         """Create a request-owned OAuth client with mandatory PKCE S256 and no refresh behavior."""
         secret = self.settings.zitadel_client_secret
@@ -128,7 +139,7 @@ class ZitadelOIDC:
             self.client_id,
             secret.get_secret_value() if secret is not None else None,
             token_endpoint_auth_method=self.settings.zitadel_token_auth_method,
-            scope="openid",
+            scope=self._scope(),
             redirect_uri=self.redirect_uri,
             code_challenge_method="S256",
             timeout=2.0,
@@ -213,6 +224,12 @@ class ZitadelOIDC:
                     },
                 )
                 claims.validate(leeway=0)
+                organization = self.settings.zitadel_organization_id
+                if (
+                    organization is not None
+                    and claims.get("urn:zitadel:iam:user:resourceowner:id") != organization
+                ):
+                    raise AuthError(403)
                 subject = claims.get("sub")
                 if not isinstance(subject, str) or not subject or len(subject) > 255:
                     raise AuthError(401)

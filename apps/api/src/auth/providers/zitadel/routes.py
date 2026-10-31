@@ -10,11 +10,10 @@ from tinypods_api.auth.contracts import (
     LoginStartResponse,
     ProviderLogoutResponse,
 )
-from tinypods_api.auth.cookies import set_session_cookies
+from tinypods_api.auth.cookies import request_cookie_policy, set_session_cookies
 from tinypods_api.auth.dependencies import (
     CSRF_HEADER,
     LOGIN_CSRF_METADATA,
-    SESSION_COOKIE,
     SESSION_CSRF_METADATA,
     PrincipalDependency,
     SessionDependency,
@@ -85,16 +84,17 @@ async def start(
     check_origin(request)
     if request.headers.get(CSRF_HEADER) != "login":
         raise HTTPException(403)
+    policy = request_cookie_policy(request)
     result = await service.start(
         body.return_to,
-        request.cookies.get(SESSION_COOKIE),
-        browser_token=request.cookies.get(OIDC_COOKIE),
+        request.cookies.get(policy.session),
+        browser_token=request.cookies.get(policy.oidc),
     )
     response.set_cookie(
-        OIDC_COOKIE,
+        policy.oidc,
         result.browser_token,
         max_age=300,
-        secure=True,
+        secure=policy.secure,
         httponly=True,
         samesite="lax",
         path="/",
@@ -133,11 +133,12 @@ async def callback(
         raise HTTPException(400)
     if code is not None and error is not None:
         raise HTTPException(400)
+    policy = request_cookie_policy(request)
     result, return_to = await service.finish(
-        state, request.cookies.get(OIDC_COOKIE, ""), code, error=error, response_issuer=iss
+        state, request.cookies.get(policy.oidc, ""), code, error=error, response_issuer=iss
     )
     response = RedirectResponse(return_to, status_code=303)
-    set_session_cookies(response, result)
+    set_session_cookies(response, result, policy)
     return response
 
 
@@ -166,7 +167,7 @@ async def logout(
     Open the returned link to finish signing out of Zitadel. This can also sign you
     out of other applications using Zitadel in the same browser.
     """
-    await logout_session(response, principal, sessions)
+    await logout_session(request, response, principal, sessions)
     try:
         url = await service.provider.logout_url()
     except AuthError as exc:
