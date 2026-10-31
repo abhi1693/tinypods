@@ -60,14 +60,18 @@ class FakeProvider:
     def __init__(self) -> None:
         """Retain challenge inputs for assertions without logging or echoing secrets."""
         self.challenges: list[tuple[str, str, str]] = []
+        self.selected_identity_providers: list[str | None] = []
         self.exchanges: list[tuple[str, str, str]] = []
         self.start_failure = False
 
-    async def authorization_url(self, state: str, nonce: str, verifier: str) -> str:
+    async def authorization_url(
+        self, state: str, nonce: str, verifier: str, *, identity_provider_id: str | None = None
+    ) -> str:
         """Create an opaque challenge and optionally model discovery failure."""
         if self.start_failure:
             raise AuthError(503)
         self.challenges.append((state, nonce, verifier))
+        self.selected_identity_providers.append(identity_provider_id)
         return ISSUER + "/authorize?" + urlencode({"state": state})
 
     async def exchange(self, code: str, nonce: str, verifier: str) -> VerifiedIdentity:
@@ -984,3 +988,98 @@ def test_development_redirect_validation(field: str) -> None:
         Settings(environment="development", zitadel_issuer="http://identity.example")
     with pytest.raises(ValidationError):
         Settings(environment="development", **{field: "ftp://example/callback"})
+
+
+def test_provider_display_configuration_and_upstream_selection(auth_settings: Settings) -> None:
+    """Publish configured button metadata and select only configured upstream providers."""
+    settings = enabled(
+        auth_settings,
+        auth_local_label="Local account",
+        auth_local_icon_url="https://assets.example/local.png",
+        zitadel_label="Company sign-in",
+        zitadel_icon_url="https://assets.example/company.png",
+        zitadel_organization_id="organization",
+        zitadel_identity_providers=[
+            {
+                "id": "google-id",
+                "type": "google",
+                "label": "Continue with Google",
+                "icon_url": "https://assets.example/google.png",
+            },
+            {"id": "github-id", "type": "github", "label": "GitHub"},
+        ],
+    )
+
+    async def initialize() -> None:
+        database = Database(settings)
+        try:
+            await LocalPasswordProvider(database).bootstrap(credentials())
+        finally:
+            await database.close()
+
+    asyncio.run(initialize())
+    app = create_app(settings)
+    provider = FakeProvider()
+    app.state.browser_login.provider = provider
+    with TestClient(app, base_url="https://testserver") as client:
+        data = client.get("/auth/providers").json()["data"]
+        assert data[0]["label"] == "Local account"
+        assert data[0]["icon_url"] == "https://assets.example/local.png"
+        assert "identity_providers" not in data[0]
+        assert data[1]["label"] == "Company sign-in"
+        assert data[1]["icon_url"] == "https://assets.example/company.png"
+        assert data[1]["identity_providers"] == [
+            {
+                "id": "google-id",
+                "type": "google",
+                "label": "Continue with Google",
+                "icon_url": "https://assets.example/google.png",
+            },
+            {"id": "github-id", "type": "github", "label": "GitHub"},
+        ]
+        headers = {"x-csrf-token": "login"}
+        path = data[1]["login_path"]
+        assert (
+            client.post(path, json={"identity_provider_id": "unknown"}, headers=headers).status_code
+            == 400
+        )
+        assert not provider.challenges
+        for selected in ("google-id", "github-id", None):
+            response = client.post(path, json={"identity_provider_id": selected}, headers=headers)
+            assert response.status_code == 200
+            assert provider.selected_identity_providers[-1] == selected
+        settings.zitadel_enabled = False
+        assert [item["id"] for item in client.get("/auth/providers").json()["data"]] == ["local"]
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {
+            "zitadel_identity_providers": [
+                {"id": "duplicate", "type": "oidc", "label": "One"},
+                {"id": "duplicate", "type": "google", "label": "Two"},
+            ],
+            "zitadel_organization_id": "organization",
+        },
+        {"auth_local_icon_url": "javascript:alert(1)"},
+        {"zitadel_icon_url": "data:image/svg+xml;base64,PHN2Zz4="},
+        {"zitadel_identity_providers": [{"id": "provider", "type": "google", "label": "  "}]},
+        {
+            "zitadel_identity_providers": [
+                {
+                    "id": "provider",
+                    "type": "google",
+                    "label": "Google",
+                    "icon_url": "javascript:alert(1)",
+                }
+            ]
+        },
+    ],
+)
+def test_provider_metadata_configuration_rejects_ambiguous_or_unsafe_values(
+    updates: dict[str, object],
+) -> None:
+    """Reject duplicate selections, empty labels and non-HTTP icon URLs."""
+    with pytest.raises(ValidationError):
+        Settings(**updates)

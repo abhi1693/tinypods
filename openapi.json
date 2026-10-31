@@ -33,6 +33,44 @@
         "title": "ErrorResponse",
         "type": "object"
       },
+      "IdentityProviderDescriptor": {
+        "description": "An external sign-in option available through the configured authentication provider.",
+        "properties": {
+          "icon_url": {
+            "anyOf": [
+              {
+                "format": "uri",
+                "maxLength": 2083,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Url"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "label"
+        ],
+        "title": "IdentityProviderDescriptor",
+        "type": "object"
+      },
       "IdentityResponse": {
         "description": "The currently signed-in account.",
         "properties": {
@@ -133,6 +171,18 @@
         "additionalProperties": false,
         "description": "The page to open after signing in.",
         "properties": {
+          "identity_provider_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9_-]{1,255}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Provider Id"
+          },
           "return_to": {
             "default": "/",
             "maxLength": 256,
@@ -192,9 +242,37 @@
       "ProviderDescriptor": {
         "description": "A sign-in method available for this installation.",
         "properties": {
+          "icon_url": {
+            "anyOf": [
+              {
+                "format": "uri",
+                "maxLength": 2083,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon Url"
+          },
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "identity_providers": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/IdentityProviderDescriptor"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Providers"
           },
           "label": {
             "title": "Label",
@@ -1027,7 +1105,7 @@
     },
     "/auth/providers/zitadel/start": {
       "post": {
-        "description": "Start signing in with Zitadel.\n\nOpen the returned link in the same browser. After signing in, you will return\nto the page chosen in this request.",
+        "description": "Start signing in with Zitadel.\n\nOpen the returned link in the same browser. After signing in, you will return\nto the page chosen in this request. Select an identity provider from the available\nsign-in methods to go directly to that provider, or omit it to use Zitadel’s login page.",
         "operationId": "authZitadelLoginStart",
         "parameters": [
           {
@@ -1049,6 +1127,13 @@
                 "application": {
                   "summary": "Return to applications after login",
                   "value": {
+                    "return_to": "/apps"
+                  }
+                },
+                "identity_provider": {
+                  "summary": "Choose a configured external sign-in option",
+                  "value": {
+                    "identity_provider_id": "configured-provider-id",
                     "return_to": "/apps"
                   }
                 }

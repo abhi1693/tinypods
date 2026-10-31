@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, HttpUrl, SecretStr
 from tinypods_api.http.contracts import RequestDTO
 
 
@@ -35,12 +35,23 @@ class LogoutResponse(BaseModel):
     logged_out: bool = True
 
 
+class IdentityProviderDescriptor(BaseModel):
+    """An external sign-in option available through the configured authentication provider."""
+
+    id: str
+    type: str
+    label: str
+    icon_url: HttpUrl | None = None
+
+
 class ProviderDescriptor(BaseModel):
     """A sign-in method available for this installation."""
 
     id: str
     label: str
     type: Literal["password", "redirect"]
+    icon_url: HttpUrl | None = None
+    identity_providers: list[IdentityProviderDescriptor] | None = None
     login_path: str
     logout_path: str = "/auth/logout"
 
@@ -55,6 +66,7 @@ class LoginStartRequest(RequestDTO):
     """The page to open after signing in."""
 
     return_to: str = Field(default="/", max_length=256)
+    identity_provider_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,255}$")
 
 
 class LoginStartResponse(BaseModel):

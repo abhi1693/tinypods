@@ -363,10 +363,10 @@ def test_organization_selection_and_optional_upstream_provider(upstream: str | N
     issuer.claims["urn:zitadel:iam:user:resourceowner:id"] = organization
 
     async def scenario() -> None:
-        adapter = issuer.adapter(
-            zitadel_organization_id=organization, zitadel_identity_provider_id=upstream
+        adapter = issuer.adapter(zitadel_organization_id=organization)
+        target = await adapter.authorization_url(
+            STATE, NONCE, VERIFIER, identity_provider_id=upstream
         )
-        target = await adapter.authorization_url(STATE, NONCE, VERIFIER)
         scopes = parse_qs(urlsplit(target).query)["scope"][0].split()
         assert "urn:zitadel:iam:org:id:" + organization in scopes
         assert any(scope.startswith("urn:zitadel:iam:org:idp:id:") for scope in scopes) is (
@@ -392,12 +392,73 @@ def test_upstream_selection_requires_an_organization() -> None:
     from pydantic import ValidationError
 
     for settings in (
-        {"zitadel_identity_provider_id": "selected"},
+        {"zitadel_identity_providers": [{"id": "selected", "type": "google", "label": "Google"}]},
         {"zitadel_organization_id": "invalid scope"},
         {
-            "zitadel_identity_provider_id": "id with spaces",
+            "zitadel_identity_providers": [
+                {"id": "id with spaces", "type": "google", "label": "Google"}
+            ],
             "zitadel_organization_id": "organization",
         },
     ):
         with pytest.raises(ValidationError):
             Settings(**settings)
+
+
+def test_organization_domain_scope_and_signed_claim_validation() -> None:
+    """Select by domain and reject missing or mismatched signed organization claims."""
+    issuer = Issuer()
+    domain = "example.org"
+    issuer.claims["urn:zitadel:iam:user:resourceowner:primary_domain"] = domain
+
+    async def scenario() -> None:
+        adapter = issuer.adapter(zitadel_organization_domain="EXAMPLE.ORG")
+        target = await adapter.authorization_url(STATE, NONCE, VERIFIER)
+        scopes = parse_qs(urlsplit(target).query)["scope"][0].split()
+        assert "urn:zitadel:iam:org:domain:primary:" + domain in scopes
+        assert "urn:zitadel:iam:user:resourceowner" in scopes
+        assert not any(scope.startswith("urn:zitadel:iam:org:id:") for scope in scopes)
+        assert await adapter.exchange("code-123", NONCE, VERIFIER) == VerifiedIdentity(
+            ISSUER, "subject-123"
+        )
+        issuer.claims["urn:zitadel:iam:user:resourceowner:primary_domain"] = "other.org"
+        with pytest.raises(AuthError) as error:
+            await adapter.exchange("code-123", NONCE, VERIFIER)
+        assert error.value.status == 403
+        issuer.claims.pop("urn:zitadel:iam:user:resourceowner:primary_domain")
+        with pytest.raises(AuthError) as error:
+            await adapter.exchange("code-123", NONCE, VERIFIER)
+        assert error.value.status == 403
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"zitadel_organization_id": "org", "zitadel_organization_domain": "example.org"},
+        {"zitadel_organization_domain": "https://example.org"},
+        {"zitadel_organization_domain": "example.org/path"},
+        {"zitadel_organization_domain": "example.org extra-scope"},
+        {"zitadel_organization_domain": "-example.org"},
+    ],
+)
+def test_organization_selectors_are_exclusive_and_domains_are_dns_names(
+    updates: dict[str, object],
+) -> None:
+    """Reject two selectors and URL or scope injection in a domain selector."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Settings(**updates)
+
+
+def test_upstream_provider_can_use_organization_domain_instead_of_id() -> None:
+    """Allow domain-based organizations to configure upstream sign-in choices."""
+    settings = Settings(
+        zitadel_organization_domain="example.org",
+        zitadel_identity_providers=[{"id": "google-id", "type": "google", "label": "Google"}],
+    )
+    assert settings.zitadel_organization_id is None
+    assert settings.zitadel_identity_providers[0].id == "google-id"
+    assert Settings(zitadel_organization_domain=None).zitadel_organization_domain is None

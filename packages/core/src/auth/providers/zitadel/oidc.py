@@ -124,25 +124,28 @@ class ZitadelOIDC:
             self._endpoint(metadata.end_session_endpoint)
         return metadata
 
-    def _scope(self) -> str:
+    def _scope(self, identity_provider_id: str | None = None) -> str:
         """Select the configured organization and optionally an upstream identity provider."""
         scopes = ["openid"]
         if self.settings.zitadel_organization_id is not None:
             scopes.append("urn:zitadel:iam:org:id:" + self.settings.zitadel_organization_id)
-        if self.settings.zitadel_identity_provider_id is not None:
+        if self.settings.zitadel_organization_domain is not None:
             scopes.append(
-                "urn:zitadel:iam:org:idp:id:" + self.settings.zitadel_identity_provider_id
+                "urn:zitadel:iam:org:domain:primary:" + self.settings.zitadel_organization_domain
             )
+            scopes.append("urn:zitadel:iam:user:resourceowner")
+        if identity_provider_id is not None:
+            scopes.append("urn:zitadel:iam:org:idp:id:" + identity_provider_id)
         return " ".join(scopes)
 
-    def _client(self) -> AsyncOAuth2Client:
+    def _client(self, identity_provider_id: str | None = None) -> AsyncOAuth2Client:
         """Create a request-owned OAuth client with mandatory PKCE S256 and no refresh behavior."""
         secret = self.settings.zitadel_client_secret
         return AsyncOAuth2Client(
             self.client_id,
             secret.get_secret_value() if secret is not None else None,
             token_endpoint_auth_method=self.settings.zitadel_token_auth_method,
-            scope=self._scope(),
+            scope=self._scope(identity_provider_id),
             redirect_uri=self.redirect_uri,
             code_challenge_method="S256",
             timeout=2.0,
@@ -159,7 +162,9 @@ class ZitadelOIDC:
         ):
             raise AuthError(401)
 
-    async def authorization_url(self, state: str, nonce: str, verifier: str) -> str:
+    async def authorization_url(
+        self, state: str, nonce: str, verifier: str, *, identity_provider_id: str | None = None
+    ) -> str:
         """Create a fresh authorization URL using server-owned transaction proof."""
         self._proof(nonce, verifier)
         if not re.fullmatch(r"[A-Za-z0-9_-]{32,128}", state):
@@ -167,7 +172,7 @@ class ZitadelOIDC:
         try:
             async with asyncio.timeout(10):
                 metadata = await self._discovery()
-                async with self._client() as client:
+                async with self._client(identity_provider_id) as client:
                     url, _ = client.create_authorization_url(
                         metadata.authorization_endpoint,
                         state=state,
@@ -231,6 +236,12 @@ class ZitadelOIDC:
                 if (
                     organization is not None
                     and claims.get("urn:zitadel:iam:user:resourceowner:id") != organization
+                ):
+                    raise AuthError(403)
+                domain = self.settings.zitadel_organization_domain
+                if (
+                    domain is not None
+                    and claims.get("urn:zitadel:iam:user:resourceowner:primary_domain") != domain
                 ):
                     raise AuthError(403)
                 subject = claims.get("sub")

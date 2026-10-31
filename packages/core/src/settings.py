@@ -4,7 +4,10 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import (
+    BaseModel,
+    ConfigDict,
     Field,
+    HttpUrl,
     SecretStr,
     ValidationError,
     ValidationInfo,
@@ -18,6 +21,16 @@ from sqlalchemy.exc import ArgumentError
 
 class ConfigurationError(ValueError):
     """A configuration error safe to display in process logs."""
+
+
+class IdentityProviderSettings(BaseModel):
+    """Describe one configured upstream sign-in option for frontend display and selection."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,255}$")
+    type: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,63}$")
+    label: str = Field(min_length=1, max_length=80)
+    icon_url: HttpUrl | None = None
 
 
 class Settings(BaseSettings):
@@ -64,12 +77,22 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = Field(default=300, ge=1, le=3600)
     cache_metadata_ttl_seconds: int = Field(default=600, ge=1, le=3600)
     cache_max_bytes: int = Field(default=1_000_000, ge=1024, le=5_000_000)
+    auth_local_label: str = Field(default="Username and password", min_length=1, max_length=80)
+    auth_local_icon_url: HttpUrl | None = None
+    zitadel_label: str = Field(default="Zitadel", min_length=1, max_length=80)
+    zitadel_icon_url: HttpUrl | None = None
     auth_local_enabled: bool = True
     zitadel_enabled: bool = False
     zitadel_issuer: str | None = None
     zitadel_organization_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,255}$")
-    zitadel_identity_provider_id: str | None = Field(
-        default=None, pattern=r"^[A-Za-z0-9_-]{1,255}$"
+    zitadel_organization_domain: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=253,
+        pattern=r"^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$",
+    )
+    zitadel_identity_providers: tuple[IdentityProviderSettings, ...] = Field(
+        default=(), max_length=32
     )
     zitadel_client_id: str | None = Field(default=None, min_length=1, max_length=255)
     zitadel_client_secret: SecretStr | None = None
@@ -107,11 +130,27 @@ class Settings(BaseSettings):
             raise ValueError("Invalid OIDC URL")
         return value
 
+    @field_validator("zitadel_organization_domain")
+    @classmethod
+    def normalize_organization_domain(cls, value: str | None) -> str | None:
+        """Use a canonical lowercase DNS domain for organization selection."""
+        return value.lower() if value is not None else None
+
     @model_validator(mode="after")
     def validate_oidc_configuration(self) -> "Settings":
         """Reject incomplete enabled providers instead of silently enabling another login method."""
-        if self.zitadel_identity_provider_id is not None and self.zitadel_organization_id is None:
+        if (
+            self.zitadel_organization_id is not None
+            and self.zitadel_organization_domain is not None
+        ):
+            raise ValueError("Configure an organization ID or domain, not both")
+        if self.zitadel_identity_providers and not (
+            self.zitadel_organization_id or self.zitadel_organization_domain
+        ):
             raise ValueError("A selected Zitadel identity provider requires an organization")
+        provider_ids = [provider.id for provider in self.zitadel_identity_providers]
+        if len(set(provider_ids)) != len(provider_ids):
+            raise ValueError("Zitadel identity provider IDs must be unique")
         if self.zitadel_enabled:
             if (
                 not self.zitadel_issuer

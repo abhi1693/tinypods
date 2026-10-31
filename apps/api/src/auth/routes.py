@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Request
 from tinypods_api.auth.contracts import (
+    IdentityProviderDescriptor,
     ProviderDescriptor,
     ProvidersResponse,
 )
@@ -21,6 +22,7 @@ router.include_router(session_router)
     operation_id=build_operation_id("auth", "providers", "list"),
     summary="List available sign-in methods",
     response_model=ProvidersResponse,
+    response_model_exclude_none=True,
 )
 async def providers(request: Request) -> ProvidersResponse:
     """Show the sign-in methods available for this installation.
@@ -32,14 +34,28 @@ async def providers(request: Request) -> ProvidersResponse:
     if settings.auth_local_enabled:
         data.append(
             ProviderDescriptor(
-                id="local", label="Username and password", type="password", login_path="/auth/login"
+                id="local",
+                label=settings.auth_local_label,
+                type="password",
+                icon_url=settings.auth_local_icon_url,
+                login_path="/auth/login",
             )
         )
     if settings.zitadel_enabled:
         data.append(
             ProviderDescriptor(
                 id="zitadel",
-                label="Zitadel",
+                label=settings.zitadel_label,
+                icon_url=settings.zitadel_icon_url,
+                identity_providers=[
+                    IdentityProviderDescriptor(
+                        id=provider.id,
+                        type=provider.type,
+                        label=provider.label,
+                        icon_url=provider.icon_url,
+                    )
+                    for provider in settings.zitadel_identity_providers
+                ],
                 type="redirect",
                 login_path="/auth/providers/zitadel/start",
             )

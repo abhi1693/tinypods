@@ -27,9 +27,13 @@ from tinypods_core.auth import AuthError
 from tinypods_core.auth.federation import BrowserLogin
 
 EXAMPLES: dict[str, Example] = {
+    "identity_provider": Example(
+        summary="Choose a configured external sign-in option",
+        value={"return_to": "/apps", "identity_provider_id": "configured-provider-id"},
+    ),
     "application": Example(
         summary="Return to applications after login", value={"return_to": "/apps"}
-    )
+    ),
 }
 
 router = APIRouter(route_class=RateLimitedRoute)
@@ -79,7 +83,8 @@ async def start(
     """Start signing in with Zitadel.
 
     Open the returned link in the same browser. After signing in, you will return
-    to the page chosen in this request.
+    to the page chosen in this request. Select an identity provider from the available
+    sign-in methods to go directly to that provider, or omit it to use Zitadel’s login page.
     """
     check_origin(request)
     if request.headers.get(CSRF_HEADER) != "login":
@@ -89,6 +94,7 @@ async def start(
         body.return_to,
         request.cookies.get(policy.session),
         browser_token=request.cookies.get(policy.oidc),
+        identity_provider_id=body.identity_provider_id,
     )
     response.set_cookie(
         policy.oidc,

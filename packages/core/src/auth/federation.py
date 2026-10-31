@@ -25,7 +25,9 @@ logger = logging.getLogger(__name__)
 class RedirectProvider(Protocol):
     """Describe browser challenge/exchange/logout without exposing OAuth details to routes."""
 
-    async def authorization_url(self, state: str, nonce: str, verifier: str) -> str:
+    async def authorization_url(
+        self, state: str, nonce: str, verifier: str, *, identity_provider_id: str | None = None
+    ) -> str:
         """Build a fresh authorization challenge for a server-owned transaction."""
         ...
 
@@ -162,7 +164,8 @@ class BrowserLogin:
                     self.settings.zitadel_issuer,
                     self.settings.zitadel_client_id,
                     self.settings.zitadel_organization_id,
-                    self.settings.zitadel_identity_provider_id,
+                    self.settings.zitadel_organization_domain,
+                    [provider.id for provider in self.settings.zitadel_identity_providers],
                     self.settings.zitadel_redirect_uri,
                     self.settings.zitadel_token_auth_method,
                     secret.get_secret_value() if secret is not None else None,
@@ -176,10 +179,15 @@ class BrowserLogin:
         previous_token: str | None = None,
         *,
         browser_token: str | None = None,
+        identity_provider_id: str | None = None,
     ) -> LoginStart:
         """Reserve a start, persist five-minute secrets and return a fresh challenge."""
         if not self.settings.zitadel_enabled:
             raise AuthError(404)
+        if identity_provider_id is not None and identity_provider_id not in {
+            provider.id for provider in self.settings.zitadel_identity_providers
+        }:
+            raise AuthError(400)
         if len(return_to) > 256 or not re.fullmatch(
             r"/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]*", return_to
         ):
@@ -201,7 +209,9 @@ class BrowserLogin:
             if browser_token and len(browser_token) <= 128
             else secrets.token_urlsafe(32)
         )
-        url = await self.provider.authorization_url(state, nonce, verifier)
+        url = await self.provider.authorization_url(
+            state, nonce, verifier, identity_provider_id=identity_provider_id
+        )
         async with self.database.transaction() as session:
             now = (await session.exec(select(func.clock_timestamp()))).one()
             await session.exec(delete(LoginTransaction).where(LoginTransaction.expires_at <= now))

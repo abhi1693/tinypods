@@ -56,10 +56,17 @@ confidential Web client configured for Basic, set `client_secret_basic` and load
 remains mandatory. Do not use an SPA's client secret in frontend code.
 
 `TINYPODS_ZITADEL_ORGANIZATION_ID` selects the organization's login policy and
-restricts sign-in to that organization. The signed organization claim must match.
-`TINYPODS_ZITADEL_IDENTITY_PROVIDER_ID` is optional and requires an organization;
-when set, sign-in can go directly to that upstream provider. When omitted, Zitadel
-shows its own login page. Both cases remain a redirect flow: the frontend renders
+restricts sign-in to that organization. The signed organization claim must match. Alternatively, configure
+`TINYPODS_ZITADEL_ORGANIZATION_DOMAIN` with the organization’s primary DNS domain
+(without a scheme or path). The ID and domain settings are mutually exclusive.
+Domain selection requests the primary-domain scope and checks the signed
+resource-owner primary-domain claim.
+`TINYPODS_ZITADEL_IDENTITY_PROVIDERS` is an optional JSON array of upstream sign-in
+options and requires an organization. Each entry defines a unique `id`, a provider
+`type` such as `google`, a display `label`, and an optional HTTP(S) `icon_url`.
+The provider response exposes these entries under `identity_providers`. Pass a
+selected entry’s `id` as `identity_provider_id` to the start action to go directly
+to that provider. Omit the selection to use Zitadel’s hosted login page. Both cases remain a redirect flow: the frontend renders
 a sign-in button and follows the fresh link returned by the start action. Only
 local accounts use the frontend's username/password form. Organization selection
 is checked at sign-in; it does not continuously poll membership for existing
@@ -170,3 +177,17 @@ operation IDs remain stable.
 ## Development over HTTP
 
 `TINYPODS_ENVIRONMENT` defaults to `production`, which requires HTTPS browser redirects and Secure cookies with the `__Host-` prefix. Explicit `development` mode allows HTTP callback and post-logout URLs and uses unprefixed cookies without Secure. HttpOnly, SameSite, CSRF checks and session verification still apply. The Zitadel issuer and upstream endpoints require HTTPS in both modes. Use development mode only on trusted development networks. Cookies from one mode are not accepted in the other; sign in again after switching modes.
+
+## Sign-in button configuration
+
+`TINYPODS_AUTH_LOCAL_LABEL` and `TINYPODS_ZITADEL_LABEL` override the labels shown
+for local and Zitadel sign-in. Optional `TINYPODS_AUTH_LOCAL_ICON_URL` and
+`TINYPODS_ZITADEL_ICON_URL` configure their icons. Icons are public HTTP(S) URLs
+returned as metadata; the backend does not download them. Each upstream option
+has its own label and optional icon, independent of the broker’s label and icon.
+Frontend clients render the configured options and use the parent `login_path`
+with the selected `identity_provider_id`. They never collect upstream passwords.
+
+```dotenv
+TINYPODS_ZITADEL_IDENTITY_PROVIDERS=[{"id":"google-id","type":"google","label":"Google","icon_url":"https://example.com/google.png"},{"id":"github-id","type":"github","label":"GitHub"}]
+```
