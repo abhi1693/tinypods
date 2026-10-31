@@ -76,7 +76,6 @@ class Settings(BaseSettings):
     zitadel_token_auth_method: Literal["none", "client_secret_basic"] = "none"
     zitadel_redirect_uri: str | None = None
     zitadel_post_logout_uri: str | None = None
-    zitadel_allowed_subjects: tuple[str, ...] = ()
 
     @field_validator("zitadel_issuer", "zitadel_redirect_uri", "zitadel_post_logout_uri")
     @classmethod

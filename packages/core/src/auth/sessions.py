@@ -120,7 +120,6 @@ class SessionService:
                 enabled = (
                     self.settings.zitadel_enabled
                     and record.external_issuer == self.settings.zitadel_issuer
-                    and record.external_subject in self.settings.zitadel_allowed_subjects
                 )
             else:
                 enabled = False

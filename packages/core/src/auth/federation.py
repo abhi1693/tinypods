@@ -1,6 +1,7 @@
 """Supported redirect providers, bounded browser login transactions and explicit identity access."""
 
 import json
+import logging
 import re
 import secrets
 from dataclasses import dataclass, field
@@ -17,6 +18,8 @@ from tinypods_core.db import Database
 from tinypods_core.db.models import ExternalIdentity, Installation, LoginTransaction, User
 from tinypods_core.rate_limit import RateLimiter, RatePolicy
 from tinypods_core.settings import Settings
+
+logger = logging.getLogger(__name__)
 
 
 class RedirectProvider(Protocol):
@@ -48,24 +51,19 @@ class IdentityPolicy:
     """Capture a configured provider's issuer and explicit identity admission policy."""
 
     issuer: str | None
-    allowed_subjects: tuple[str, ...]
     enabled: bool
 
 
 def identity_policy(settings: Settings, provider: str) -> IdentityPolicy:
     """Resolve a supported provider centrally; arbitrary issuers and local linking are rejected."""
-    policies = {
-        "zitadel": IdentityPolicy(
-            settings.zitadel_issuer, settings.zitadel_allowed_subjects, settings.zitadel_enabled
-        )
-    }
+    policies = {"zitadel": IdentityPolicy(settings.zitadel_issuer, settings.zitadel_enabled)}
     if provider not in policies:
         raise AuthError(404)
     return policies[provider]
 
 
 class IdentityMappings:
-    """Admit only explicitly allowed subjects; link accounts only through trusted administration."""
+    """Provision verified identities; reserve account linking for trusted operators."""
 
     def __init__(
         self, database: Database, settings: Settings, *, provider: str = "zitadel"
@@ -76,9 +74,9 @@ class IdentityMappings:
         self.provider = provider
 
     async def resolve(self, identity: VerifiedIdentity) -> UUID:
-        """Map issuer+subject and provision non-owners only under the explicit allowlist."""
+        """Map verified issuer and subject to an account, provisioning non-owners on first login."""
         policy = identity_policy(self.settings, self.provider)
-        if identity.issuer != policy.issuer or identity.subject not in policy.allowed_subjects:
+        if not policy.enabled or identity.issuer != policy.issuer:
             raise AuthError(403)
         async with self.database.transaction() as session:
             installation = (
@@ -111,7 +109,7 @@ class IdentityMappings:
         The caller must be an authorized deployment operator; this is not a public route.
         """
         policy = identity_policy(self.settings, self.provider)
-        if not policy.enabled or subject not in policy.allowed_subjects:
+        if not policy.enabled:
             raise AuthError(403)
         async with self.database.transaction() as session:
             installation = (
@@ -168,7 +166,6 @@ class BrowserLogin:
                     self.settings.zitadel_redirect_uri,
                     self.settings.zitadel_token_auth_method,
                     secret.get_secret_value() if secret is not None else None,
-                    self.settings.zitadel_allowed_subjects,
                 ]
             )
         )
@@ -237,6 +234,7 @@ class BrowserLogin:
         if not self.settings.zitadel_enabled:
             raise AuthError(404)
         if not state or not browser_token or len(state) > 128 or len(browser_token) > 128:
+            logger.warning("Login callback rejected: missing or invalid browser correlation")
             raise AuthError(401)
         async with self.database.transaction() as session:
             statement = (
@@ -251,6 +249,7 @@ class BrowserLogin:
             transaction = cast(LoginTransaction | None, result.scalar_one_or_none())
             now = (await session.exec(select(func.clock_timestamp()))).one()
         if transaction is None:
+            logger.warning("Login callback rejected: transaction absent or browser mismatch")
             raise AuthError(401)
         if (
             transaction.expires_at <= now
@@ -261,6 +260,7 @@ class BrowserLogin:
             or (response_issuer is not None and response_issuer != self.settings.zitadel_issuer)
         ):
             raise AuthError(401)
+        logger.debug("Login callback correlation accepted; exchanging authorization code")
         identity = await self.provider.exchange(code, transaction.nonce, transaction.verifier)
         user_id = await self.identities.resolve(identity)
         login = await self.sessions.issue(

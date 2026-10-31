@@ -1,6 +1,7 @@
 """Zitadel Authorization Code + PKCE adapter using Authlib and joserfc validation."""
 
 import asyncio
+import logging
 import re
 from typing import Any, cast
 from urllib.parse import urlencode, urlsplit
@@ -15,6 +16,8 @@ from joserfc.jwk import KeySet, KeySetSerialization
 from pydantic import BaseModel, ConfigDict, ValidationError
 from tinypods_core.auth.contracts import AuthError, VerifiedIdentity
 from tinypods_core.settings import Settings
+
+logger = logging.getLogger(__name__)
 
 
 class Discovery(BaseModel):
@@ -236,7 +239,11 @@ class ZitadelOIDC:
                 return VerifiedIdentity(self.issuer, subject)
         except (httpx.HTTPError, TimeoutError):
             raise AuthError(503) from None
-        except (OAuthError, JoseError, ValueError, KeyError, TypeError):
+        except (OAuthError, JoseError, ValueError, KeyError, TypeError) as exc:
+            logger.warning(
+                "Zitadel code exchange or token validation rejected",
+                extra={"failure_type": type(exc).__name__},
+            )
             raise AuthError(401) from None
 
     async def logout_url(self) -> str | None:

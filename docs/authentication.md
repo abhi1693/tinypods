@@ -41,7 +41,6 @@ TINYPODS_ZITADEL_CLIENT_ID=your-client-id
 TINYPODS_ZITADEL_TOKEN_AUTH_METHOD=none
 TINYPODS_ZITADEL_REDIRECT_URI=https://tinypods.example.org/auth/providers/zitadel/callback
 TINYPODS_ZITADEL_POST_LOGOUT_URI=https://tinypods.example.org/
-TINYPODS_ZITADEL_ALLOWED_SUBJECTS='["the-explicitly-admitted-subject"]'
 # Optional external-only policy, never an outage-triggered switch:
 TINYPODS_AUTH_LOCAL_ENABLED=false
 ```
@@ -64,12 +63,12 @@ shows its own login page. Both cases remain a redirect flow: the frontend render
 a sign-in button and follows the fresh link returned by the start action. Only
 local accounts use the frontend's username/password form. Organization selection
 is checked at sign-in; it does not continuously poll membership for existing
-sessions. Subject admission and installation-owner rights remain separate.
+sessions. Provider authentication and installation-owner rights remain separate.
 
-Empty allowed subjects denies every external identity. An admitted verified
+There is no per-user admission list. A verified
 `(issuer, sub)` may create a new non-owner core account with no local password.
 Email, names and organization/role claims never link accounts or elevate access.
-To link an allowed subject to an existing account (including the existing owner),
+To link a provider subject to an existing account (including the existing owner),
 run `tinypods auth link PROVIDER SUBJECT USER_ID` (currently `zitadel` is the supported external provider) from a trusted operator shell. Obtain the
 existing core user ID from its authenticated session response or operator database
 administration. This explicit security-sensitive link cannot reassign an existing
@@ -78,7 +77,7 @@ mapping; it is not an unauthenticated registration or email-matching shortcut.
 Zitadel project/organization policies remain upstream controls. Enable project
 access enforcement/appropriate grants in Zitadel as required for the installation;
 merely asserting roles is not equivalent to requiring project access. TinyPods
-still applies its explicit subject admission policy and own ownership checks. See
+applies configured organization validation and its own ownership checks. See
 [project controls](https://zitadel.com/docs/guides/manage/console/projects-overview).
 No organization administration or automatic provider-admin role mapping is added.
 
@@ -125,8 +124,8 @@ public API origin. Do not enable wildcard credentialed CORS.
 PostgreSQL stores only digests of the random session/CSRF secrets. Absolute session
 expiry is 12 hours using database time. Every use reloads live session/account
 state; configured API validation also checks whether its source provider remains
-enabled and, for external sessions, exact current issuer and subject admission.
-Removing admission/disabling the provider denies existing affected sessions after
+enabled and, for external sessions, exact current issuer.
+Changing the issuer or disabling the provider denies existing affected sessions after
 configuration rollout. All replicas must roll out matching settings. Session rows
 remain until operator retention cleanup (not implemented here).
 
@@ -150,7 +149,7 @@ Zitadel [RP-initiated logout](https://zitadel.com/docs/guides/integrate/login/oi
 can affect all accounts in that browser. No automatic upstream logout, back-channel
 logout endpoint, provider-session polling, global-device revocation or refresh is
 claimed. Upstream account deletion alone is not continuously polled; use TinyPods
-admission/config removal or local revocation as appropriate. The app session cannot
+provider configuration removal or local revocation as appropriate. The app session cannot
 outlive its own absolute expiry, but is not coupled to provider token expiry.
 
 Local login allows 30 attempts/minute per installation and five per existing

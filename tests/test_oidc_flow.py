@@ -1,7 +1,6 @@
 """Browser OIDC orchestration and attack regressions against disposable durable stores."""
 
 import asyncio
-import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -50,7 +49,6 @@ def enabled(settings: Settings, **updates: object) -> Settings:
             "zitadel_issuer": ISSUER,
             "zitadel_client_id": "test-client",
             "zitadel_redirect_uri": CALLBACK,
-            "zitadel_allowed_subjects": (SUBJECT,),
             **updates,
         }
     )
@@ -252,7 +250,7 @@ def test_callback_rejects_invalid_transactions_before_exchange(
 
 @pytest.mark.parametrize(
     "code,status",
-    [("network-failure", 503), ("invalid-code", 401), ("forbidden", 403), ("wrong-issuer", 403)],
+    [("network-failure", 503), ("invalid-code", 401), ("wrong-issuer", 403)],
 )
 def test_provider_failure_or_access_denial_never_falls_back(
     auth_settings: Settings, code: str, status: int
@@ -290,16 +288,10 @@ def test_identity_admission_linking_and_creation_races(auth_settings: Settings) 
         async with runtime(settings) as active:
             owner_id = await LocalPasswordProvider(active.database).bootstrap(credentials())
             mappings = IdentityMappings(active.database, settings)
-            for identity in (
-                VerifiedIdentity(ISSUER, "not-allowed"),
-                VerifiedIdentity("https://other.example", SUBJECT),
-            ):
+            for identity in (VerifiedIdentity("https://other.example", SUBJECT),):
                 with pytest.raises(AuthError) as error:
                     await mappings.resolve(identity)
                 assert error.value.status == 403
-            with pytest.raises(AuthError) as error:
-                await mappings.link("not-allowed", owner_id)
-            assert error.value.status == 403
             with pytest.raises(AuthError) as error:
                 await mappings.link(SUBJECT, uuid4())
             assert error.value.status == 404
@@ -314,7 +306,9 @@ def test_identity_admission_linking_and_creation_races(auth_settings: Settings) 
             with pytest.raises(AuthError) as error:
                 await disabled.link(SUBJECT, owner_id)
             assert error.value.status == 403
-            settings.zitadel_allowed_subjects = (SUBJECT, "new-subject")
+            with pytest.raises(AuthError) as error:
+                await disabled.resolve(VerifiedIdentity(ISSUER, "new-subject"))
+            assert error.value.status == 403
             created = await asyncio.gather(
                 *[mappings.resolve(VerifiedIdentity(ISSUER, "new-subject")) for _ in range(5)]
             )
@@ -680,7 +674,7 @@ def test_external_http_failure_does_not_activate_disabled_local_login(
 def test_cli_identity_linking_is_explicit_and_authorized_by_operator_access(
     auth_settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Link allowlisted subjects through the operator CLI without profile/email matching."""
+    """Link verified provider subjects through the operator CLI without profile/email matching."""
     settings = enabled(auth_settings)
 
     async def initialize() -> str:
@@ -697,7 +691,6 @@ def test_cli_identity_linking_is_explicit_and_authorized_by_operator_access(
         "TINYPODS_ZITADEL_ISSUER": ISSUER,
         "TINYPODS_ZITADEL_CLIENT_ID": "test-client",
         "TINYPODS_ZITADEL_REDIRECT_URI": CALLBACK,
-        "TINYPODS_ZITADEL_ALLOWED_SUBJECTS": json.dumps([SUBJECT]),
     }.items():
         monkeypatch.setenv(name, value)
     runner = CliRunner()
@@ -708,8 +701,6 @@ def test_cli_identity_linking_is_explicit_and_authorized_by_operator_access(
         assert unsupported.exit_code != 0 and "404" in unsupported.output
     repeated = runner.invoke(cli, ["auth", "link", "zitadel", SUBJECT, owner_id])
     assert repeated.exit_code != 0 and "409" in repeated.output
-    rejected = runner.invoke(cli, ["auth", "link", "zitadel", "not-allowed", owner_id])
-    assert rejected.exit_code != 0 and "403" in rejected.output
     with psycopg.connect(settings.database_url.get_secret_value()) as connection:
         assert connection.execute(
             "SELECT user_id FROM auth_external_identity WHERE issuer=%s AND subject=%s",
@@ -834,7 +825,7 @@ def test_enabled_auth_configuration_error_is_safe(monkeypatch: pytest.MonkeyPatc
 
 
 def test_provider_policy_changes_reject_existing_sessions(auth_settings: Settings) -> None:
-    """Revalidate enabled-provider and subject policy on every existing session use."""
+    """Revalidate enabled-provider and issuer policy on every existing session use."""
 
     async def scenario() -> None:
         settings = enabled(auth_settings)
@@ -851,7 +842,6 @@ def test_provider_policy_changes_reject_existing_sessions(auth_settings: Setting
                 assert record.external_issuer == ISSUER and record.external_subject == SUBJECT
             assert await active.browser.sessions.authenticate(external.token) == external.principal
             changes = (
-                ("zitadel_allowed_subjects", ()),
                 ("zitadel_issuer", "https://different-issuer.example"),
                 ("zitadel_enabled", False),
             )

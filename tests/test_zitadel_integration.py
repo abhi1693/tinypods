@@ -400,7 +400,6 @@ def test_real_zitadel_tls_pkce_browser_session_and_authorization(
             "zitadel_client_secret": SecretStr(app["clientSecret"])
             if method == "client_secret_basic"
             else None,
-            "zitadel_allowed_subjects": (real_zitadel.user_id,),
             "zitadel_post_logout_uri": "https://tinypods.example/",
         }
     )
