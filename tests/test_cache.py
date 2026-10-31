@@ -4,11 +4,12 @@ import asyncio
 import json
 import time
 from dataclasses import replace
+from typing import Annotated
 from uuid import uuid4
 
 import httpx
 import pytest
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.testclient import TestClient
 from pydantic import SecretStr, ValidationError
@@ -172,7 +173,20 @@ def test_optional_cache_failure_reads_through(mode):
 
 
 def test_keys_preserve_duplicate_order_and_separate_paths_revisions(cache_settings):
-    with TestClient(create_app(cache_settings)) as client:
+    app = create_app(cache_settings)
+
+    @app.get(
+        "/query",
+        response_model=PlatformInfoResponse,
+        openapi_extra=CachePolicy(namespace="query", revision=1, ttl="content").openapi_extra(),
+    )
+    async def query_endpoint(
+        a: Annotated[list[str] | None, Query()] = None,
+        b: str | None = None,
+    ) -> PlatformInfoResponse:
+        return PlatformInfoResponse(version=json.dumps([a, b]))
+
+    with TestClient(app) as client:
         for query, expected in [
             ("?a=1&b=2", "MISS"),
             ("?b=2&a=1", "HIT"),
@@ -180,7 +194,7 @@ def test_keys_preserve_duplicate_order_and_separate_paths_revisions(cache_settin
             ("?a=2&a=1", "MISS"),
             ("?a=1&a=2", "HIT"),
         ]:
-            assert client.get("/info" + query).headers["x-cache"] == expected
+            assert client.get("/query" + query).headers["x-cache"] == expected
     one = ResponseCache(cache_settings)
     other = ResponseCache(
         cache_settings.model_copy(
@@ -513,3 +527,13 @@ def test_real_read_timeout_is_bounded_and_does_not_fail_http(cache_settings):
         cache.close()
 
     asyncio.run(scenario())
+
+
+def test_ignored_query_variations_do_not_allocate_cache_entries(cache_settings):
+    app = create_app(cache_settings)
+    cache = app.state.response_cache
+    with TestClient(app) as client:
+        for value in range(10):
+            response = client.get(f"/info?ignored={value}")
+            assert response.headers["x-cache-bypass-reason"] == "undeclared_query"
+        assert not list(cache.redis.scan_iter(match=f"{cache.namespace}:public:*"))

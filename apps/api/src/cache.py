@@ -8,6 +8,7 @@ from typing import Literal
 
 import anyio
 from fastapi import Request, Response
+from fastapi.dependencies.models import Dependant
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from starlette.concurrency import run_in_threadpool
@@ -62,6 +63,13 @@ def tagged(response: Response, status: str, reason: str | None = None) -> Respon
     return response
 
 
+def declared_queries(dependency: Dependant) -> set[str]:
+    names = {field.alias for field in dependency.query_params}
+    for child in dependency.dependencies:
+        names.update(declared_queries(child))
+    return names
+
+
 class CachedReadRoute(APIRoute):
     def get_route_handler(self) -> Callable[[Request], Coroutine[None, None, Response]]:
         handler = super().get_route_handler()
@@ -77,6 +85,7 @@ class CachedReadRoute(APIRoute):
         ):
             raise ValueError("Cached routes require a public response DTO")
         adapter: TypeAdapter[BaseModel] = TypeAdapter(self.response_model)
+        query_names = declared_queries(self.dependant)
 
         async def cached(request: Request) -> Response:
             settings: Settings = request.app.state.settings
@@ -95,6 +104,8 @@ class CachedReadRoute(APIRoute):
                 reason = "request_cache_control"
             elif len(request.scope.get("query_string", b"")) > 4096:
                 reason = "query_too_long"
+            elif set(request.query_params) - query_names:
+                reason = "undeclared_query"
             if reason:
                 return tagged(await handler(request), "BYPASS", reason)
             assert cache is not None
