@@ -2,12 +2,13 @@
 
 import asyncio
 import json
+import logging
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from types import SimpleNamespace
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NoReturn
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -18,7 +19,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import SecretStr, ValidationError
 from redis.exceptions import ConnectionError
 from tinypods_api.cache import CachedReadRoute, CachePolicy
-from tinypods_api.contracts import PlatformInfoResponse
+from tinypods_api.http.contracts import PlatformInfoResponse
 from tinypods_api.main import create_app
 from tinypods_core import __version__
 from tinypods_core.cache import CacheLookup, CacheUnavailable, ResponseCache, json_body
@@ -32,7 +33,8 @@ def anyio_backend() -> Literal["asyncio"]:
     """Run async Redis tests on the event loop supported by redis.asyncio.
 
     Returns:
-        The asyncio backend name required by the async Redis client."""
+        The asyncio backend name required by the async Redis client.
+    """
     return "asyncio"
 
 
@@ -44,7 +46,8 @@ def cache_settings(valkey_url: str) -> Settings:
         valkey_url: Ephemeral connection URL supplied by the isolated server fixture.
 
     Returns:
-        Settings for a unique response-cache namespace."""
+        Settings for a unique response-cache namespace.
+    """
     return Settings(
         valkey_url=SecretStr(valkey_url),
         cache_namespace="tests:" + uuid4().hex,
@@ -60,7 +63,8 @@ async def cache(cache_settings: Settings) -> AsyncIterator[ResponseCache]:
         cache_settings: Validated settings with a fresh Valkey namespace and bounded test payloads.
 
     Yields:
-        Async cache instance whose pool is awaited closed after the test."""
+        Async cache instance whose pool is awaited closed after the test.
+    """
     client = ResponseCache(cache_settings)
     try:
         yield client
@@ -98,7 +102,8 @@ async def test_generation_invalidation_and_lock_ownership(cache: ResponseCache) 
         cache: Async cache client connected to the disposable Valkey server.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     first = await cache.lookup("public-item")
     assert first.token and first.body is None
     assert await cache.publish(first, b'{"ok":true}', 30)
@@ -123,7 +128,8 @@ async def test_expiry_body_limits_corruption_and_evicted_generation(cache: Respo
         cache: Async cache client connected to the disposable Valkey server.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     assert json_body("not-binary", 1024) is None
     first = await cache.lookup("expiry")
     assert await cache.publish(first, b"{}", 1)
@@ -159,7 +165,8 @@ async def test_breaker_and_pool_bounds(
         monkeypatch: Pytest hook that restores temporary method/configuration substitutions.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     broken = AsyncMock(side_effect=ConnectionError("unavailable"))
     monkeypatch.setattr(cache.redis, "get", broken)
     for _ in range(2):
@@ -181,7 +188,8 @@ async def test_info_hits_skip_dependencies_and_keep_fresh_request_ids(
         cache_settings: Validated settings with a fresh Valkey namespace and bounded test payloads.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     app = create_app(cache_settings)
     dependency = AsyncMock()
 
@@ -189,7 +197,8 @@ async def test_info_hits_skip_dependencies_and_keep_fresh_request_ids(
         """Record whether route dependency resolution ran.
 
         Returns:
-            None. Assertions or recorded calls verify the described behavior."""
+            None. Assertions or recorded calls verify the described behavior.
+        """
         await dependency()
 
     router = APIRouter(route_class=CachedReadRoute)
@@ -207,7 +216,8 @@ async def test_info_hits_skip_dependencies_and_keep_fresh_request_ids(
             item_id: Path identifier encoded into the public test response.
 
         Returns:
-            Public DTO with the item identifier as its version value."""
+            Public DTO with the item identifier as its version value.
+        """
         return PlatformInfoResponse(version=item_id)
 
     app.include_router(router)
@@ -247,7 +257,8 @@ async def test_sensitive_or_explicit_requests_bypass(
         reason: Expected fixed cache-bypass reason.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     async with client_for(cache_settings) as (_, client):
         for _ in range(2):
             response = await client.get("/info" + query, headers=headers)
@@ -264,7 +275,8 @@ async def test_optional_cache_failure_reads_through(mode: str) -> None:
         mode: Response/configuration variant selected by the parameterized test.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     settings = Settings(
         cache_enabled=mode != "disabled",
         valkey_url=SecretStr("redis://127.0.0.1:1/0") if mode != "unconfigured" else None,
@@ -286,7 +298,8 @@ async def test_keys_preserve_query_semantics_and_database_identity(
         cache_settings: Validated settings with a fresh Valkey namespace and bounded test payloads.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     app = create_app(cache_settings)
 
     @app.get(
@@ -304,7 +317,8 @@ async def test_keys_preserve_query_semantics_and_database_identity(
             b: Optional query parameter b used to test canonical name ordering.
 
         Returns:
-            Public DTO encoding the parsed query values."""
+            Public DTO encoding the parsed query values.
+        """
         return PlatformInfoResponse(version=json.dumps([a, b]))
 
     async with client_for(cache_settings, app) as (_, client):
@@ -340,7 +354,8 @@ async def test_unsafe_responses_are_not_stored(cache_settings: Settings, mode: s
         mode: Response/configuration variant selected by the parameterized test.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     app = create_app(cache_settings)
     calls = 0
 
@@ -353,7 +368,8 @@ async def test_unsafe_responses_are_not_stored(cache_settings: Settings, mode: s
         """Return the selected response variant to test cache eligibility.
 
         Returns:
-            Selected non-cacheable HTTP response; the error variant raises HTTPException."""
+            Selected non-cacheable HTTP response; the error variant raises HTTPException.
+        """
         nonlocal calls
         calls += 1
         if mode == "error":
@@ -389,7 +405,8 @@ async def test_stampede_waits_for_owner(cache_settings: Settings) -> None:
         cache_settings: Validated settings with a fresh Valkey namespace and bounded test payloads.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     app = create_app(cache_settings)
     calls = 0
 
@@ -402,7 +419,8 @@ async def test_stampede_waits_for_owner(cache_settings: Settings) -> None:
         """Delay the initial render long enough for a second request to wait.
 
         Returns:
-            Public DTO after an async render delay."""
+            Public DTO after an async render delay.
+        """
         nonlocal calls
         calls += 1
         await asyncio.sleep(0.15)
@@ -424,7 +442,8 @@ async def test_async_lookup_keeps_event_loop_responsive(
         monkeypatch: Pytest hook that restores temporary method/configuration substitutions.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     app = create_app(cache_settings)
     cache: ResponseCache = app.state.response_cache
     original = cache.lookup
@@ -436,7 +455,8 @@ async def test_async_lookup_keeps_event_loop_responsive(
             key: Canonical response identity passed to the original lookup.
 
         Returns:
-            The original lookup result after the simulated transport delay."""
+            The original lookup result after the simulated transport delay.
+        """
         await asyncio.sleep(0.2)
         return await original(key)
 
@@ -452,7 +472,8 @@ def test_policy_rejects_non_get_caching() -> None:
     """Reject explicit write policies and invalid Valkey URLs during configuration.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     policy = CachePolicy(namespace="invalid", revision=1, ttl="content")
     for method in ["POST", "PUT", "DELETE"]:
         app = create_app(Settings())
@@ -476,7 +497,8 @@ async def test_cached_json_is_validated_and_extra_fields_are_not_replayed(
         cache_settings: Validated settings with a fresh Valkey namespace and bounded test payloads.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     app = create_app(cache_settings)
     cache: ResponseCache = app.state.response_cache
     async with client_for(cache_settings, app) as (_, client):
@@ -516,7 +538,8 @@ async def test_cache_keys_and_failure_logs_do_not_expose_credentials(
         monkeypatch: Pytest hook that restores temporary method/configuration substitutions.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     lookup = await cache.lookup("private-query-value")
     assert "private-query-value" not in lookup.key and "redis://" not in lookup.key
     assert await cache.publish(lookup, b"{}", 30)
@@ -537,7 +560,8 @@ async def test_lock_expiry_and_invalid_json_are_safe(cache: ResponseCache) -> No
         cache: Async cache client connected to the disposable Valkey server.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     original = await cache.lookup("locked")
     await cache.redis.delete(original.lock_key)
     replacement = await cache.lookup("locked")
@@ -562,7 +586,8 @@ async def test_optional_write_and_cleanup_failures_do_not_fail_reads(
         failure: Optional storage method whose awaited call is made unavailable.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     app = create_app(cache_settings)
     broken = AsyncMock(side_effect=CacheUnavailable)
     monkeypatch.setattr(app.state.response_cache, failure, broken)
@@ -581,7 +606,8 @@ async def test_invalidation_during_fill_cannot_repopulate_old_generation(
         cache_settings: Validated settings with a fresh Valkey namespace and bounded test payloads.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     app = create_app(cache_settings)
     cache: ResponseCache = app.state.response_cache
     started, proceed = asyncio.Event(), asyncio.Event()
@@ -596,7 +622,8 @@ async def test_invalidation_during_fill_cannot_repopulate_old_generation(
         """Pause the first render until the test has invalidated its generation.
 
         Returns:
-            Public DTO containing the render count."""
+            Public DTO containing the render count.
+        """
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -625,10 +652,11 @@ async def test_cache_wait_deadline_is_bounded(
         monkeypatch: Pytest hook that restores temporary method/configuration substitutions.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
-    from tinypods_api import cache as route_cache
+        None. Assertions or recorded calls verify the described behavior.
+    """
+    from tinypods_api.cache import routes as route_cache
 
-    monkeypatch.setattr(route_cache, "WAIT_SECONDS", 0.01)
+    monkeypatch.setattr(route_cache, "CACHE_WAIT_SECONDS", 0.01)
     app = create_app(cache_settings)
     cache: ResponseCache = app.state.response_cache
     original = cache.lookup
@@ -640,7 +668,8 @@ async def test_cache_wait_deadline_is_bounded(
             identity: Canonical response identity for a simulated contested lookup.
 
         Returns:
-            Lookup state with publication ownership removed."""
+            Lookup state with publication ownership removed.
+        """
         return replace(await original(identity), token=None)
 
     monkeypatch.setattr(cache, "lookup", contested)
@@ -655,7 +684,8 @@ async def test_response_size_limit_prevents_storage(cache_settings: Settings) ->
         cache_settings: Validated settings with a fresh Valkey namespace and bounded test payloads.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     app = create_app(cache_settings)
     calls = 0
 
@@ -668,7 +698,8 @@ async def test_response_size_limit_prevents_storage(cache_settings: Settings) ->
         """Produce a body above the test cache's storage limit.
 
         Returns:
-            DTO whose serialized body exceeds the test cache's storage limit."""
+            DTO whose serialized body exceeds the test cache's storage limit.
+        """
         nonlocal calls
         calls += 1
         return PlatformInfoResponse(version="x" * 1100)
@@ -688,7 +719,8 @@ async def test_cache_url_can_be_separate_and_io_overrides_remain_bounded(
         cache_settings: Validated settings with a fresh Valkey namespace and bounded test payloads.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     url = cache_settings.valkey_url.get_secret_value() + "?socket_timeout=20&decode_responses=true"
     cache = ResponseCache(cache_settings.model_copy(update={"cache_valkey_url": SecretStr(url)}))
     try:
@@ -706,7 +738,8 @@ async def test_cancelled_fill_releases_its_lock(cache_settings: Settings) -> Non
         cache_settings: Validated settings with a fresh Valkey namespace and bounded test payloads.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     app = create_app(cache_settings)
     started = asyncio.Event()
 
@@ -719,7 +752,8 @@ async def test_cancelled_fill_releases_its_lock(cache_settings: Settings) -> Non
         """Keep the render suspended until its request task is cancelled.
 
         Returns:
-            A DTO only if the deliberately suspended request were resumed."""
+            A DTO only if the deliberately suspended request were resumed.
+        """
         started.set()
         await asyncio.Event().wait()
         return PlatformInfoResponse(version=__version__)
@@ -745,7 +779,8 @@ async def test_real_read_timeout_is_bounded_and_does_not_fail_http(
         cache_settings: Validated settings with a fresh Valkey namespace and bounded test payloads.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     async with client_for(cache_settings) as (app, client):
         cache: ResponseCache = app.state.response_cache
         await cache.redis.ping()
@@ -770,7 +805,8 @@ async def test_ignored_query_variations_do_not_allocate_cache_entries(
         cache_settings: Validated settings with a fresh Valkey namespace and bounded test payloads.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     async with client_for(cache_settings) as (app, client):
         for value in range(10):
             response = await client.get(f"/info?ignored={value}")
@@ -786,7 +822,8 @@ async def test_cache_policy_is_opt_in_independent_of_route_names(cache_settings:
         cache_settings: Validated settings with a fresh Valkey namespace and bounded test payloads.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     app = create_app(cache_settings)
     calls = 0
 
@@ -795,7 +832,8 @@ async def test_cache_policy_is_opt_in_independent_of_route_names(cache_settings:
         """Return an incrementing value that proves the handler ran again.
 
         Returns:
-            DTO containing an incremented call count."""
+            DTO containing an incremented call count.
+        """
         nonlocal calls
         calls += 1
         return PlatformInfoResponse(version=str(calls))
@@ -811,7 +849,8 @@ async def test_cache_policy_is_opt_in_independent_of_route_names(cache_settings:
         """Return a static body from a deliberately policy-annotated test route.
 
         Returns:
-            Static public DTO for the policy-annotated test route."""
+            Static public DTO for the policy-annotated test route.
+        """
         return PlatformInfoResponse(version=__version__)
 
     app.include_router(router, prefix="/explicit")
@@ -832,14 +871,16 @@ async def test_unannotated_readiness_rechecks_dependencies(cache_settings: Setti
         cache_settings: Validated settings with a fresh Valkey namespace and bounded test payloads.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     calls = 0
 
     async def dependency() -> bool:
         """Pass only the first readiness evaluation.
 
         Returns:
-            True on the first readiness call and False thereafter."""
+            True on the first readiness call and False thereafter.
+        """
         nonlocal calls
         calls += 1
         return calls == 1
@@ -861,7 +902,8 @@ async def test_lifespan_awaits_cache_pool_shutdown(
         monkeypatch: Pytest hook that restores temporary method/configuration substitutions.
 
     Returns:
-        None. Assertions or recorded calls verify the described behavior."""
+        None. Assertions or recorded calls verify the described behavior.
+    """
     from tinypods_api import main as api_main
 
     database = SimpleNamespace(
@@ -945,3 +987,89 @@ async def test_invalid_hit_does_not_retry_a_failing_source(cache_settings: Setti
         await cache.redis.set(keys[0], b'{"invalid":"dto"}', ex=30)
         assert (await client.get("/source-error")).status_code == 500
     assert calls == 2
+
+
+async def test_opted_in_cache_route_requires_a_public_dto() -> None:
+    """Reject an opted-in route before serving when it has no public response DTO."""
+    application = FastAPI()
+    application.router.route_class = CachedReadRoute
+
+    async def endpoint() -> dict[str, bool]:
+        """Provide a response that intentionally lacks a declared public DTO.
+
+        Returns:
+            A synthetic JSON body that must never be enabled for shared caching.
+        """
+        return {"valid": True}
+
+    policy = CachePolicy(namespace="requires_dto", revision=1, ttl="content")
+    with pytest.raises(ValueError, match="public response DTO"):
+        application.add_api_route(
+            "/missing-dto", endpoint, response_model=None, openapi_extra=policy.openapi_extra()
+        )
+
+
+async def test_simultaneous_cache_failures_warn_once(
+    cache: ResponseCache,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Avoid warning storms when already-started requests fail after another opens the breaker.
+
+    Args:
+        cache: Isolated cache instance whose connection pool is closed by its fixture.
+        monkeypatch: Scoped client fault injection applied before either lookup starts.
+        caplog: Captured warning records used to check one transition announcement.
+    """
+    ready = asyncio.Event()
+    release = asyncio.Event()
+    attempts = 0
+
+    async def fail_get(key: str) -> NoReturn:
+        """Hold both already-started reads until they can fail in a controlled order.
+
+        Args:
+            key: Generation key requested by the lookup operation.
+
+        Raises:
+            ConnectionError: Always, after both lookups have entered the I/O boundary.
+        """
+        nonlocal attempts
+        attempts += 1
+        if attempts == 2:
+            ready.set()
+        await release.wait()
+        raise ConnectionError("controlled connection failure")
+
+    monkeypatch.setattr(cache.redis, "get", fail_get)
+    caplog.set_level(logging.WARNING, logger="tinypods.cache")
+    tasks = [asyncio.create_task(cache.lookup(identity)) for identity in ("first", "second")]
+    try:
+        await asyncio.wait_for(ready.wait(), timeout=2)
+        release.set()
+        outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+        assert all(isinstance(outcome, CacheUnavailable) for outcome in outcomes)
+        warnings = [record for record in caplog.records if record.name == "tinypods.cache"]
+        assert len(warnings) == 1 and warnings[0].getMessage() == "Cache unavailable"
+    finally:
+        release.set()
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def test_discard_without_observed_body_keeps_newer_storage(cache: ResponseCache) -> None:
+    """Do not delete bytes published after a lookup that observed no response body.
+
+    Args:
+        cache: Real isolated Valkey cache used to verify conditional deletion semantics.
+    """
+    lookup = await cache.lookup("unobserved-body")
+    assert lookup.body is None
+    try:
+        newer = b'{"state":"newer"}'
+        await cache.redis.set(lookup.key, newer)
+        await cache.discard(lookup)
+        assert await cache.redis.get(lookup.key) == newer
+    finally:
+        await cache.release(lookup)

@@ -18,6 +18,7 @@ dev = [
     "pytest-cov>=6",
     "ruff>=0.11",
     "mypy>=1.15",
+    "pyyaml>=6",
     "openapi-spec-validator>=0.9.0",
 ]
 
@@ -26,11 +27,17 @@ target-version = "py313"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
+select = ["E", "F", "I", "UP", "B", "SIM", "ANN", "D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"migrations/**" = ["ANN", "D"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--strict-markers --strict-config --cov=tinypods_core --cov=tinypods_api --cov=tinypods_worker --cov=tinypods_cli --cov-branch --cov-report=term-missing --cov-report=xml:reports/coverage.xml --junitxml=reports/junit.xml --cov-fail-under=90"
+addopts = "--strict-markers --strict-config --cov=tinypods_core --cov=tinypods_api --cov=tinypods_worker --cov=tinypods_cli --cov-branch --cov-report=term-missing --cov-report=xml:reports/coverage.xml --cov-report=json:reports/coverage.json --cov-report=html:reports/html --junitxml=reports/junit.xml"
 
 [tool.mypy]
 python_version = "3.13"
@@ -40,3 +47,6 @@ explicit_package_bases = true
 
 [tool.coverage.run]
 patch = ["subprocess"]
+
+[tool.coverage.report]
+fail_under = 100

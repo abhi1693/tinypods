@@ -1,3 +1,5 @@
+"""Public HTTP contracts, documentation and deterministic schema export."""
+
 import json
 import os
 import subprocess
@@ -12,44 +14,80 @@ from fastapi.testclient import TestClient
 from openapi_spec_validator import validate
 from openapi_spec_validator.validation.exceptions import OpenAPIValidationError
 from pydantic import ValidationError
-from tinypods_api.contracts import OperationStatus, Page, PageParams, RequestDTO
+from tinypods_api.http.contracts import OperationStatus, Page, PageParams, RequestDTO
+from tinypods_api.http.schema import export_schema, render_schema
 from tinypods_api.main import create_app
-from tinypods_api.openapi import export_schema, render_schema
 from tinypods_core.settings import Settings
 
 
 class CreateItem(RequestDTO):
+    """Define a small public input contract for exporter and validation tests."""
+
     name: str
     count: int
 
 
-def contract_app():
+def contract_app() -> FastAPI:
+    """Compose synthetic documented routes for public API contract assertions.
+
+    Returns:
+        Synthetic application configured for the enclosing contract test.
+    """
     app = create_app(Settings())
 
     @app.post("/test/items", operation_id="createTestItem", response_model=CreateItem)
     async def create_item(item: CreateItem) -> CreateItem:
+        """Echo validated input through a typed synthetic response contract.
+
+        Args:
+            item: Validated public request DTO supplied to the synthetic route.
+
+        Returns:
+            The validated request DTO returned by the synthetic endpoint.
+        """
         return item
 
     @app.get("/test/failure", operation_id="getTestFailure", response_model=CreateItem)
     async def failure() -> CreateItem:
+        """Raise a deliberate failure to exercise public error translation.
+
+        Returns:
+            The validated request DTO returned by the synthetic endpoint.
+        """
         raise RuntimeError("postgresql://private-password")
 
     @app.get("/test/invalid-response", operation_id="getInvalidResponse", response_model=CreateItem)
     async def invalid_response() -> dict[str, str]:
+        """Return a deliberate response-contract violation for error-boundary coverage.
+
+        Returns:
+            Synthetic response fields used by the enclosing assertions.
+        """
         return {"private": "private-password"}
 
     @app.get("/test/nonstandard", operation_id="getNonstandard", response_model=CreateItem)
     async def nonstandard() -> CreateItem:
+        """Raise a nonstandard HTTP status to verify public phrase fallback.
+
+        Returns:
+            The validated request DTO returned by the synthetic endpoint.
+        """
         raise HTTPException(499, detail="private-password")
 
     @app.get("/test/denied", operation_id="getTestDenied", response_model=CreateItem)
     async def denied() -> CreateItem:
+        """Raise an access-denied response to verify public error translation.
+
+        Returns:
+            The validated request DTO returned by the synthetic endpoint.
+        """
         raise HTTPException(401, detail="private-password", headers={"WWW-Authenticate": "Bearer"})
 
     return app
 
 
-def test_errors_are_typed_correlated_and_do_not_echo_inputs():
+def test_errors_are_typed_correlated_and_do_not_echo_inputs() -> None:
+    """Verify errors are typed correlated and do not echo inputs."""
     with TestClient(contract_app(), raise_server_exceptions=False) as client:
         for response, code in [
             (client.get("/missing?token=private-password"), "http_404"),
@@ -79,7 +117,8 @@ def test_errors_are_typed_correlated_and_do_not_echo_inputs():
         }
 
 
-def test_pagination_and_operation_dtos():
+def test_pagination_and_operation_dtos() -> None:
+    """Verify pagination and operation dtos."""
     assert PageParams().model_dump() == {"limit": 25, "offset": 0}
     for values in ({"limit": 0}, {"limit": 101}, {"offset": -1}, {"unknown": 1}):
         with pytest.raises(ValidationError):
@@ -90,7 +129,8 @@ def test_pagination_and_operation_dtos():
         OperationStatus(operation_id="not-a-uuid", status="unknown")
 
 
-def test_export_is_valid_deterministic_and_has_explicit_responses():
+def test_export_is_valid_deterministic_and_has_explicit_responses() -> None:
+    """Verify export is valid deterministic and has explicit responses."""
     application = create_app(Settings())
     first = render_schema(application)
     assert first == render_schema(create_app(Settings(service_name="Different deployment")))
@@ -112,14 +152,19 @@ def test_export_is_valid_deterministic_and_has_explicit_responses():
 @pytest.mark.parametrize(
     "mode", ["missing_id", "duplicate_id", "missing_model", "multiple_methods"]
 )
-def test_export_rejects_ambiguous_routes(mode):
+def test_export_rejects_ambiguous_routes(mode: str) -> None:
+    """Verify export rejects ambiguous routes.
+
+    Args:
+        mode: Parameterized direct, pooled or malformed-contract scenario.
+    """
     app = FastAPI()
 
     async def endpoint() -> dict[str, str]:
         """Return a liveness result for contract validation."""
         return {"status": "alive"}
 
-    from tinypods_api.contracts import LivenessResponse
+    from tinypods_api.http.contracts import LivenessResponse
 
     options = {"response_model": LivenessResponse}
     if mode != "missing_id":
@@ -138,7 +183,8 @@ def test_export_rejects_ambiguous_routes(mode):
         export_schema(app)
 
 
-def test_validator_rejects_invalid_response_schema():
+def test_validator_rejects_invalid_response_schema() -> None:
+    """Verify validator rejects invalid response schema."""
     schema = export_schema(create_app(Settings()))
     schema["paths"]["/healthz"]["get"]["responses"]["200"]["content"]["application/json"][
         "schema"
@@ -147,7 +193,12 @@ def test_validator_rejects_invalid_response_schema():
         validate(schema)
 
 
-def test_export_command_is_offline_and_checks_drift(tmp_path):
+def test_export_command_is_offline_and_checks_drift(tmp_path: Path) -> None:
+    """Verify export command is offline and checks drift.
+
+    Args:
+        tmp_path: Pytest-owned temporary directory for disposable artifacts.
+    """
     output = tmp_path / "openapi.json"
     environment = dict(
         os.environ,
@@ -168,7 +219,8 @@ def test_export_command_is_offline_and_checks_drift(tmp_path):
     assert subprocess.run(command + ["--check"], capture_output=True, timeout=15).returncode == 1
 
 
-def test_route_docstrings_are_published_in_openapi():
+def test_route_docstrings_are_published_in_openapi() -> None:
+    """Verify route docstrings are published in openapi."""
     app = create_app(Settings())
     schema = export_schema(app)
     routes = [
@@ -194,12 +246,22 @@ def test_route_docstrings_are_published_in_openapi():
 
 
 @pytest.mark.parametrize("docstring", [None, "", "   ", "\fPrivate notes"])
-def test_export_rejects_routes_without_public_documentation(docstring):
-    from tinypods_api.contracts import LivenessResponse
+def test_export_rejects_routes_without_public_documentation(docstring: str | None) -> None:
+    """Verify export rejects routes without public documentation.
+
+    Args:
+        docstring: Endpoint documentation variant accepted or rejected by the exporter.
+    """
+    from tinypods_api.http.contracts import LivenessResponse
 
     app = FastAPI()
 
     async def endpoint() -> LivenessResponse:
+        """Provide a synthetic endpoint whose contract is varied by the enclosing test.
+
+        Returns:
+            Synthetic process-liveness response.
+        """
         return LivenessResponse()
 
     endpoint.__doc__ = docstring
@@ -215,8 +277,13 @@ def test_export_rejects_routes_without_public_documentation(docstring):
 
 
 @pytest.mark.parametrize("invalid", [None, "documentation", "operation_id", "response_model"])
-def test_export_checks_nested_feature_routers(invalid):
-    from tinypods_api.contracts import LivenessResponse
+def test_export_checks_nested_feature_routers(invalid: str | None) -> None:
+    """Verify export checks nested feature routers.
+
+    Args:
+        invalid: Nested route contract defect introduced for this case.
+    """
+    from tinypods_api.http.contracts import LivenessResponse
 
     router = APIRouter()
 
@@ -253,11 +320,17 @@ def test_export_checks_nested_feature_routers(invalid):
             export_schema(app)
 
 
-def test_export_ignores_routers_excluded_from_public_schema():
+def test_export_ignores_routers_excluded_from_public_schema() -> None:
+    """Verify export ignores routers excluded from public schema."""
     router = APIRouter()
 
     @router.get("/internal", response_model=None)
     async def internal() -> dict[str, str]:
+        """Provide a route intentionally excluded from the public schema.
+
+        Returns:
+            Synthetic response fields used by the enclosing assertions.
+        """
         return {}
 
     app = FastAPI()
@@ -265,10 +338,18 @@ def test_export_ignores_routers_excluded_from_public_schema():
     assert not export_schema(app)["paths"]
 
 
-def test_check_rejects_api_contract_changes_until_regenerated(tmp_path, monkeypatch):
+def test_check_rejects_api_contract_changes_until_regenerated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify check rejects api contract changes until regenerated.
+
+    Args:
+        tmp_path: Pytest-owned temporary directory for disposable artifacts.
+        monkeypatch: Scoped environment or dependency substitutions restored after the test.
+    """
     from tinypods_api import main as api_main
-    from tinypods_api.contracts import LivenessResponse
-    from tinypods_api.openapi import app as export_command
+    from tinypods_api.http.contracts import LivenessResponse
+    from tinypods_api.http.schema import app as export_command
     from typer.testing import CliRunner
 
     output = tmp_path / "openapi.json"
@@ -278,7 +359,15 @@ def test_check_rejects_api_contract_changes_until_regenerated(tmp_path, monkeypa
     assert runner.invoke(export_command, arguments + ["--check"]).exit_code == 0
     before = output.read_bytes()
 
-    def changed_application(settings):
+    def changed_application(settings: Settings) -> FastAPI:
+        """Create a deliberately changed public contract for freshness-check coverage.
+
+        Args:
+            settings: Validated settings pointing only at isolated test infrastructure.
+
+        Returns:
+            Synthetic application configured for the enclosing contract test.
+        """
         app = create_app(settings)
         feature = APIRouter()
 
@@ -299,3 +388,54 @@ def test_check_rejects_api_contract_changes_until_regenerated(tmp_path, monkeypa
     assert "/api/feature/new" in json.loads(output.read_text())["paths"]
     assert output.read_bytes() != before
     assert runner.invoke(export_command, arguments + ["--check"]).exit_code == 0
+
+
+def test_openapi_command_releases_owned_logging(tmp_path: Path) -> None:
+    """Close process logging after an offline export.
+
+    Args:
+        tmp_path: Directory receiving the exported public contract.
+    """
+    import logging
+
+    from tinypods_api.http.schema import main
+    from tinypods_core.logging import StderrHandler
+
+    main(output=tmp_path / "schema.json")
+    assert not any(isinstance(handler, StderrHandler) for handler in logging.getLogger().handlers)
+
+
+@pytest.mark.parametrize(
+    "name,payload,field",
+    [
+        ("LivenessResponse", {"status": "alive"}, "status"),
+        ("ReadinessResponse", {"status": "ready", "checks": {}}, "status"),
+        (
+            "OperationStatus",
+            {"operation_id": "12345678-abcd-1234-abcd-123456789abc", "status": "running"},
+            "status",
+        ),
+        ("PlatformInfoResponse", {"service": "TinyPods", "version": "0.0.1"}, "service"),
+    ],
+)
+def test_literal_http_contracts_preserve_validated_wire_values(
+    name: str,
+    payload: dict[str, object],
+    field: str,
+) -> None:
+    """Retain closed public value sets while keeping standards-compliant literal annotations.
+
+    Args:
+        name: Public response DTO exposed by the HTTP package.
+        payload: Valid wire representation for the response model.
+        field: Literal-constrained field replaced with an unsupported value.
+    """
+    from pydantic import BaseModel, ValidationError
+    from tinypods_api import http
+
+    model = getattr(http, name)
+    assert issubclass(model, BaseModel)
+    assert model.model_validate(payload).model_dump(mode="json")[field] == payload[field]
+    with pytest.raises(ValidationError) as failure:
+        model.model_validate({**payload, field: "unsupported-wire-value"})
+    assert failure.value.errors()[0]["type"] == "literal_error"

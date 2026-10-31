@@ -10,13 +10,24 @@ from fastapi import FastAPI
 from fastapi.routing import APIRoute, iter_route_contexts
 from pydantic import BaseModel
 from tinypods_core.json_types import JsonRecord
+from tinypods_core.logging import shutdown_logging
 from tinypods_core.settings import Settings
 
 app = typer.Typer(add_completion=False, pretty_exceptions_enable=False)
 
 
 def export_schema(application: FastAPI) -> JsonRecord:
-    """Reject undocumented routes, ambiguous IDs and missing response DTOs."""
+    """Reject undocumented routes, ambiguous IDs and missing response DTOs.
+
+    Args:
+        application: Application whose public HTTP contract is inspected.
+
+    Returns:
+        Validated OpenAPI schema for every included public route, including nested routers.
+
+    Raises:
+        ValueError: A public operation has missing documentation, an ambiguous ID or no DTO.
+    """
     ids: set[str] = set()
     for context in iter_route_contexts(application.routes):
         route = context.original_route
@@ -39,6 +50,17 @@ def export_schema(application: FastAPI) -> JsonRecord:
 
 
 def render_schema(application: FastAPI) -> str:
+    """Render validated public OpenAPI data as deterministic sorted JSON.
+
+    Args:
+        application: Application whose public HTTP contract is inspected.
+
+    Returns:
+        Sorted, indented OpenAPI JSON ending in a single newline.
+
+    Raises:
+        ValueError: The application contains an invalid public route contract.
+    """
     return (
         json.dumps(export_schema(application), sort_keys=True, indent=2, ensure_ascii=False) + "\n"
     )
@@ -51,16 +73,26 @@ def main(
         bool, typer.Option("--check", help="Fail if the contract has changed.")
     ] = False,
 ) -> None:
+    """Export or compare the schema without starting runtime infrastructure.
+
+    Args:
+        output: Schema destination, or committed artifact checked for drift.
+        check: Whether to compare the generated artifact without writing it.
+    """
     from tinypods_api.main import create_app
 
-    # Explicit defaults bypass deployment settings and never connect to infrastructure.
-    rendered = render_schema(create_app(Settings.model_construct()))
-    if check:
-        if not output.is_file() or output.read_text(encoding="utf-8") != rendered:
-            raise typer.Exit(1)
-    else:
-        output.write_text(rendered, encoding="utf-8")
+    try:
+        # Explicit defaults bypass deployment settings and never connect to infrastructure.
+        rendered = render_schema(create_app(Settings.model_construct()))
+        if check:
+            if not output.is_file() or output.read_text(encoding="utf-8") != rendered:
+                raise typer.Exit(1)
+        else:
+            output.write_text(rendered, encoding="utf-8")
+    finally:
+        shutdown_logging()
 
 
 def cli() -> None:
+    """Dispatch the offline schema export command through Typer."""
     app()

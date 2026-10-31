@@ -11,13 +11,26 @@ from fastapi import Request, Response
 from fastapi.dependencies.models import Dependant
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
-from tinypods_core.cache import CacheUnavailable, ResponseCache
+from tinypods_api.cache.constants import (
+    CACHE_OUTCOME_HEADER,
+    CACHE_POLICY_EXTENSION,
+    CACHE_POLL_SECONDS,
+    CACHE_REASON_HEADER,
+    CACHE_WAIT_SECONDS,
+    MAX_QUERY_BYTES,
+    REQUEST_BYPASS_DIRECTIVES,
+    STORABLE_RESPONSE_HEADERS,
+    CacheOutcome,
+)
+from tinypods_api.http.constants import (
+    CACHE_CONTROL_HEADER,
+    CONTENT_TYPE_HEADER,
+    JSON_MEDIA_TYPE,
+    NO_STORE,
+)
+from tinypods_core.cache import CacheLookup, CacheUnavailable, ResponseCache
 from tinypods_core.json_types import JsonRecord
 from tinypods_core.settings import Settings
-
-CACHE_POLICY_EXTENSION = "x-tinypods-cache"
-WAIT_SECONDS = 1.0
-POLL_SECONDS = 0.05
 
 
 class CachePolicy(BaseModel):
@@ -29,7 +42,8 @@ class CachePolicy(BaseModel):
     Attributes:
         namespace: Stable route-level grouping used in hashed response identities.
         revision: Representation revision; change it when stored content becomes incompatible.
-        ttl: Configured content or metadata lifetime bucket."""
+        ttl: Configured content or metadata lifetime bucket.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
     namespace: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_-]*$")
@@ -40,7 +54,8 @@ class CachePolicy(BaseModel):
         """Build the OpenAPI extension that opts this endpoint into cache handling.
 
         Returns:
-            Extension data containing the policy's namespace, revision and TTL bucket."""
+            Extension data containing the policy's namespace, revision and TTL bucket.
+        """
         return {CACHE_POLICY_EXTENSION: self.model_dump()}
 
     def identity(self, request: Request) -> str:
@@ -54,7 +69,8 @@ class CachePolicy(BaseModel):
             request: GET request whose path parameters and query values identify the response.
 
         Returns:
-            Canonical JSON text for this policy, path, parameters and ordered query values."""
+            Canonical JSON text for this policy, path, parameters and ordered query values.
+        """
         return json.dumps(
             {
                 "namespace": self.namespace,
@@ -76,7 +92,8 @@ class CachePolicy(BaseModel):
             settings: Validated content and metadata TTL configuration.
 
         Returns:
-            The matching positive response lifetime in seconds."""
+            The matching positive response lifetime in seconds.
+        """
         return (
             settings.cache_metadata_ttl_seconds
             if self.ttl == "metadata"
@@ -84,7 +101,7 @@ class CachePolicy(BaseModel):
         )
 
 
-def tagged(response: Response, status: str, reason: str | None = None) -> Response:
+def tagged(response: Response, status: CacheOutcome, reason: str | None = None) -> Response:
     """Annotate a cache outcome and disable independent downstream storage.
 
     Args:
@@ -93,11 +110,12 @@ def tagged(response: Response, status: str, reason: str | None = None) -> Respon
         reason: Optional fixed bypass reason shown in X-Cache-Bypass-Reason.
 
     Returns:
-        The same response with cache outcome headers and Cache-Control: no-store."""
-    response.headers["X-Cache"] = status
+        The same response with cache outcome headers and Cache-Control: no-store.
+    """
+    response.headers[CACHE_OUTCOME_HEADER] = status
     if reason:
-        response.headers["X-Cache-Bypass-Reason"] = reason
-    response.headers["Cache-Control"] = "no-store"
+        response.headers[CACHE_REASON_HEADER] = reason
+    response.headers[CACHE_CONTROL_HEADER] = NO_STORE
     return response
 
 
@@ -108,7 +126,8 @@ def declared_queries(dependency: Dependant) -> set[str]:
         dependency: FastAPI dependency definition for the selected endpoint.
 
     Returns:
-        Accepted query names used to bypass unrecognized key-cardinality variations."""
+        Accepted query names used to bypass unrecognized key-cardinality variations.
+    """
     names = {field.alias for field in dependency.query_params}
     for child in dependency.dependencies:
         names.update(declared_queries(child))
@@ -138,7 +157,8 @@ class CachedReadRoute(APIRoute):
 
         Raises:
             ValueError: A policy opts in a non-GET operation or lacks a response DTO.
-            ValidationError: The explicit cache policy has invalid fields."""
+            ValidationError: The explicit cache policy has invalid fields.
+        """
         handler = super().get_route_handler()
         extra = self.openapi_extra or {}
         if CACHE_POLICY_EXTENSION not in extra:
@@ -166,11 +186,13 @@ class CachedReadRoute(APIRoute):
                 request: HTTP request with application-owned settings and cache state.
 
             Returns:
-                A response with fresh outer request correlation and cache outcome headers."""
+                A response with fresh outer request correlation and cache outcome headers.
+            """
             settings: Settings = request.app.state.settings
             cache: ResponseCache | None = request.app.state.response_cache
             controls = {
-                part.strip().lower() for part in request.headers.get("cache-control", "").split(",")
+                part.strip().lower()
+                for part in request.headers.get(CACHE_CONTROL_HEADER, "").split(",")
             }
             reason = None
             if not settings.cache_enabled or cache is None:
@@ -179,18 +201,19 @@ class CachedReadRoute(APIRoute):
                 reason = "authorization"
             elif "cookie" in request.headers:
                 reason = "cookie"
-            elif controls & {"no-cache", "no-store"}:
+            elif controls & REQUEST_BYPASS_DIRECTIVES:
                 reason = "request_cache_control"
-            elif len(request.scope.get("query_string", b"")) > 4096:
+            elif len(request.scope.get("query_string", b"")) > MAX_QUERY_BYTES:
                 reason = "query_too_long"
             # Ignored query strings must not allocate arbitrary entries on metadata routes.
             elif set(request.query_params) - query_names:
                 reason = "undeclared_query"
             if reason:
-                return tagged(await handler(request), "BYPASS", reason)
+                return tagged(await handler(request), CacheOutcome.BYPASS, reason)
             assert cache is not None
             key = policy.identity(request)
-            deadline = time.monotonic() + WAIT_SECONDS
+            deadline = time.monotonic() + CACHE_WAIT_SECONDS
+            lookup: CacheLookup | None = None
             try:
                 while True:
                     lookup = await cache.lookup(key)
@@ -204,17 +227,20 @@ class CachedReadRoute(APIRoute):
                             reason = "invalid_entry"
                             break
                         return tagged(
-                            Response(adapter.dump_json(model), media_type="application/json"), "HIT"
+                            Response(adapter.dump_json(model), media_type=JSON_MEDIA_TYPE),
+                            CacheOutcome.HIT,
                         )
                     if lookup.token or time.monotonic() >= deadline:
                         break
-                    await anyio.sleep(POLL_SECONDS)
+                    await anyio.sleep(CACHE_POLL_SECONDS)
             except CacheUnavailable:
                 reason = "cache_unavailable"
             if reason:
                 # Keep endpoint execution outside the storage exception boundary.
                 # A source error must not trigger a second render or be misclassified as cache I/O.
-                return tagged(await handler(request), "BYPASS", reason)
+                return tagged(await handler(request), CacheOutcome.BYPASS, reason)
+            # Publication/release require a successfully observed lookup, not a failed read.
+            assert lookup is not None
             try:
                 response = await handler(request)
                 body = getattr(response, "body", None)
@@ -223,12 +249,12 @@ class CachedReadRoute(APIRoute):
                 if (
                     response.status_code == 200
                     and isinstance(body, bytes)
-                    and response.headers.get("content-type", "").startswith("application/json")
-                    and not (set(response.headers) - {"content-type", "content-length"})
+                    and response.headers.get(CONTENT_TYPE_HEADER, "").startswith(JSON_MEDIA_TYPE)
+                    and not (set(response.headers) - STORABLE_RESPONSE_HEADERS)
                 ):
                     with suppress(CacheUnavailable):
                         await cache.publish(lookup, body, policy.ttl_seconds(settings))
-                return tagged(response, "MISS")
+                return tagged(response, CacheOutcome.MISS)
             finally:
                 # Await ownership cleanup on cancellation; socket deadlines still bound the attempt.
                 with anyio.CancelScope(shield=True), suppress(CacheUnavailable):

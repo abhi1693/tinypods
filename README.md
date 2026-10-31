@@ -2,6 +2,9 @@
 
 Manage complete applications on an existing Kubernetes cluster.
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for shared engineering guidance.
+[AGENTS.md](AGENTS.md) points coding agents to the same source.
+
 ## Backend development
 
 Install Python 3.13 and uv, then run from the repository root:
@@ -21,7 +24,9 @@ the migrated installation record. Liveness does not depend on the database.
 
 Settings use the `TINYPODS_` environment prefix; `.env.example` lists supported
 settings. Environment files are not loaded implicitly. Keep credentials out of
-commits. Valkey configuration is reserved for the queue integration work.
+commits. Valkey supports the optional public response cache; durable queue integration
+is tracked separately. See the [API cache guide](apps/api/README.md#public-response-cache)
+for behavior and limits.
 
 ## PostgreSQL
 
@@ -69,7 +74,11 @@ implementation issues rather than as placeholder packages.
 uv run --no-sync ruff check .
 uv run --no-sync ruff format --check .
 uv run --no-sync mypy
+uv run --no-sync python scripts/sync_version.py --check
+uv run --no-sync tinypods-openapi --check
+uv run --no-sync openapi-spec-validator openapi.json
 uv run --no-sync pytest
+uv run --no-sync python scripts/check_coverage.py
 ```
 
 Tests require a running Docker daemon. They start pinned PostgreSQL and
@@ -91,7 +100,7 @@ Tests live at the repository root. Frontend work follows the tracker dependencie
 ## Docker Compose
 
 Use Docker Engine with Compose 2.24.4 or later. This follows the base, build and
-worker override layout used in DevFeed:
+worker override layout:
 
 ```sh
 cp compose.env.example .env
@@ -167,7 +176,7 @@ override does not enable source watching.
 
 Set `TINYPODS_IMAGE_REGISTRY=registry.home` in `.env` to use a pull-through
 registry. Leave it empty to use the original upstream registries. The path layout
-matches DevFeed: Docker Hub library images use
+uses explicit registry paths: Docker Hub library images use
 `<registry>/docker.io/library/...`, Valkey uses `<registry>/docker.io/valkey/...`,
 and uv uses `<registry>/ghcr.io/astral-sh/...`. This covers runtime dependencies
 and Dockerfile build inputs while keeping immutable image digests.
@@ -180,19 +189,60 @@ an existing backend image when the build override is omitted.
 
 ## Backend logging
 
-The API, worker and CLI share DevFeed's standard-library logging pattern.
+The API, worker and CLI share standard-library logging configuration.
 `TINYPODS_LOG_FORMAT=text` is the default; set it to `json` for structured output.
 `TINYPODS_LOG_LEVEL` controls verbosity. Logs go to stderr, leaving CLI command
 results on stdout. Text output shows readable events and operational context;
-JSON also includes code locations and bounded exception stack locations.
+JSON also includes ordinary record locations. Exception diagnostics retain complete
+messages, arguments, chains, groups and traceback frames. Neither renderer shortens
+messages, collections or identifiers.
 
 Request logs carry a server-generated `x-request-id`, method, path, response status
 and duration. The context remains active through streaming bodies and exceptions,
 and propagates to synchronous FastAPI endpoints. Successful health probes log at
 DEBUG; failed probes remain visible. Duplicate Uvicorn access logs are disabled.
 
-API output uses a bounded in-memory queue so a slow stderr collector does not block
-the event loop. `TINYPODS_LOG_QUEUE_CAPACITY` defaults to 1024 messages. New logs
-are dropped and counted when it fills. Drains and shutdown waits are bounded;
-the API drains outside the event loop. Worker and CLI output use the same formatters
-with synchronous process-level stderr handlers. Custom log redaction is removed.
+API output snapshots task context and mutable diagnostic values at emission, then
+renders and writes on a background thread. `TINYPODS_LOG_QUEUE_CAPACITY` defaults
+to 1024 records. Full records have no byte-size limit, so snapshot memory and CPU
+cost scale with their content; the queue limit is a record count, not a memory cap.
+New records are dropped and counted when it fills. Drains and shutdown waits are
+bounded, and output/format failures can also lose a record: this is not lossless
+or durable log delivery. Worker and CLI use synchronous process-level handlers.
+
+Do not pass credentials, headers, request bodies, query values or raw configuration
+to logging. Request/CLI failure boundaries deliberately log exception types and
+complete traceback locations instead of forwarding potentially sensitive third-party
+exception messages or arguments. Normal diagnostic content is preserved. SecretStr
+and SecretBytes retain their masked display; there is no custom key-based runtime
+redaction or scanner in the formatters. Repository scanners do not sanitize logs.
+
+Text and JSON share `BaseFormatter` for normalization, context and explicit
+exception diagnostics. Cycles and unsupported objects use representation markers
+rather than silent truncation; binary values use complete hexadecimal envelopes.
+JSON cannot preserve Python object identity. See [CONTRIBUTING.md](CONTRIBUTING.md)
+for report, validation and contribution guidance.
+
+
+## Backend module packages
+
+Core cache storage, database/migration access and logging live in `cache/`, `db/`
+and `logging/` packages. API route caching lives in `cache/`; HTTP DTOs, errors,
+request middleware and schema export live in `http/`. CLI command implementations
+live in `commands/`, with process setup and failure handling in the entrypoint.
+The worker remains a single process module until it has additional responsibilities.
+
+Each package exposes its intended public API through `__init__.py` and an explicit
+`__all__`. Import shared contracts from the domain package; keep constants, codecs,
+models and implementation helpers inside their owning package. Inner filenames use
+local names such as `constants.py`, rather than repeating the package name.
+
+The build metadata registers every concrete subpackage. Packaging tests rebuild all
+four distributions from source archives, verify complete module/typing-marker
+inclusion and check public imports in fresh interpreters outside the checkout.
+
+
+Select the project `.venv/bin/python` interpreter (Python 3.13) in the IDE.
+The backend uses modern typing syntax, including `bytes | None` and literal types.
+An older or unrelated interpreter can report invalid annotations even when the
+installed project checks pass; verify the selected SDK before changing valid types.

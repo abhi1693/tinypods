@@ -19,7 +19,7 @@ tinypods_worker = "src"
 tinypods_worker = ["py.typed"]
 
 [project.scripts]
-tinypods-worker = "tinypods_worker.main:main"
+tinypods-worker = "tinypods_worker:run_worker"
 
 [tool.uv.sources]
 tinypods-core = { workspace = true }

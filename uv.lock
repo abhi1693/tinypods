@@ -1438,6 +1438,7 @@ dev = [
     { name = "openapi-spec-validator" },
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "pyyaml" },
     { name = "ruff" },
 ]
 
@@ -1450,6 +1451,7 @@ dev = [
     { name = "openapi-spec-validator", specifier = ">=0.9.0" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-cov", specifier = ">=6" },
+    { name = "pyyaml", specifier = ">=6" },
     { name = "ruff", specifier = ">=0.11" },
 ]
 
