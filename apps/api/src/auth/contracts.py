@@ -9,14 +9,14 @@ from tinypods_api.http.contracts import RequestDTO
 
 
 class LoginRequest(RequestDTO):
-    """Accept bounded local credentials; passwords stay masked in diagnostics."""
+    """Username and password for a local account."""
 
     username: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_.-]+$")
     password: SecretStr = Field(min_length=15, max_length=128)
 
 
 class IdentityResponse(BaseModel):
-    """Expose only the authenticated account's normalized identity."""
+    """The currently signed-in account."""
 
     user_id: UUID
     username: str
@@ -24,19 +24,19 @@ class IdentityResponse(BaseModel):
 
 
 class LoginResponse(IdentityResponse):
-    """Report absolute session expiration; the bearer token is in an HttpOnly cookie."""
+    """Signed-in account details and sign-in expiry."""
 
     expires_at: datetime
 
 
 class LogoutResponse(BaseModel):
-    """Confirm durable session revocation."""
+    """Whether this browser has been signed out."""
 
     logged_out: bool = True
 
 
 class ProviderDescriptor(BaseModel):
-    """Expose only enabled login methods and same-origin actions, never provider secrets/config."""
+    """A sign-in method available for this installation."""
 
     id: str
     label: str
@@ -46,25 +46,25 @@ class ProviderDescriptor(BaseModel):
 
 
 class ProvidersResponse(BaseModel):
-    """List configured enabled methods without contacting an upstream identity provider."""
+    """Available sign-in methods."""
 
     data: list[ProviderDescriptor]
 
 
 class LoginStartRequest(RequestDTO):
-    """Accept only a bounded local post-login path."""
+    """The page to open after signing in."""
 
     return_to: str = Field(default="/", max_length=256)
 
 
 class LoginStartResponse(BaseModel):
-    """Carry one fresh authorization challenge; transaction secrets remain server-side."""
+    """A link to open to sign in."""
 
     authorization_url: str
 
 
 class ProviderLogoutResponse(BaseModel):
-    """Confirm application revocation and expose an optional token-free upstream logout target."""
+    """Sign-out result and an optional link to finish external sign-out."""
 
     logged_out: bool = True
     logout_url: str | None

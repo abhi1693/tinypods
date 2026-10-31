@@ -1,4 +1,4 @@
-"""Thin local login, session and logout routes with secure browser cookies."""
+"""Shared authentication routes and configured provider router composition."""
 
 from fastapi import APIRouter, Request
 from tinypods_api.auth.contracts import (
@@ -8,20 +8,24 @@ from tinypods_api.auth.contracts import (
 from tinypods_api.auth.providers.local.routes import router as local_router
 from tinypods_api.auth.providers.zitadel.routes import router as zitadel_router
 from tinypods_api.auth.session_routes import router as session_router
+from tinypods_api.http.operations import build_operation_id
 from tinypods_api.rate_limit import RateLimitedRoute
+from tinypods_core.settings import Settings
 
-router = APIRouter(prefix="/auth", tags=["Authentication"], route_class=RateLimitedRoute)
-router.include_router(local_router)
-router.include_router(zitadel_router)
+router = APIRouter(route_class=RateLimitedRoute)
 router.include_router(session_router)
 
 
-@router.get("/providers", operation_id="listAuthProviders", response_model=ProvidersResponse)
+@router.get(
+    "/providers",
+    operation_id=build_operation_id("auth", "providers", "list"),
+    summary="List available sign-in methods",
+    response_model=ProvidersResponse,
+)
 async def providers(request: Request) -> ProvidersResponse:
-    """List safe configured enabled login methods without authentication or upstream I/O.
+    """Show the sign-in methods available for this installation.
 
-    Descriptors remain stable during an upstream outage. Start actions generate fresh
-    challenges; this response contains no static OIDC authorization URL or credentials.
+    Use this list to display a local account form or an external sign-in button.
     """
     settings = request.app.state.settings
     data = []
@@ -41,3 +45,14 @@ async def providers(request: Request) -> ProvidersResponse:
             )
         )
     return ProvidersResponse(data=data)
+
+
+def build_router(settings: Settings, *, include_disabled_providers: bool = False) -> APIRouter:
+    """Register enabled providers only; the offline exporter can enumerate supported contracts."""
+    configured = APIRouter(prefix="/auth", tags=["Authentication"], route_class=RateLimitedRoute)
+    configured.include_router(router)
+    if include_disabled_providers or settings.auth_local_enabled:
+        configured.include_router(local_router)
+    if include_disabled_providers or settings.zitadel_enabled:
+        configured.include_router(zitadel_router)
+    return configured

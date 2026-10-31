@@ -1,4 +1,4 @@
-"""Thin local login, session and logout routes with secure browser cookies."""
+"""Secure browser session and CSRF cookie issuance."""
 
 from datetime import UTC
 

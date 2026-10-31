@@ -36,27 +36,27 @@ class OperationStatus(BaseModel):
 
 
 class LivenessResponse(BaseModel):
-    """Report process liveness independently of dependency availability."""
+    """Whether the service is running."""
 
     status: Literal["alive"] = "alive"
 
 
 class ReadinessResponse(BaseModel):
-    """Report aggregate readiness and the individual boolean dependency outcomes."""
+    """Whether the service and its required connections are ready."""
 
     status: Literal["ready", "not_ready"]
     checks: dict[str, bool]
 
 
 class ValidationIssue(BaseModel):
-    """Expose a rejected input location and code without echoing its value."""
+    """A field that needs to be corrected."""
 
     location: list[str | int]
     code: str
 
 
 class ErrorResponse(BaseModel):
-    """Carry a public error code, message, correlation ID and optional validation issues."""
+    """An explanation of why the request could not be completed."""
 
     code: str
     message: str
@@ -65,12 +65,7 @@ class ErrorResponse(BaseModel):
 
 
 class PlatformInfoResponse(BaseModel):
-    """Expose public platform identity without process configuration or credentials.
-
-    Attributes:
-        service: Static service display name.
-        version: Version of the installed TinyPods core distribution.
-    """
+    """Service name and installed version."""
 
     service: Literal["TinyPods"] = "TinyPods"
     version: str

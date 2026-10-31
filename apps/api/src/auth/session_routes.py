@@ -1,4 +1,4 @@
-"""Thin local login, session and logout routes with secure browser cookies."""
+"""Provider-independent session identity and application logout routes."""
 
 from fastapi import APIRouter, Response
 from tinypods_api.auth.contracts import (
@@ -8,30 +8,48 @@ from tinypods_api.auth.contracts import (
 from tinypods_api.auth.dependencies import (
     CSRF_COOKIE,
     SESSION_COOKIE,
+    SESSION_CSRF_METADATA,
     PrincipalDependency,
     SessionDependency,
 )
+from tinypods_api.http.operations import build_operation_id
 from tinypods_api.rate_limit import RateLimitedRoute
 
 router = APIRouter(route_class=RateLimitedRoute)
 
 
-@router.get("/session", operation_id="getSession", response_model=IdentityResponse)
+@router.get(
+    "/session",
+    operation_id=build_operation_id("auth", "session", "get"),
+    summary="Show the signed-in account",
+    response_model=IdentityResponse,
+)
 async def session_identity(principal: PrincipalDependency) -> IdentityResponse:
-    """Return HTTP 200 with current identity; reject missing, expired or revoked sessions (401)."""
+    """Show the account currently signed in to this browser."""
     return IdentityResponse(
         user_id=principal.user_id, username=principal.username, is_owner=principal.is_owner
     )
 
 
-@router.post("/logout", operation_id="logoutLocal", response_model=LogoutResponse)
+@router.post(
+    "/logout",
+    operation_id=build_operation_id("auth", "session", "logout"),
+    summary="Sign out of TinyPods",
+    response_model=LogoutResponse,
+    openapi_extra=SESSION_CSRF_METADATA,
+    responses={
+        200: {"description": "This browser is signed out of TinyPods."},
+        401: {"description": "Sign in before using this action."},
+        403: {"description": "This sign-out request could not be verified."},
+    },
+)
 async def logout(
     response: Response, principal: PrincipalDependency, service: SessionDependency
 ) -> LogoutResponse:
-    """Revoke this session durably and clear both cookies; require a bound CSRF header.
+    """Sign this browser out of TinyPods.
 
-    HTTP 401 rejects an invalid session, 403 rejects CSRF violations and 503
-    reports unavailable storage. Success is returned only after revocation commits.
+    Other browsers stay signed in. Signing out here does not sign you out of an
+    external identity provider.
     """
     await service.logout(principal)
     for name in (SESSION_COOKIE, CSRF_COOKIE):

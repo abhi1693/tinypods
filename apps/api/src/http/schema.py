@@ -2,6 +2,7 @@
 
 import inspect
 import json
+import re
 from pathlib import Path
 from typing import Annotated, cast
 
@@ -36,6 +37,8 @@ def export_schema(application: FastAPI) -> JsonRecord:
             continue
         if not route.operation_id or route.operation_id in ids:
             raise ValueError("Each API operation needs a unique explicit operation_id")
+        if not re.fullmatch(r"[a-z][A-Za-z0-9]*", route.operation_id):
+            raise ValueError("Operation IDs must use lowerCamelCase")
         if len(route.methods or set()) != 1:
             raise ValueError("Each API operation must declare exactly one method")
         if not inspect.getdoc(route.endpoint) or not route.description.strip():
@@ -89,7 +92,9 @@ def main(
 
     try:
         # Explicit defaults bypass deployment settings and never connect to infrastructure.
-        rendered = render_schema(create_app(Settings.model_construct()))
+        rendered = render_schema(
+            create_app(Settings.model_construct(), include_disabled_providers=True)
+        )
         if check:
             if not output.is_file() or output.read_text(encoding="utf-8") != rendered:
                 raise typer.Exit(1)

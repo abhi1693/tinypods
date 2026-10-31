@@ -14,9 +14,11 @@ from tinypods_api.http.contracts import (
 from tinypods_api.http.dependencies import get_session
 from tinypods_api.http.errors import ERROR_RESPONSES, install_error_handlers
 from tinypods_api.http.middleware import RequestLoggingMiddleware
+from tinypods_api.http.operations import build_operation_id
 from tinypods_api.http.schema import export_schema, render_schema
 
 __all__ = [
+    "build_operation_id",
     "ERROR_RESPONSES",
     "ErrorResponse",
     "LivenessResponse",

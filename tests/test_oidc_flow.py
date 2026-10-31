@@ -939,3 +939,33 @@ def test_enabled_browser_service_absence_and_logout_upstream_failure(
             ).status_code
             == 404
         )
+
+
+@pytest.mark.parametrize("external", [False, True])
+def test_disabled_provider_routes_are_not_registered(external: bool) -> None:
+    """Exclude disabled handlers and their schemas from the running API."""
+    settings = enabled(Settings(), auth_local_enabled=False) if external else Settings()
+    app = create_app(settings)
+    paths = app.openapi()["paths"]
+    assert ("/auth/providers/zitadel/start" in paths) is external
+    assert ("/auth/login" in paths) is not external
+    with TestClient(app, base_url="https://testserver") as client:
+        absent = "/auth/login" if external else "/auth/providers/zitadel/start"
+        response = client.post(absent, json={})
+        assert response.status_code == 404
+
+
+def test_provider_dependencies_reject_disabled_settings_after_composition(
+    auth_settings: Settings,
+) -> None:
+    """Keep composed handlers fail-closed if their provider configuration is disabled."""
+    settings = enabled(auth_settings)
+    app = create_app(settings)
+    settings.auth_local_enabled = False
+    settings.zitadel_enabled = False
+    with TestClient(app, base_url="https://testserver") as client:
+        assert (
+            client.post("/auth/login", json={"username": "owner", "password": PASSWORD}).status_code
+            == 404
+        )
+        assert client.post("/auth/providers/zitadel/start", json={}).status_code == 404

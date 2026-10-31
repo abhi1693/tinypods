@@ -2,7 +2,7 @@
   "components": {
     "schemas": {
       "ErrorResponse": {
-        "description": "Carry a public error code, message, correlation ID and optional validation issues.",
+        "description": "An explanation of why the request could not be completed.",
         "properties": {
           "code": {
             "title": "Code",
@@ -34,7 +34,7 @@
         "type": "object"
       },
       "IdentityResponse": {
-        "description": "Expose only the authenticated account's normalized identity.",
+        "description": "The currently signed-in account.",
         "properties": {
           "is_owner": {
             "title": "Is Owner",
@@ -59,7 +59,7 @@
         "type": "object"
       },
       "LivenessResponse": {
-        "description": "Report process liveness independently of dependency availability.",
+        "description": "Whether the service is running.",
         "properties": {
           "status": {
             "const": "alive",
@@ -73,7 +73,7 @@
       },
       "LoginRequest": {
         "additionalProperties": false,
-        "description": "Accept bounded local credentials; passwords stay masked in diagnostics.",
+        "description": "Username and password for a local account.",
         "properties": {
           "password": {
             "format": "password",
@@ -99,7 +99,7 @@
         "type": "object"
       },
       "LoginResponse": {
-        "description": "Report absolute session expiration; the bearer token is in an HttpOnly cookie.",
+        "description": "Signed-in account details and sign-in expiry.",
         "properties": {
           "expires_at": {
             "format": "date-time",
@@ -131,7 +131,7 @@
       },
       "LoginStartRequest": {
         "additionalProperties": false,
-        "description": "Accept only a bounded local post-login path.",
+        "description": "The page to open after signing in.",
         "properties": {
           "return_to": {
             "default": "/",
@@ -144,7 +144,7 @@
         "type": "object"
       },
       "LoginStartResponse": {
-        "description": "Carry one fresh authorization challenge; transaction secrets remain server-side.",
+        "description": "A link to open to sign in.",
         "properties": {
           "authorization_url": {
             "title": "Authorization Url",
@@ -158,7 +158,7 @@
         "type": "object"
       },
       "LogoutResponse": {
-        "description": "Confirm durable session revocation.",
+        "description": "Whether this browser has been signed out.",
         "properties": {
           "logged_out": {
             "default": true,
@@ -170,7 +170,7 @@
         "type": "object"
       },
       "PlatformInfoResponse": {
-        "description": "Expose public platform identity without process configuration or credentials.\n\nAttributes:\n    service: Static service display name.\n    version: Version of the installed TinyPods core distribution.",
+        "description": "Service name and installed version.",
         "properties": {
           "service": {
             "const": "TinyPods",
@@ -190,7 +190,7 @@
         "type": "object"
       },
       "ProviderDescriptor": {
-        "description": "Expose only enabled login methods and same-origin actions, never provider secrets/config.",
+        "description": "A sign-in method available for this installation.",
         "properties": {
           "id": {
             "title": "Id",
@@ -228,7 +228,7 @@
         "type": "object"
       },
       "ProviderLogoutResponse": {
-        "description": "Confirm application revocation and expose an optional token-free upstream logout target.",
+        "description": "Sign-out result and an optional link to finish external sign-out.",
         "properties": {
           "logged_out": {
             "default": true,
@@ -254,7 +254,7 @@
         "type": "object"
       },
       "ProvidersResponse": {
-        "description": "List configured enabled methods without contacting an upstream identity provider.",
+        "description": "Available sign-in methods.",
         "properties": {
           "data": {
             "items": {
@@ -271,7 +271,7 @@
         "type": "object"
       },
       "ReadinessResponse": {
-        "description": "Report aggregate readiness and the individual boolean dependency outcomes.",
+        "description": "Whether the service and its required connections are ready.",
         "properties": {
           "checks": {
             "additionalProperties": {
@@ -297,7 +297,7 @@
         "type": "object"
       },
       "ValidationIssue": {
-        "description": "Expose a rejected input location and code without echoing its value.",
+        "description": "A field that needs to be corrected.",
         "properties": {
           "code": {
             "title": "Code",
@@ -335,11 +335,33 @@
   "paths": {
     "/auth/login": {
       "post": {
-        "description": "Sign in with local credentials and issue Secure, SameSite=Strict host-only cookies.\n\nSend X-CSRF-Token: login and JSON credentials from the API's origin. HTTP 401\nrejects invalid credentials; 429 limits attempts with Retry-After; 503 fails\nclosed when storage is unavailable. The session cookie is HttpOnly. Read the\nseparate CSRF cookie and send it in X-CSRF-Token on subsequent mutations.",
-        "operationId": "loginLocal",
+        "description": "Sign in with a local username and password.\n\nReturns your account details and signs this browser in. Use a secure connection\nand provide the sign-in header shown in the request parameters.",
+        "operationId": "authLocalLogin",
+        "parameters": [
+          {
+            "description": "Set this header to login when starting sign-in.",
+            "example": "login",
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": true,
+            "schema": {
+              "const": "login",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
+              "examples": {
+                "local": {
+                  "summary": "Local account login",
+                  "value": {
+                    "password": "<your-password-at-least-15-characters>",
+                    "username": "owner"
+                  }
+                }
+              },
               "schema": {
                 "$ref": "#/components/schemas/LoginRequest"
               }
@@ -356,7 +378,7 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Signed in. Browser sign-in details have been updated."
           },
           "400": {
             "content": {
@@ -369,24 +391,10 @@
             "description": "Bad Request"
           },
           "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Unauthorized"
+            "description": "The username or password was not accepted."
           },
           "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Forbidden"
+            "description": "This sign-in request could not be verified."
           },
           "404": {
             "content": {
@@ -429,14 +437,15 @@
             "description": "Unprocessable Content"
           },
           "429": {
-            "content": {
-              "application/json": {
+            "description": "Too many sign-in attempts. Wait before trying again.",
+            "headers": {
+              "Retry-After": {
+                "description": "How long to wait, in seconds.",
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "integer"
                 }
               }
-            },
-            "description": "Too Many Requests"
+            }
           },
           "500": {
             "content": {
@@ -449,17 +458,10 @@
             "description": "Internal Server Error"
           },
           "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service Unavailable"
+            "description": "Sign-in is temporarily unavailable. Try again later."
           }
         },
-        "summary": "Login",
+        "summary": "Sign in with a local account",
         "tags": [
           "Authentication"
         ],
@@ -472,8 +474,19 @@
     },
     "/auth/logout": {
       "post": {
-        "description": "Revoke this session durably and clear both cookies; require a bound CSRF header.\n\nHTTP 401 rejects an invalid session, 403 rejects CSRF violations and 503\nreports unavailable storage. Success is returned only after revocation commits.",
-        "operationId": "logoutLocal",
+        "description": "Sign this browser out of TinyPods.\n\nOther browsers stay signed in. Signing out here does not sign you out of an\nexternal identity provider.",
+        "operationId": "authSessionLogout",
+        "parameters": [
+          {
+            "description": "Copy the current __Host-tinypods-csrf cookie value into this header.",
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -483,7 +496,7 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "This browser is signed out of TinyPods."
           },
           "400": {
             "content": {
@@ -496,24 +509,10 @@
             "description": "Bad Request"
           },
           "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Unauthorized"
+            "description": "Sign in before using this action."
           },
           "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Forbidden"
+            "description": "This sign-out request could not be verified."
           },
           "404": {
             "content": {
@@ -586,7 +585,7 @@
             "description": "Service Unavailable"
           }
         },
-        "summary": "Logout",
+        "summary": "Sign out of TinyPods",
         "tags": [
           "Authentication"
         ]
@@ -594,8 +593,8 @@
     },
     "/auth/providers": {
       "get": {
-        "description": "List safe configured enabled login methods without authentication or upstream I/O.\n\nDescriptors remain stable during an upstream outage. Start actions generate fresh\nchallenges; this response contains no static OIDC authorization URL or credentials.",
-        "operationId": "listAuthProviders",
+        "description": "Show the sign-in methods available for this installation.\n\nUse this list to display a local account form or an external sign-in button.",
+        "operationId": "authProvidersList",
         "responses": {
           "200": {
             "content": {
@@ -708,7 +707,7 @@
             "description": "Service Unavailable"
           }
         },
-        "summary": "Providers",
+        "summary": "List available sign-in methods",
         "tags": [
           "Authentication"
         ]
@@ -716,8 +715,8 @@
     },
     "/auth/providers/zitadel/callback": {
       "get": {
-        "description": "Consume a browser-bound transaction and exchange a one-use code, then redirect locally.\n\nThis GET is bound by state and the separate correlation cookie, not a custom CSRF\nheader. Duplicate parameters and mixed code/error fail. No tokens/verifier enter\nbrowser storage. Signature/claims/access failures create no session or fallback.",
-        "operationId": "finishZitadelLogin",
+        "description": "Complete sign-in after returning from Zitadel.\n\nSigns this browser in and sends you to the page chosen when sign-in started.\nThe sign-in attempt must still be valid.",
+        "operationId": "authZitadelLoginCallback",
         "parameters": [
           {
             "in": "query",
@@ -784,7 +783,7 @@
         ],
         "responses": {
           "303": {
-            "description": "Login complete; navigate to the stored local path",
+            "description": "Signed in. Continue to the requested page.",
             "headers": {
               "Location": {
                 "schema": {
@@ -894,7 +893,7 @@
             "description": "Service Unavailable"
           }
         },
-        "summary": "Callback",
+        "summary": "Complete Zitadel sign-in",
         "tags": [
           "Authentication"
         ]
@@ -902,8 +901,19 @@
     },
     "/auth/providers/zitadel/logout": {
       "post": {
-        "description": "Revoke the application session first, then return an optional upstream logout target.\n\nThe caller must send its CSRF header. Provider failure never prevents durable local\nrevocation. Upstream logout requires browser navigation and may affect all Zitadel\nsessions in that browser; this is not back-channel/global session revocation.",
-        "operationId": "logoutZitadel",
+        "description": "Sign this browser out of TinyPods and get a link to sign out of Zitadel.\n\nOpen the returned link to finish signing out of Zitadel. This can also sign you\nout of other applications using Zitadel in the same browser.",
+        "operationId": "authZitadelLogout",
+        "parameters": [
+          {
+            "description": "Copy the current __Host-tinypods-csrf cookie value into this header.",
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -913,7 +923,7 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Signed out of TinyPods. Open the returned link to sign out of Zitadel."
           },
           "400": {
             "content": {
@@ -1006,17 +1016,10 @@
             "description": "Internal Server Error"
           },
           "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service Unavailable"
+            "description": "Signed out of TinyPods; Zitadel sign-out is unavailable."
           }
         },
-        "summary": "Logout",
+        "summary": "Sign out of TinyPods and Zitadel",
         "tags": [
           "Authentication"
         ]
@@ -1024,11 +1027,32 @@
     },
     "/auth/providers/zitadel/start": {
       "post": {
-        "description": "Start Code+PKCE S256 login after a same-origin custom-header CSRF check.\n\nStore state/nonce/verifier server-side for five minutes. Only an opaque Secure,\nHttpOnly, SameSite=Lax correlation cookie crosses the top-level callback navigation.\nThe application session cookie remains Strict. Reject unsafe return targets (400),\ndisabled providers (404), rate limits (429) and unavailable dependencies (503).",
-        "operationId": "startZitadelLogin",
+        "description": "Start signing in with Zitadel.\n\nOpen the returned link in the same browser. After signing in, you will return\nto the page chosen in this request.",
+        "operationId": "authZitadelLoginStart",
+        "parameters": [
+          {
+            "description": "Set this header to login when starting sign-in.",
+            "example": "login",
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": true,
+            "schema": {
+              "const": "login",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
+              "examples": {
+                "application": {
+                  "summary": "Return to applications after login",
+                  "value": {
+                    "return_to": "/apps"
+                  }
+                }
+              },
               "schema": {
                 "$ref": "#/components/schemas/LoginStartRequest"
               }
@@ -1045,17 +1069,10 @@
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Open the returned link to sign in with Zitadel."
           },
           "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Bad Request"
+            "description": "Choose a page within this installation to return to after sign-in."
           },
           "401": {
             "content": {
@@ -1068,14 +1085,7 @@
             "description": "Unauthorized"
           },
           "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Forbidden"
+            "description": "This sign-in request could not be verified."
           },
           "404": {
             "content": {
@@ -1118,14 +1128,14 @@
             "description": "Unprocessable Content"
           },
           "429": {
-            "content": {
-              "application/json": {
+            "description": "Too many sign-in attempts. Wait before trying again.",
+            "headers": {
+              "Retry-After": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "type": "integer"
                 }
               }
-            },
-            "description": "Too Many Requests"
+            }
           },
           "500": {
             "content": {
@@ -1138,17 +1148,10 @@
             "description": "Internal Server Error"
           },
           "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service Unavailable"
+            "description": "Zitadel sign-in is temporarily unavailable. Try again later."
           }
         },
-        "summary": "Start",
+        "summary": "Start Zitadel sign-in",
         "tags": [
           "Authentication"
         ],
@@ -1161,8 +1164,8 @@
     },
     "/auth/session": {
       "get": {
-        "description": "Return HTTP 200 with current identity; reject missing, expired or revoked sessions (401).",
-        "operationId": "getSession",
+        "description": "Show the account currently signed in to this browser.",
+        "operationId": "authSessionGet",
         "responses": {
           "200": {
             "content": {
@@ -1275,7 +1278,7 @@
             "description": "Service Unavailable"
           }
         },
-        "summary": "Session Identity",
+        "summary": "Show the signed-in account",
         "tags": [
           "Authentication"
         ]
@@ -1283,8 +1286,8 @@
     },
     "/healthz": {
       "get": {
-        "description": "Check that the API process can respond to HTTP requests.\n\nReturns HTTP 200 with status `alive`. This probe does not check startup\nreadiness or dependencies; use `/readyz` to decide whether to send traffic.\n\nReturns:\n    Process liveness without dependency checks.",
-        "operationId": "getLiveness",
+        "description": "Check whether the service is running. Connected services are not checked.",
+        "operationId": "healthLivenessGet",
         "responses": {
           "200": {
             "content": {
@@ -1397,13 +1400,13 @@
             "description": "Service Unavailable"
           }
         },
-        "summary": "Liveness"
+        "summary": "Check whether the service is running"
       }
     },
     "/info": {
       "get": {
-        "description": "Return public service identity and the installed TinyPods version.\n\nThe request has no path, query or body inputs. HTTP 200 returns service\nand version fields. X-Cache reports HIT, MISS or BYPASS. Cookie and\nAuthorization requests bypass cache storage; Cache-Control: no-store\nprevents independent browser/proxy retention.\n\nReturns:\n    Public service metadata from the installed core package.",
-        "operationId": "getPlatformInfo",
+        "description": "Show the service name and installed TinyPods version.",
+        "operationId": "platformInfoGet",
         "responses": {
           "200": {
             "content": {
@@ -1516,7 +1519,7 @@
             "description": "Service Unavailable"
           }
         },
-        "summary": "Platform Info",
+        "summary": "Show service information",
         "x-tinypods-cache": {
           "namespace": "platform_info",
           "revision": 1,
@@ -1526,8 +1529,8 @@
     },
     "/readyz": {
       "get": {
-        "description": "Check whether the API runtime and configured dependencies are ready.\n\nReturns HTTP 200 with status `ready` when every check passes, otherwise\nHTTP 503 with status `not_ready`. Both responses include boolean results\nfor each check, including `runtime` and PostgreSQL when configured.\nFailed or timed-out dependencies are reported as false without their\nexception details. Readiness failures do not change `/healthz`.\n\nArgs:\n    response: HTTP response whose status reflects aggregate readiness.\n\nReturns:\n    Aggregate readiness plus individual dependency outcomes.",
-        "operationId": "getReadiness",
+        "description": "Check whether the service is ready to handle requests.\n\nThe response shows whether the service and its required connections are available.",
+        "operationId": "healthReadinessGet",
         "responses": {
           "200": {
             "content": {
@@ -1640,7 +1643,7 @@
             "description": "Not ready"
           }
         },
-        "summary": "Readiness"
+        "summary": "Check whether the service is ready"
       }
     }
   }

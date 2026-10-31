@@ -10,7 +10,7 @@ from tinypods_core.auth import AuthError, Credentials, LocalPasswordProvider
 from tinypods_core.auth.federation import IdentityMappings
 from tinypods_core.db import Database
 
-auth_app = typer.Typer(help="Initialize local authentication.", add_completion=False)
+auth_app = typer.Typer(help="Manage authentication and identity links.", add_completion=False)
 
 
 @auth_app.command()

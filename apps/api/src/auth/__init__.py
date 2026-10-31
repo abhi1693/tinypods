@@ -8,7 +8,7 @@ from tinypods_api.auth.dependencies import (
     get_principal,
     get_sessions,
 )
-from tinypods_api.auth.routes import router
+from tinypods_api.auth.routes import build_router, router
 
 __all__ = [
     "AuthDependency",
@@ -18,4 +18,5 @@ __all__ = [
     "get_auth",
     "get_principal",
     "router",
+    "build_router",
 ]

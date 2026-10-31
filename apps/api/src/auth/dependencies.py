@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request
 from tinypods_core.auth import AuthService, Credentials, Principal, SessionService
+from tinypods_core.json_types import JsonRecord
 
 SESSION_COOKIE = "__Host-tinypods-session"
 CSRF_COOKIE = "__Host-tinypods-csrf"
@@ -52,3 +53,28 @@ async def get_principal(request: Request, service: SessionDependency) -> Princip
 
 
 PrincipalDependency = Annotated[Principal, Depends(get_principal)]
+
+
+LOGIN_CSRF_METADATA: JsonRecord = {
+    "parameters": [
+        {
+            "name": CSRF_HEADER,
+            "in": "header",
+            "required": True,
+            "description": "Set this header to login when starting sign-in.",
+            "schema": {"type": "string", "const": "login"},
+            "example": "login",
+        }
+    ]
+}
+SESSION_CSRF_METADATA: JsonRecord = {
+    "parameters": [
+        {
+            "name": CSRF_HEADER,
+            "in": "header",
+            "required": True,
+            "description": "Copy the current __Host-tinypods-csrf cookie value into this header.",
+            "schema": {"type": "string"},
+        }
+    ]
+}

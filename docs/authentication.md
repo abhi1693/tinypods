@@ -12,6 +12,8 @@ is unauthenticated and returns `{ "data": [...] }` descriptors with ID, label,
 password/redirect type and same-origin action paths. It never contacts an IdP or
 exposes issuer/client configuration, secrets, tokens or a static authorization URL.
 An enabled provider remains advertised during an outage; starting it fails closed.
+Disabled provider routes are not registered and do not appear in the running
+API schema. The offline client contract lists all supported provider operations.
 Disabling local login is explicit; external failure never activates local fallback.
 Provider configuration is deployment/operator-owned, not a public mutation API.
 

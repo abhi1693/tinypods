@@ -1,8 +1,9 @@
-"""Thin local login, session and logout routes with secure browser cookies."""
+"""Zitadel login initiation, callback and upstream logout routes."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
+from fastapi.openapi.models import Example
 from fastapi.responses import RedirectResponse
 from tinypods_api.auth.contracts import (
     LoginStartRequest,
@@ -12,16 +13,25 @@ from tinypods_api.auth.contracts import (
 from tinypods_api.auth.cookies import set_session_cookies
 from tinypods_api.auth.dependencies import (
     CSRF_HEADER,
+    LOGIN_CSRF_METADATA,
     SESSION_COOKIE,
+    SESSION_CSRF_METADATA,
     PrincipalDependency,
     SessionDependency,
     check_origin,
 )
 from tinypods_api.auth.session_routes import logout as logout_session
 from tinypods_api.http.errors import error_response
+from tinypods_api.http.operations import build_operation_id
 from tinypods_api.rate_limit import EndpointRatePolicy, RateLimitedRoute
 from tinypods_core.auth import AuthError
 from tinypods_core.auth.federation import BrowserLogin
+
+EXAMPLES: dict[str, Example] = {
+    "application": Example(
+        summary="Return to applications after login", value={"return_to": "/apps"}
+    )
+}
 
 router = APIRouter(route_class=RateLimitedRoute)
 OIDC_COOKIE = "__Host-tinypods-oidc"
@@ -40,19 +50,37 @@ BrowserDependency = Annotated[BrowserLogin, Depends(get_browser_login)]
 
 @router.post(
     "/providers/zitadel/start",
-    operation_id="startZitadelLogin",
+    operation_id=build_operation_id("auth", "zitadelLogin", "start"),
+    summary="Start Zitadel sign-in",
     response_model=LoginStartResponse,
-    openapi_extra=EndpointRatePolicy(name="oidc_start", limit=10).openapi_extra(),
+    openapi_extra={
+        **EndpointRatePolicy(name="oidc_start", limit=10).openapi_extra(),
+        **LOGIN_CSRF_METADATA,
+    },
+    responses={
+        200: {"description": "Open the returned link to sign in with Zitadel."},
+        400: {"description": "Choose a page within this installation to return to after sign-in."},
+        403: {"description": "This sign-in request could not be verified."},
+        429: {
+            "description": "Too many sign-in attempts. Wait before trying again.",
+            "headers": {"Retry-After": {"schema": {"type": "integer"}}},
+        },
+        503: {"description": "Zitadel sign-in is temporarily unavailable. Try again later."},
+    },
 )
 async def start(
-    body: LoginStartRequest, request: Request, response: Response, service: BrowserDependency
+    body: Annotated[
+        LoginStartRequest,
+        Body(openapi_examples=EXAMPLES),
+    ],
+    request: Request,
+    response: Response,
+    service: BrowserDependency,
 ) -> LoginStartResponse:
-    """Start Code+PKCE S256 login after a same-origin custom-header CSRF check.
+    """Start signing in with Zitadel.
 
-    Store state/nonce/verifier server-side for five minutes. Only an opaque Secure,
-    HttpOnly, SameSite=Lax correlation cookie crosses the top-level callback navigation.
-    The application session cookie remains Strict. Reject unsafe return targets (400),
-    disabled providers (404), rate limits (429) and unavailable dependencies (503).
+    Open the returned link in the same browser. After signing in, you will return
+    to the page chosen in this request.
     """
     check_origin(request)
     if request.headers.get(CSRF_HEADER) != "login":
@@ -76,13 +104,14 @@ async def start(
 
 @router.get(
     "/providers/zitadel/callback",
-    operation_id="finishZitadelLogin",
+    operation_id=build_operation_id("auth", "zitadelLogin", "callback"),
+    summary="Complete Zitadel sign-in",
     response_class=RedirectResponse,
     status_code=303,
     response_model=None,
     responses={
         303: {
-            "description": "Login complete; navigate to the stored local path",
+            "description": "Signed in. Continue to the requested page.",
             "headers": {"Location": {"schema": {"type": "string"}}},
         }
     },
@@ -95,11 +124,10 @@ async def callback(
     error: Annotated[str | None, Query(max_length=255)] = None,
     iss: Annotated[str | None, Query(max_length=2048)] = None,
 ) -> RedirectResponse:
-    """Consume a browser-bound transaction and exchange a one-use code, then redirect locally.
+    """Complete sign-in after returning from Zitadel.
 
-    This GET is bound by state and the separate correlation cookie, not a custom CSRF
-    header. Duplicate parameters and mixed code/error fail. No tokens/verifier enter
-    browser storage. Signature/claims/access failures create no session or fallback.
+    Signs this browser in and sends you to the page chosen when sign-in started.
+    The sign-in attempt must still be valid.
     """
     if any(len(request.query_params.getlist(key)) != 1 for key in request.query_params):
         raise HTTPException(400)
@@ -114,7 +142,17 @@ async def callback(
 
 
 @router.post(
-    "/providers/zitadel/logout", operation_id="logoutZitadel", response_model=ProviderLogoutResponse
+    "/providers/zitadel/logout",
+    operation_id=build_operation_id("auth", "zitadel", "logout"),
+    summary="Sign out of TinyPods and Zitadel",
+    response_model=ProviderLogoutResponse,
+    openapi_extra=SESSION_CSRF_METADATA,
+    responses={
+        200: {
+            "description": "Signed out of TinyPods. Open the returned link to sign out of Zitadel."
+        },
+        503: {"description": "Signed out of TinyPods; Zitadel sign-out is unavailable."},
+    },
 )
 async def logout(
     request: Request,
@@ -123,11 +161,10 @@ async def logout(
     sessions: SessionDependency,
     service: BrowserDependency,
 ) -> ProviderLogoutResponse | Response:
-    """Revoke the application session first, then return an optional upstream logout target.
+    """Sign this browser out of TinyPods and get a link to sign out of Zitadel.
 
-    The caller must send its CSRF header. Provider failure never prevents durable local
-    revocation. Upstream logout requires browser navigation and may affect all Zitadel
-    sessions in that browser; this is not back-channel/global session revocation.
+    Open the returned link to finish signing out of Zitadel. This can also sign you
+    out of other applications using Zitadel in the same browser.
     """
     await logout_session(response, principal, sessions)
     try:
