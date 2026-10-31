@@ -102,6 +102,13 @@ def compose_stack() -> Iterator[ComposeStack]:
 
 
 def test_compose_startup_health_and_private_services(compose_stack: ComposeStack) -> None:
+    """Verify startup, private networking, non-root services and live response caching.
+
+    Args:
+        compose_stack: Isolated built Compose project with disposable data volumes.
+
+    Returns:
+        None. Assertions cover service health, ownership and cache MISS/HIT behavior."""
     stack = compose_stack
     stack.assert_ready()
     assert "installation_id" in json.loads(stack.identity())
@@ -109,6 +116,16 @@ def test_compose_startup_health_and_private_services(compose_stack: ComposeStack
     services = configuration["services"]
     assert "ports" not in services["postgres"]
     assert "ports" not in services["valkey"]
+    assert services["valkey"]["user"] == "999:999"
+    assert services["valkey"]["read_only"] is True
+    assert services["valkey"]["cap_drop"] == ["ALL"]
+    assert stack.run("exec", "-T", "valkey", "id", "-u") == "999"
+    assert services["api"]["environment"]["TINYPODS_CACHE_ENABLED"] == "true"
+    port = stack.run("port", "api", "8000").rsplit(":", 1)[1]
+    with urlopen(f"http://127.0.0.1:{port}/info", timeout=5) as response:
+        assert response.headers["X-Cache"] == "MISS"
+    with urlopen(f"http://127.0.0.1:{port}/info", timeout=5) as response:
+        assert response.headers["X-Cache"] == "HIT"
     assert configuration["networks"]["data"]["internal"] is True
     assert services["worker"]["scale"] == 1
     assert services["api"]["environment"]["TINYPODS_API_HOST"] == "0.0.0.0"

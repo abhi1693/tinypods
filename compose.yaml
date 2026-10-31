@@ -14,6 +14,12 @@ x-runtime: &runtime
     TINYPODS_MIGRATION_DATABASE_URL:
     TINYPODS_DATABASE_MODE: ${TINYPODS_DATABASE_MODE:-direct}
     TINYPODS_VALKEY_URL: ${TINYPODS_VALKEY_URL:?Set TINYPODS_VALKEY_URL}
+    TINYPODS_CACHE_ENABLED: ${TINYPODS_CACHE_ENABLED:-true}
+    TINYPODS_CACHE_TTL_SECONDS: ${TINYPODS_CACHE_TTL_SECONDS:-300}
+    TINYPODS_CACHE_METADATA_TTL_SECONDS: ${TINYPODS_CACHE_METADATA_TTL_SECONDS:-600}
+    TINYPODS_CACHE_MAX_BYTES: ${TINYPODS_CACHE_MAX_BYTES:-1000000}
+    TINYPODS_CACHE_NAMESPACE: ${TINYPODS_CACHE_NAMESPACE:-tinypods:cache}
+    TINYPODS_CACHE_VALKEY_URL: ${TINYPODS_CACHE_VALKEY_URL:-${TINYPODS_VALKEY_URL}}
     TINYPODS_LOG_FORMAT: ${TINYPODS_LOG_FORMAT:-text}
     TINYPODS_LOG_LEVEL: ${TINYPODS_LOG_LEVEL:-INFO}
   logging:
@@ -45,11 +51,17 @@ services:
       <<: *healthcheck
       test: [CMD, pg_isready, -U, tinypods, -d, tinypods]
 
+  # Queue and optional response cache share this non-evicting, private service.
   valkey:
+    user: '999:999'
+    read_only: true
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     image: ${TINYPODS_IMAGE_REGISTRY:+${TINYPODS_IMAGE_REGISTRY}/docker.io/}valkey/valkey:9.1.3-trixie@sha256:3add1a336a920ea54770a001ab6feb3da5fceea96a40373a3a2cd469b815f0b7
     profiles: [local]
     restart: unless-stopped
-    # Validate the password before handing back to the image's non-root entrypoint.
+    # Validate the password before starting the non-root server.
     entrypoint: [tini, --, sh, -ec, 'test -n "$$VALKEYCLI_AUTH" || { echo "Set VALKEY_PASSWORD" >&2; exit 1; }; exec docker-entrypoint.sh "$$@"', --]
     command: [valkey-server, --appendonly, 'yes', --appendfsync, everysec,
               --maxmemory, 128mb, --maxmemory-policy, noeviction,

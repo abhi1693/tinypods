@@ -48,3 +48,14 @@ class ErrorResponse(BaseModel):
     message: str
     request_id: UUID
     issues: list[ValidationIssue] = Field(default_factory=list)
+
+
+class PlatformInfoResponse(BaseModel):
+    """Expose public platform identity without process configuration or credentials.
+
+    Attributes:
+        service: Static service display name.
+        version: Version of the installed TinyPods core distribution."""
+
+    service: Literal["TinyPods"] = "TinyPods"
+    version: str
