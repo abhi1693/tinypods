@@ -16,6 +16,7 @@ from urllib.request import urlopen
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from tinypods_api.main import create_app
 from tinypods_core.logging import JsonFormatter, configure_logging
 from tinypods_core.settings import ConfigurationError, Settings, load_settings
@@ -244,3 +245,23 @@ def test_api_entry_point_serves_http_and_shuts_down() -> None:
         if process.poll() is None:
             process.kill()
             process.communicate()
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("log_format", "yaml"),
+        ("log_level", "TRACE"),
+        ("database_mode", "unsupported"),
+    ],
+)
+def test_literal_settings_reject_unsupported_values(field: str, value: str) -> None:
+    """Keep runtime configuration constrained rather than weakening literal fields to strings.
+
+    Args:
+        field: Literal-constrained deployment setting.
+        value: Unsupported value that must fail validation.
+    """
+    with pytest.raises(ValidationError) as failure:
+        Settings.model_validate({field: value})
+    assert failure.value.errors()[0]["type"] == "literal_error"

@@ -221,3 +221,27 @@ exception diagnostics. Cycles and unsupported objects use representation markers
 rather than silent truncation; binary values use complete hexadecimal envelopes.
 JSON cannot preserve Python object identity. See [CONTRIBUTING.md](CONTRIBUTING.md)
 for report, validation and contribution guidance.
+
+
+## Backend module packages
+
+Core cache storage, database/migration access and logging live in `cache/`, `db/`
+and `logging/` packages. API route caching lives in `cache/`; HTTP DTOs, errors,
+request middleware and schema export live in `http/`. CLI command implementations
+live in `commands/`, with process setup and failure handling in the entrypoint.
+The worker remains a single process module until it has additional responsibilities.
+
+Each package exposes its intended public API through `__init__.py` and an explicit
+`__all__`. Import shared contracts from the domain package; keep constants, codecs,
+models and implementation helpers inside their owning package. Inner filenames use
+local names such as `constants.py`, rather than repeating the package name.
+
+The build metadata registers every concrete subpackage. Packaging tests rebuild all
+four distributions from source archives, verify complete module/typing-marker
+inclusion and check public imports in fresh interpreters outside the checkout.
+
+
+Select the project `.venv/bin/python` interpreter (Python 3.13) in the IDE.
+The backend uses modern typing syntax, including `bytes | None` and literal types.
+An older or unrelated interpreter can report invalid annotations even when the
+installed project checks pass; verify the selected SDK before changing valid types.

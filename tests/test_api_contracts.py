@@ -403,3 +403,39 @@ def test_openapi_command_releases_owned_logging(tmp_path: Path) -> None:
 
     main(output=tmp_path / "schema.json")
     assert not any(isinstance(handler, StderrHandler) for handler in logging.getLogger().handlers)
+
+
+@pytest.mark.parametrize(
+    "name,payload,field",
+    [
+        ("LivenessResponse", {"status": "alive"}, "status"),
+        ("ReadinessResponse", {"status": "ready", "checks": {}}, "status"),
+        (
+            "OperationStatus",
+            {"operation_id": "12345678-abcd-1234-abcd-123456789abc", "status": "running"},
+            "status",
+        ),
+        ("PlatformInfoResponse", {"service": "TinyPods", "version": "0.0.1"}, "service"),
+    ],
+)
+def test_literal_http_contracts_preserve_validated_wire_values(
+    name: str,
+    payload: dict[str, object],
+    field: str,
+) -> None:
+    """Retain closed public value sets while keeping standards-compliant literal annotations.
+
+    Args:
+        name: Public response DTO exposed by the HTTP package.
+        payload: Valid wire representation for the response model.
+        field: Literal-constrained field replaced with an unsupported value.
+    """
+    from pydantic import BaseModel, ValidationError
+    from tinypods_api import http
+
+    model = getattr(http, name)
+    assert issubclass(model, BaseModel)
+    assert model.model_validate(payload).model_dump(mode="json")[field] == payload[field]
+    with pytest.raises(ValidationError) as failure:
+        model.model_validate({**payload, field: "unsupported-wire-value"})
+    assert failure.value.errors()[0]["type"] == "literal_error"
