@@ -24,7 +24,7 @@ These are project rules, not requirements imposed by FastAPI.
 
 ## Current coverage and remaining work
 
-The only application routes are /healthz and /readyz. Both have typed responses and published docstrings; neither accepts a request body. Liveness returns 200. Readiness returns the same typed shape on 200 and 503 and awaits configured checks.
+The application routes are /healthz, /readyz and public /info. All have typed responses and published docstrings; none accepts a request body. Liveness returns 200. Readiness returns the same typed shape on 200 and 503 and awaits configured checks.
 
 The exporter enforces operation IDs, public route documentation and primary response DTOs, including nested APIRouter routes. Router traversal uses FastAPI's public route-context helper, so the package requires FastAPI 0.162.0 or newer. CI checks deterministic export, schema validity and version alignment. It does not yet enforce every future input annotation, DTO separation, dependency boundary or async I/O choice automatically; those still require review and feature-specific tests.
 
@@ -56,3 +56,18 @@ uv run tinypods-openapi
 ```
 
 The sync script generates matching versions in every workspace pyproject.toml. CI rejects drift. These generated metadata values let each setuptools package build on its own without reaching outside its directory. Runtime code reads the installed tinypods-core distribution version; the API and OpenAPI export use that same value. No source-checkout file is required at runtime.
+
+
+## Public response cache
+
+GET /info is the initial opt-in metadata endpoint. Health/readiness, writes and ordinary routes are uncached. A future public route can opt in with CachedReadRoute and CachePolicy only if its response is independent of identity, cookies, authorization and varying request headers. Never opt authenticated or personalized routes into the shared cache.
+
+The route wrapper runs before dependencies, so a valid hit avoids database checkout. Redis operations run in a thread pool with 200 ms socket/connect timeouts, no retries and a five-second failure circuit breaker. A miss may wait up to one second for another loader. Cache outages and write failures read through to the source.
+
+Keys include platform version, hashed database identity, namespace, policy revision, path and canonical query parameters. Repeated query-value order is preserved. Only bounded HTTP 200 JSON DTOs without cookies, custom headers, Vary or cache-control directives are stored. Hits are validated against the response DTO and receive a fresh request ID from the outer logging middleware. Browsers/proxies receive Cache-Control: no-store; X-Cache reports HIT, MISS or BYPASS.
+
+TINYPODS_CACHE_ENABLED disables caching. TTL settings default to 300 seconds for content and 600 for metadata, bounded to 1–3600 seconds. TINYPODS_CACHE_MAX_BYTES defaults to 1 MB. TINYPODS_CACHE_NAMESPACE separates operator environments. TINYPODS_CACHE_VALKEY_URL can select a separate endpoint; otherwise the existing private Valkey URL is used.
+
+Call ResponseCache.invalidate in a thread pool only after a successful committed source change. Generation rotation and owner-checked publication prevent an earlier fill from repopulating an invalidated generation. The cache never flushes the database or deletes queue keys. There are no catalog writes to hook yet; those services must wire post-commit invalidation when implemented. TTL remains the fallback freshness bound after failed invalidation; strict revocation-sensitive data must not use this cache.
+
+The default Compose service keeps its AOF and noeviction policy, stays on the private data network and runs non-root with dropped capabilities. Cache and queue still share capacity: use the separate cache URL when resource policies need to differ. Cached data is disposable, not a source of truth. In-process public cache policy is a developer contract, not an authorization sandbox.

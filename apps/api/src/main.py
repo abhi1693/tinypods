@@ -8,10 +8,12 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI, Response
 from starlette.types import ASGIApp
-from tinypods_api.contracts import LivenessResponse, ReadinessResponse
+from tinypods_api.cache import CachedReadRoute, CachePolicy
+from tinypods_api.contracts import LivenessResponse, PlatformInfoResponse, ReadinessResponse
 from tinypods_api.errors import ERROR_RESPONSES, install_error_handlers
 from tinypods_api.logging import RequestLoggingMiddleware
 from tinypods_core import __version__
+from tinypods_core.cache import ResponseCache
 from tinypods_core.db import Database
 from tinypods_core.logging import configure_logging, shutdown_logging
 from tinypods_core.settings import ConfigurationError, Settings, load_settings
@@ -37,6 +39,12 @@ def create_app(
     config = settings if settings is not None else load_settings()
     log_handler = configure_logging(config, service="api", non_blocking=True)
     checks = dict(readiness_checks or {})
+    response_cache = (
+        ResponseCache(config)
+        if config.cache_enabled
+        and (config.cache_valkey_url is not None or config.valkey_url is not None)
+        else None
+    )
     if "runtime" in checks:
         raise ValueError("runtime is a reserved readiness check name")
 
@@ -60,15 +68,37 @@ def create_app(
             app.state.ready = False
             if database is not None:
                 await database.close()
+            if response_cache is not None:
+                await asyncio.to_thread(response_cache.close)
             logger.info("API stopped")
             await asyncio.to_thread(log_handler.flush)
 
     app = LoggedFastAPI(
         title="TinyPods API", version=__version__, lifespan=lifespan, responses=ERROR_RESPONSES
     )
+    app.router.route_class = CachedReadRoute
+    app.state.settings = config
+    app.state.response_cache = response_cache
     install_error_handlers(app)
     app.state.database = database
     app.state.ready = False
+
+    @app.get(
+        "/info",
+        operation_id="getPlatformInfo",
+        response_model=PlatformInfoResponse,
+        openapi_extra=CachePolicy(
+            namespace="platform_info", revision=1, ttl="metadata"
+        ).openapi_extra(),
+    )
+    async def platform_info() -> PlatformInfoResponse:
+        """Read public platform identity and the installed TinyPods version.
+
+        Returns HTTP 200 with non-personalized service metadata. Eligible GET
+        requests may use the optional server-side cache; browsers and proxies
+        receive Cache-Control: no-store. Cookie and authorization requests bypass it.
+        """
+        return PlatformInfoResponse(version=__version__)
 
     @app.get("/healthz", operation_id="getLiveness", response_model=LivenessResponse)
     async def liveness() -> LivenessResponse:

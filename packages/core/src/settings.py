@@ -1,6 +1,7 @@
 """Validated process configuration; connection adapters are added by their own features."""
 
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -30,7 +31,27 @@ class Settings(BaseSettings):
     database_pool_timeout: float = Field(default=5.0, gt=0, le=60)
     database_connect_timeout: int = Field(default=5, ge=1, le=60)
     valkey_url: SecretStr | None = None
+    cache_enabled: bool = True
+    cache_valkey_url: SecretStr | None = None
+    cache_namespace: str = Field(default="tinypods:cache", pattern=r"^[a-zA-Z0-9:_-]{1,80}$")
+    cache_ttl_seconds: int = Field(default=300, ge=1, le=3600)
+    cache_metadata_ttl_seconds: int = Field(default=600, ge=1, le=3600)
+    cache_max_bytes: int = Field(default=1_000_000, ge=1024, le=5_000_000)
     worker_heartbeat_interval: float = Field(default=30.0, gt=0, le=60)
+
+    @field_validator("valkey_url", "cache_valkey_url")
+    @classmethod
+    def validate_valkey_url(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is None:
+            return None
+        try:
+            url = urlsplit(value.get_secret_value())
+            if url.scheme not in {"redis", "rediss"} or not url.hostname:
+                raise ValueError("A redis or rediss URL is required")
+            _ = url.port
+        except ValueError:
+            raise ValueError("Invalid Valkey URL") from None
+        return value
 
     @field_validator("database_url", "migration_database_url")
     @classmethod

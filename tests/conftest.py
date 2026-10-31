@@ -122,3 +122,48 @@ def isolated_logging() -> Iterator[None]:
     finally:
         shutdown_logging()
         root.setLevel(level)
+
+
+@pytest.fixture(scope="session")
+def valkey_url() -> Iterator[str]:
+    from redis import Redis
+    from redis.exceptions import RedisError
+
+    name = "tinypods-cache-tests-" + uuid4().hex[:12]
+    password = uuid4().hex
+    image = "valkey/valkey@sha256:3add1a336a920ea54770a001ab6feb3da5fceea96a40373a3a2cd469b815f0b7"
+    try:
+        docker(
+            "run",
+            "-d",
+            "--name",
+            name,
+            "-p",
+            "127.0.0.1::6379",
+            image,
+            "valkey-server",
+            "--requirepass",
+            password,
+            "--maxmemory",
+            "32mb",
+            "--maxmemory-policy",
+            "noeviction",
+        )
+        port = docker("port", name, "6379/tcp").rsplit(":", 1)[1]
+        url = f"redis://:{password}@127.0.0.1:{port}/0"
+        client = Redis.from_url(url, socket_timeout=0.2, socket_connect_timeout=0.2)
+        try:
+            deadline = time.monotonic() + 20
+            while True:
+                try:
+                    if client.ping():
+                        break
+                except RedisError:
+                    if time.monotonic() >= deadline:
+                        pytest.fail("Disposable Valkey did not become ready")
+                    time.sleep(0.05)
+            yield url
+        finally:
+            client.close()
+    finally:
+        subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=30)

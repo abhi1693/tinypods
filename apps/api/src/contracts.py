@@ -48,3 +48,8 @@ class ErrorResponse(BaseModel):
     message: str
     request_id: UUID
     issues: list[ValidationIssue] = Field(default_factory=list)
+
+
+class PlatformInfoResponse(BaseModel):
+    service: Literal["TinyPods"] = "TinyPods"
+    version: str
