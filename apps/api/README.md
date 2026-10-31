@@ -28,7 +28,7 @@ The application exposes /healthz, /readyz, public /info and the local /auth rout
 
 The exporter enforces operation IDs, public route documentation and primary response DTOs, including nested APIRouter routes. Router traversal uses FastAPI's public route-context helper, so the package requires FastAPI 0.162.0 or newer. CI checks deterministic export, schema validity and version alignment. It does not yet enforce every future input annotation, DTO separation, dependency boundary or async I/O choice automatically; those still require review and feature-specific tests.
 
-Feature APIRouter modules, annotated input/dependency aliases and collection/operation endpoints should arrive with their features. The two probes remain in the factory; this PR does not add empty router packages or invent request bodies.
+Feature APIRouter modules, annotated input/dependency aliases and collection/operation endpoints should arrive with their features. The application factory owns the probes; feature routers own their operations.
 
 ## Export
 
@@ -89,11 +89,11 @@ CSRF on every method except GET/HEAD/OPTIONS. Resource services must call
 `AuthorizationService.require_access` with the resource's stored owner ID and
 `Scope.APP`, `CLUSTER` or `SECRET`; catalog administration uses `CATALOG_ADMIN`.
 `SessionService.require_access` delegates to that same policy. There are no app,
-cluster, secret or catalog CRUD services yet; future services must invoke this
+cluster, secret or catalog CRUD services yet; resource services must invoke this
 boundary before data access. Even an installation owner cannot cross another
 owner's resource scope. Unknown scopes, absent owners and stale/forged principals
 fail closed. Policy uses an injected `PrincipalValidator` and opaque credential
-context, so future non-browser authenticators need no password/cookie assumption.
+context, so non-browser authenticators can validate credentials without password/cookie assumptions.
 API keys themselves are deferred.
 
 The callback is an intentional HTTP 303 redirect with a documented Location

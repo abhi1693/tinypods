@@ -16,8 +16,8 @@ from tinypods_api.auth.dependencies import CSRF_COOKIE, SESSION_COOKIE
 from tinypods_api.main import create_app
 from tinypods_cli.main import app as cli
 from tinypods_core.auth import AuthError, AuthService, Credentials, Scope, SessionService
-from tinypods_core.auth.passwords import hash_password, verify_password
 from tinypods_core.auth.providers import LocalPasswordProvider
+from tinypods_core.auth.providers.local.passwords import hash_password, verify_password
 from tinypods_core.auth.tokens import digest
 from tinypods_core.db import Database, MigrationManager
 from tinypods_core.db.models import AuthSession, LocalCredential, User

@@ -2,7 +2,6 @@
 
 import asyncio
 import re
-from dataclasses import dataclass
 from typing import Any, cast
 from urllib.parse import urlencode, urlsplit
 
@@ -14,16 +13,8 @@ from joserfc import jwt
 from joserfc.errors import JoseError
 from joserfc.jwk import KeySet, KeySetSerialization
 from pydantic import BaseModel, ConfigDict, ValidationError
-from tinypods_core.auth.contracts import AuthError
+from tinypods_core.auth.contracts import AuthError, VerifiedIdentity
 from tinypods_core.settings import Settings
-
-
-@dataclass(frozen=True)
-class VerifiedIdentity:
-    """Carry only a verified issuer/subject pair, never provider tokens or profile claims."""
-
-    issuer: str
-    subject: str
 
 
 class Discovery(BaseModel):

@@ -21,8 +21,8 @@ from tinypods_cli.main import app as cli
 from tinypods_core.auth import AuthError, Principal, Scope
 from tinypods_core.auth.authorization import AuthorizationService
 from tinypods_core.auth.federation import BrowserLogin, IdentityMappings
-from tinypods_core.auth.oidc import VerifiedIdentity
 from tinypods_core.auth.providers import LocalPasswordProvider
+from tinypods_core.auth.providers.zitadel.oidc import VerifiedIdentity
 from tinypods_core.auth.tokens import digest
 from tinypods_core.db import Database
 from tinypods_core.db.models import (
@@ -689,11 +689,14 @@ def test_cli_identity_linking_is_explicit_and_authorized_by_operator_access(
     }.items():
         monkeypatch.setenv(name, value)
     runner = CliRunner()
-    linked = runner.invoke(cli, ["auth", "link", SUBJECT, owner_id])
+    linked = runner.invoke(cli, ["auth", "link", "zitadel", SUBJECT, owner_id])
     assert linked.exit_code == 0 and "identity linked" in linked.output
-    repeated = runner.invoke(cli, ["auth", "link", SUBJECT, owner_id])
+    for provider in ("unknown", "local"):
+        unsupported = runner.invoke(cli, ["auth", "link", provider, SUBJECT, owner_id])
+        assert unsupported.exit_code != 0 and "404" in unsupported.output
+    repeated = runner.invoke(cli, ["auth", "link", "zitadel", SUBJECT, owner_id])
     assert repeated.exit_code != 0 and "409" in repeated.output
-    rejected = runner.invoke(cli, ["auth", "link", "not-allowed", owner_id])
+    rejected = runner.invoke(cli, ["auth", "link", "zitadel", "not-allowed", owner_id])
     assert rejected.exit_code != 0 and "403" in rejected.output
     with psycopg.connect(settings.database_url.get_secret_value()) as connection:
         assert connection.execute(

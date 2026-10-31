@@ -13,7 +13,7 @@ from joserfc import jwt
 from joserfc.jwk import OctKey, RSAKey
 from pydantic import SecretStr
 from tinypods_core.auth import AuthError
-from tinypods_core.auth.oidc import VerifiedIdentity, ZitadelOIDC
+from tinypods_core.auth.providers.zitadel.oidc import VerifiedIdentity, ZitadelOIDC
 from tinypods_core.settings import Settings
 
 ISSUER = "https://issuer.example"

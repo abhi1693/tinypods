@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["tinypods_core", "tinypods_core.cache", "tinypods_core.db", "tinypods_core.logging", "tinypods_core.auth", "tinypods_core.rate_limit"]
+packages = ["tinypods_core.auth.providers", "tinypods_core.auth.providers.local", "tinypods_core.auth.providers.zitadel", "tinypods_core", "tinypods_core.cache", "tinypods_core.db", "tinypods_core.logging", "tinypods_core.auth", "tinypods_core.rate_limit"]
 
 [tool.setuptools.package-dir]
 tinypods_core = "src"

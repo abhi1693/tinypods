@@ -30,7 +30,7 @@ from test_auth import auth_settings as auth_settings
 from tinypods_core.auth import AuthError, Scope
 from tinypods_core.auth.authorization import AuthorizationService
 from tinypods_core.auth.federation import BrowserLogin
-from tinypods_core.auth.oidc import ZitadelOIDC
+from tinypods_core.auth.providers.zitadel.oidc import ZitadelOIDC
 from tinypods_core.auth.tokens import digest
 from tinypods_core.db import Database
 from tinypods_core.db.models import AuthSession, LocalCredential

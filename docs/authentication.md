@@ -1,12 +1,9 @@
 # Supported authentication providers
 
 TinyPods owns identities, durable sessions and resource authorization. Built-in
-supported adapters currently implement local passwords and Zitadel OIDC. This
-supersedes the earlier plan to require an independent Zitadel plugin: no general
-plugin loader/SDK, billing, enterprise organization management or API-key issuance
-is included. Related tracker #47/#48/#49 overlap this supported-provider work;
-independent plugin packaging/upgrades remain a different scope. No web console is
-built here; these are API contracts for its future login page.
+provider adapters support local username/password authentication and Zitadel OIDC.
+Provider discovery exposes the enabled login methods through the API. API keys,
+organization management and a browser console are not implemented.
 
 ## Enable methods explicitly
 
@@ -61,7 +58,7 @@ Empty allowed subjects denies every external identity. An admitted verified
 `(issuer, sub)` may create a new non-owner core account with no local password.
 Email, names and organization/role claims never link accounts or elevate access.
 To link an allowed subject to an existing account (including the existing owner),
-run `tinypods auth link SUBJECT USER_ID` from a trusted operator shell. Obtain the
+run `tinypods auth link PROVIDER SUBJECT USER_ID` (currently `zitadel` is the supported external provider) from a trusted operator shell. Obtain the
 existing core user ID from its authenticated session response or operator database
 administration. This explicit security-sensitive link cannot reassign an existing
 mapping; it is not an unauthenticated registration or email-matching shortcut.
@@ -125,7 +122,7 @@ remain until operator retention cleanup (not implemented here).
 cookies/passwords. `AuthorizationService` uses an injected validator. The session
 validator fails closed for unsupported credential kinds. Future API-key validation
 can implement that boundary without changing resource ownership policy; actual
-key issuance/storage/routes are outside this change.
+key issuance, storage and routes are not implemented.
 
 ## Logout and limitations
 
@@ -150,16 +147,11 @@ malformed requests. OIDC start similarly has installation and per-peer budgets.
 Denials include Retry-After; missing/unavailable Valkey rejects, independent of the
 optional public cache. Use non-evicting Valkey persistence: data loss resets budgets.
 
-## Validation evidence
+## Provider code organization
 
-The suite exercises the production Authlib/joserfc path against a deterministic
-signed issuer, real disposable PostgreSQL/Valkey transaction/session/authorization
-behavior, and adversarial state/nonce/PKCE/callback/claim/configuration cases.
-The mandatory actual-server fixture pins Zitadel **v4.16.0**, digest
-`sha256:15543f7a80c3e37905fe8c7db56af7ed2a9ece256704322c1449d7e8453afdab`.
-It validates both Web PKCE/none and Basic+PKCE through the production adapter,
-identity/session/authorization path, plus real PKCE failure, nonce mismatch and
-code replay. Its generated CA is explicitly trusted and TLS verification remains
-active. Upstream Session/CreateCallback APIs supply the real login proof; this is
-not rendered browser login/MFA automation or a completed upstream SSO logout test.
-See [research decisions and primary sources](authentication-research.md).
+Core adapters live under `auth/providers/local/` and `auth/providers/zitadel/`.
+The API mirrors those provider packages for provider-specific routes. Shared
+provider discovery, session routes, cookies, identity contracts, transactions and
+authorization remain outside individual providers. Functions inside each package
+use local names such as `start`, `callback` and `logout`; public API paths and
+operation IDs remain stable.

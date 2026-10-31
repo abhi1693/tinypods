@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlmodel import select
 from tinypods_core.auth.contracts import AuthError, Credentials
-from tinypods_core.auth.passwords import hash_password, verify_password
+from tinypods_core.auth.providers.local.passwords import hash_password, verify_password
 from tinypods_core.db import Database
 from tinypods_core.db.models import Installation, LocalCredential, User
 from tinypods_core.rate_limit import RateLimiter, RatePolicy

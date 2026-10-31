@@ -1,6 +1,6 @@
 # Authentication protocol research
 
-Reviewed 2026-10-31 against official ZITADEL, Authlib and OpenID/IETF sources before extending issue #8. This records protocol decisions, not a claim that every optional OIDC feature is implemented.
+Reviewed 2026-10-31 against official ZITADEL, Authlib and OpenID/IETF sources before implementing supported authentication providers. This records protocol decisions, not a claim that every optional OIDC feature is implemented.
 
 ## Supported providers and product policy
 
@@ -35,50 +35,3 @@ ZITADEL project settings can enforce role assignment and organization project ac
 Revoke TinyPods sessions durably before reporting local logout. A local session is separate from the provider's SSO session; ending one does not inherently end the other. ZITADEL supports RP-initiated logout through discovered `end_session_endpoint`, with registered return URLs and client identification. Do not expose provider tokens in browser URLs when tokens must stay server-side; a client-ID-based logout request can require user confirmation. Describe completion semantics accurately. [ZITADEL endpoint contract](https://zitadel.com/docs/apis/openidoauth/endpoints), [RP-initiated logout specification](https://openid.net/specs/openid-connect-rpinitiated-1_0.html).
 
 Back-channel logout is a separate optional feature requiring registration, signed logout-token validation and mapping provider session IDs to local sessions. Do not claim provider-side termination immediately revokes local sessions unless this mechanism is implemented and tested. Likewise, dropping refresh support means no silent renewal: omit offline access and discard unused provider tokens after validation. Bound local session lifetime and document that external membership changes are not automatically polled. [ZITADEL back-channel logout](https://zitadel.com/docs/guides/integrate/back-channel-logout).
-
-## Evidence expectations
-
-A deterministic signed test issuer should exercise actual production client exchange, PKCE, discovery/JWKS and token validation. An isolated ZITADEL fixture can additionally check real metadata and real codes/tokens, but must be reported separately from a deterministic fake issuer. Never describe a fixture as exercised merely because configuration exists. Tests must cover replay/callback attacks, external outage with no fallback, admission/linking denial, and cookie/session/CSRF behavior. All test resources are disposable, isolated from operator configuration and removed afterward.
-
-
-## Real ZITADEL integration evidence
-
-The synchronized focused run on 2026-10-31 passed all 119 authentication cases,
-including five mandatory cases in `tests/test_zitadel_integration.py` against
-ZITADEL **v4.16.0**, pinned as
-`ghcr.io/zitadel/zitadel@sha256:15543f7a80c3e37905fe8c7db56af7ed2a9ece256704322c1449d7e8453afdab`.
-The fixture starts its own PostgreSQL and ZITADEL containers on a generated
-network; public test access binds only to loopback. It uses a generated CA and
-HTTPS front proxy. The production client's certificate verification trusts this
-CA explicitly; verification is never disabled.
-
-Two successful cases register real Web applications using **none + PKCE S256**
-and **client_secret_basic + PKCE S256**. They exercise production discovery,
-Authlib authorization/exchange, genuine upstream codes and signed ID tokens,
-JOSE/OIDC validation, `BrowserLogin.start`/`finish`, explicit issuer/subject
-admission, durable provider-attributed sessions, credential-neutral authorization,
-absence of password rows, replay rejection and local session logout. Three
-additional real-provider cases reject a wrong PKCE verifier, a mismatched nonce
-and a reused authorization code.
-
-The fixture authenticates its disposable user through ZITADEL's checked-password
-Session API, then completes the real V2 authorization request using CreateCallback.
-It uses an independently bootstrapped IAM_LOGIN_CLIENT credential for `session.link`;
-the instance administrator credential alone lacks that permission. This avoids
-browser UI automation while retaining actual protocol exchange and signed-token
-validation. It does **not** validate the rendered ZITADEL login UI, browser cookie
-navigation at the provider, user-facing MFA interaction, or completion of provider
-SSO logout. Generated test credentials and tokens are never printed. Container,
-network and TLS listener cleanup follows the fixture lifecycle.
-
-An earlier scratch probe tested only HTTP-loopback discovery/code exchange and
-decoded expected claims, without signature validation. The verified TLS production
-client cases above supersede that limited probe as integration evidence. No
-operator ZITADEL instance or production identity configuration was used.
-
-
-The final adapter uses HTTPX2 (locked with Authlib) rather than its deprecated
-HTTPX fallback, preserving quiet imports and JSON CLI logging. The real-provider
-five-case fixture was rerun successfully after independent teardown hardening and
-this maintained-client update. Test TLS uses an explicitly trusted generated CA;
-production certificate verification is never bypassed.

@@ -19,7 +19,7 @@ from tinypods_api.rate_limit import GlobalRateLimitMiddleware, RateLimitedRoute
 from tinypods_core import __version__
 from tinypods_core.auth import AuthService, Credentials, LocalPasswordProvider, SessionService
 from tinypods_core.auth.federation import BrowserLogin
-from tinypods_core.auth.oidc import ZitadelOIDC
+from tinypods_core.auth.providers.zitadel.oidc import ZitadelOIDC
 from tinypods_core.cache import ResponseCache
 from tinypods_core.db import Database
 from tinypods_core.logging import configure_logging, shutdown_logging

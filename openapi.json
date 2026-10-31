@@ -894,7 +894,7 @@
             "description": "Service Unavailable"
           }
         },
-        "summary": "Finish Zitadel",
+        "summary": "Callback",
         "tags": [
           "Authentication"
         ]
@@ -1016,7 +1016,7 @@
             "description": "Service Unavailable"
           }
         },
-        "summary": "Logout Zitadel",
+        "summary": "Logout",
         "tags": [
           "Authentication"
         ]
@@ -1148,7 +1148,7 @@
             "description": "Service Unavailable"
           }
         },
-        "summary": "Start Zitadel",
+        "summary": "Start",
         "tags": [
           "Authentication"
         ],

@@ -60,3 +60,11 @@ class Scope(StrEnum):
     CLUSTER = "cluster"
     SECRET = "secret"
     CATALOG_ADMIN = "catalog_admin"
+
+
+@dataclass(frozen=True)
+class VerifiedIdentity:
+    """Carry only a verified issuer/subject pair, never provider tokens or profile claims."""
+
+    issuer: str
+    subject: str

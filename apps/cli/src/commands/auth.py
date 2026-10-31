@@ -43,8 +43,8 @@ def bootstrap() -> None:
 
 
 @auth_app.command()
-def link(subject: str, user_id: UUID) -> None:
-    """Explicitly link an allowlisted Zitadel subject to an existing core user as an operator.
+def link(provider: str, subject: str, user_id: UUID) -> None:
+    """Explicitly link an admitted provider subject to an existing core user as an operator.
 
     This can give an external identity the existing owner's rights, so it is never
     inferred from email/roles or exposed as an unauthenticated HTTP operation.
@@ -55,7 +55,7 @@ def link(subject: str, user_id: UUID) -> None:
         """Own the database lifecycle around the explicit operator mapping."""
         database = Database(settings)
         try:
-            await IdentityMappings(database, settings).link(subject, user_id)
+            await IdentityMappings(database, settings, provider=provider).link(subject, user_id)
         finally:
             await database.close()
 

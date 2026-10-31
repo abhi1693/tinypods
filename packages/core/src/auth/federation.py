@@ -10,8 +10,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import delete, func
 from sqlmodel import col, select
-from tinypods_core.auth.contracts import AuthError, Login
-from tinypods_core.auth.oidc import VerifiedIdentity
+from tinypods_core.auth.contracts import AuthError, Login, VerifiedIdentity
 from tinypods_core.auth.sessions import SessionService
 from tinypods_core.auth.tokens import digest
 from tinypods_core.db import Database
@@ -44,20 +43,42 @@ class LoginStart:
     browser_token: str = field(repr=False)
 
 
+@dataclass(frozen=True)
+class IdentityPolicy:
+    """Capture a configured provider's issuer and explicit identity admission policy."""
+
+    issuer: str | None
+    allowed_subjects: tuple[str, ...]
+    enabled: bool
+
+
+def identity_policy(settings: Settings, provider: str) -> IdentityPolicy:
+    """Resolve a supported provider centrally; arbitrary issuers and local linking are rejected."""
+    policies = {
+        "zitadel": IdentityPolicy(
+            settings.zitadel_issuer, settings.zitadel_allowed_subjects, settings.zitadel_enabled
+        )
+    }
+    if provider not in policies:
+        raise AuthError(404)
+    return policies[provider]
+
+
 class IdentityMappings:
     """Admit only explicitly allowed subjects; link accounts only through trusted administration."""
 
-    def __init__(self, database: Database, settings: Settings) -> None:
+    def __init__(
+        self, database: Database, settings: Settings, *, provider: str = "zitadel"
+    ) -> None:
         """Retain deployment-owned issuer/access policy and the durable identity store."""
         self.database = database
         self.settings = settings
+        self.provider = provider
 
     async def resolve(self, identity: VerifiedIdentity) -> UUID:
         """Map issuer+subject and provision non-owners only under the explicit allowlist."""
-        if (
-            identity.issuer != self.settings.zitadel_issuer
-            or identity.subject not in self.settings.zitadel_allowed_subjects
-        ):
+        policy = identity_policy(self.settings, self.provider)
+        if identity.issuer != policy.issuer or identity.subject not in policy.allowed_subjects:
             raise AuthError(403)
         async with self.database.transaction() as session:
             installation = (
@@ -89,10 +110,8 @@ class IdentityMappings:
         Existing mappings cannot be reassigned. No email or role claim is consulted.
         The caller must be an authorized deployment operator; this is not a public route.
         """
-        if (
-            not self.settings.zitadel_enabled
-            or subject not in self.settings.zitadel_allowed_subjects
-        ):
+        policy = identity_policy(self.settings, self.provider)
+        if not policy.enabled or subject not in policy.allowed_subjects:
             raise AuthError(403)
         async with self.database.transaction() as session:
             installation = (
@@ -105,7 +124,7 @@ class IdentityMappings:
             mapping = (
                 await session.exec(
                     select(ExternalIdentity).where(
-                        ExternalIdentity.issuer == self.settings.zitadel_issuer,
+                        ExternalIdentity.issuer == policy.issuer,
                         ExternalIdentity.subject == subject,
                     )
                 )
@@ -113,9 +132,7 @@ class IdentityMappings:
             if mapping is not None:
                 raise AuthError(409)
             session.add(
-                ExternalIdentity(
-                    issuer=cast(str, self.settings.zitadel_issuer), subject=subject, user_id=user_id
-                )
+                ExternalIdentity(issuer=cast(str, policy.issuer), subject=subject, user_id=user_id)
             )
 
 
