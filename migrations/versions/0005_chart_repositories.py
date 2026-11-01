@@ -64,10 +64,14 @@ def upgrade():
         sa.Column("version", sqlmodel.sql.sqltypes.AutoString(length=128), nullable=False),
         sa.Column("digest", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("available", sa.Boolean(), nullable=False),
+        sa.Column("is_latest", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.CheckConstraint(
             "digest ~ '^sha256:[0-9a-f]{64}$'", name=op.f("ck_chart_versions_digest")
         ),
         sa.CheckConstraint("length(trim(version)) > 0", name=op.f("ck_chart_versions_version")),
+        sa.CheckConstraint(
+            "NOT is_latest OR available", name=op.f("ck_chart_versions_latest_available")
+        ),
         sa.ForeignKeyConstraint(
             ["chart_id"],
             ["charts.id"],
@@ -79,6 +83,13 @@ def upgrade():
     )
     op.create_index(
         op.f("ix_chart_versions_chart_id"), "chart_versions", ["chart_id"], unique=False
+    )
+    op.create_index(
+        "uq_chart_versions_latest",
+        "chart_versions",
+        ["chart_id"],
+        unique=True,
+        postgresql_where=sa.text("is_latest"),
     )
     # ### end Alembic commands ###
     op.add_column("releases", sa.Column("chart_version_id", sa.Uuid(), nullable=True))

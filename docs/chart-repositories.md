@@ -142,8 +142,8 @@ prereleases. Equal-precedence labels and digests use deterministic tie-breaks.
 Charts absent from the snapshot have no latest version. Failed syncs preserve
 the previous pointer, and application release pins do not change.
 Use `GET /api/v1/chart-versions?chart_id=...&is_latest=true` to find it.
-Migration 0006 backfills the pointer for already available versions; unverified
-imported pins stay unmarked until sync. A database constraint allows at most one
+Migration 0005 creates the repository schema and latest-version flag together.
+Existing release pins are backfilled as unverified and stay unmarked until sync. A database constraint allows at most one
 latest row per chart and requires that row to be available.
 
 Sync imports stable semantic versions only. Alpha, beta, release-candidate and

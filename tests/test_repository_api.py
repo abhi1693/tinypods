@@ -83,8 +83,9 @@ def test_populated_repository_migration_and_database_protection(
             assert repository.source_type is SourceType.HELM_REPOSITORY
             assert repository.last_synced_at is None
             assert not session.exec(select(Chart)).one().available
-        # Re-upgrade populated pre-flag rows and verify numeric, not lexical, ranking.
-        command.downgrade(manager.config(), "0005_chart_repositories")
+            assert all(not version.is_latest for version in versions)
+        # Verify the consolidated schema defaults new rows to non-latest and
+        # enforces pointer constraints independently of application sync logic.
         with engine.begin() as connection:
             connection.execute(text("UPDATE chart_versions SET available=true"))
             connection.execute(
@@ -92,19 +93,19 @@ def test_populated_repository_migration_and_database_protection(
                 INSERT INTO chart_versions
                     (id,created,last_updated,chart_id,version,digest,available)
                 SELECT gen_random_uuid(),now(),now(),id,value,:digest,true FROM charts
-                CROSS JOIN (VALUES ('1.9.0'),('1.10.0'),('2.0.0-rc.1')) AS versions(value)
+                CROSS JOIN (VALUES ('1.9.0'),('1.10.0')) AS versions(value)
             """),
                 {"digest": DIGEST},
             )
-        manager.upgrade()
-        manager.check()
+        with Session(engine) as session:
+            assert not any(row.is_latest for row in session.exec(select(ChartVersion)).all())
+        with engine.begin() as connection:
+            connection.execute(
+                text("UPDATE chart_versions SET is_latest=true WHERE version='1.10.0'")
+            )
         with Session(engine) as session:
             latest = session.exec(select(ChartVersion).where(ChartVersion.is_latest)).one()
             assert latest.version == "1.10.0" and latest.available
-            prerelease = session.exec(
-                select(ChartVersion).where(ChartVersion.version == "2.0.0-rc.1")
-            ).one()
-            assert not prerelease.available and not prerelease.is_latest
         for sql in (
             "UPDATE chart_versions SET is_latest=true",
             "UPDATE chart_versions SET available=false WHERE is_latest",
