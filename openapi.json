@@ -791,9 +791,9 @@
           }
         },
         "required": [
+          "kubeconfig",
           "cluster_id",
-          "name",
-          "kubeconfig"
+          "name"
         ],
         "title": "ClusterSecretWrite",
         "type": "object"
@@ -2528,8 +2528,8 @@
           }
         },
         "required": [
-          "secret_id",
-          "kubeconfig"
+          "kubeconfig",
+          "secret_id"
         ],
         "title": "SecretVersionWrite",
         "type": "object"

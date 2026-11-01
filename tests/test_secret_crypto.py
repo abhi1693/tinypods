@@ -246,3 +246,13 @@ def test_excessive_yaml_parser_nesting_and_unsafe_tags() -> None:
     for source in (b"[" * 1500 + b"0" + b"]" * 1500, b"!!python/object/apply:must_not_execute []"):
         with pytest.raises(SecretError, match="invalid_kubeconfig"):
             Kubeconfig.parse(source)
+
+
+def test_confidential_dto_validation_hides_utf8_and_length_inputs() -> None:
+    """Write validation never needs to print the original confidential document."""
+    from tinypods_api.secrets.contracts import ClusterSecretWrite
+
+    for payload in (TOKEN + chr(0xD800), TOKEN + "\u2603" * 100000, TOKEN + "x" * 262144):
+        with pytest.raises(ValidationError) as error:
+            ClusterSecretWrite(cluster_id=uuid4(), name="Pi", kubeconfig=SecretStr(payload))
+        assert TOKEN not in str(error.value)

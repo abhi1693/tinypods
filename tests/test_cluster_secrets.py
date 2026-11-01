@@ -298,6 +298,16 @@ def test_reader_and_missing_keys_fail_closed(auth_settings: Settings) -> None:
             == 503
         )
         assert client.get(BASE + "/cluster-secrets").json()["total"] == 0
+        malformed = json.dumps(
+            {"cluster_id": cluster["id"], "name": "Invalid", "kubeconfig": TOKEN + chr(0xD800)},
+            ensure_ascii=True,
+        ).encode()
+        invalid = client.post(
+            BASE + "/cluster-secrets",
+            content=malformed,
+            headers={"content-type": "application/json"},
+        )
+        assert invalid.status_code == 422 and TOKEN not in invalid.text
 
         async def reader_session() -> tuple[str, str]:
             database = Database(auth_settings)

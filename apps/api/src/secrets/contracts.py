@@ -4,11 +4,12 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import Field, SecretStr
+from pydantic import ConfigDict, Field, SecretStr, field_validator
 from tinypods_api.clusters.contracts import ClusterRead
 from tinypods_api.http import PageParams, RequestDTO
 from tinypods_api.http.model_contracts import DefinitionRead
 from tinypods_api.http.representations import Related
+from tinypods_core.secrets.crypto import MAX_SECRET_BYTES
 from tinypods_core.secrets.models import ClusterSecret, Secret, SecretVersion
 
 
@@ -40,20 +41,37 @@ class ClusterSecretRead(DefinitionRead):
     active_version: Related[SecretVersionRead] | None
 
 
-class ClusterSecretWrite(RequestDTO):
+class KubeconfigInput(RequestDTO):
+    """Keep confidential input errors private and bound the original UTF-8 bytes."""
+
+    model_config = ConfigDict(hide_input_in_errors=True)
+    kubeconfig: SecretStr = Field(min_length=1, max_length=MAX_SECRET_BYTES)
+
+    @field_validator("kubeconfig")
+    @classmethod
+    def bounded_utf8(cls, value: SecretStr) -> SecretStr:
+        """Reject unpaired surrogates and byte-size expansion before persistence."""
+        try:
+            payload = value.get_secret_value().encode()
+        except UnicodeError:
+            raise ValueError("Kubeconfig must be valid UTF-8") from None
+        if len(payload) > MAX_SECRET_BYTES:
+            raise ValueError("Kubeconfig exceeds the byte limit")
+        return value
+
+
+class ClusterSecretWrite(KubeconfigInput):
     """Create a cluster's self-contained kubeconfig; the document is never returned."""
 
     cluster_id: UUID
     name: str = Field(min_length=1, max_length=255, pattern=r"\S")
     description: str = Field(default="", max_length=10000)
-    kubeconfig: SecretStr = Field(min_length=1, max_length=262144)
 
 
-class SecretVersionWrite(RequestDTO):
+class SecretVersionWrite(KubeconfigInput):
     """Append a credential version, optionally staging it without activation."""
 
     secret_id: UUID
-    kubeconfig: SecretStr = Field(min_length=1, max_length=262144)
 
     activate: bool = Field(
         default=True, description="Activate this version immediately; false keeps it staged."
