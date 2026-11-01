@@ -297,17 +297,17 @@ def test_cookie_csrf_logout_and_http_fail_closed(auth_settings: Settings) -> Non
     asyncio.run(initialize())
     app = create_app(auth_settings)
     with TestClient(app, base_url="https://testserver") as client:
-        assert client.get("/auth/session").status_code == 401
+        assert client.get("/api/v1/auth/session").status_code == 401
         payload = {"username": "OWNER", "password": PASSWORD}
         for headers in (
             {},
             {"x-csrf-token": "wrong"},
             {"x-csrf-token": "login", "origin": "https://foreign.example"},
         ):
-            response = client.post("/auth/login", json=payload, headers=headers)
+            response = client.post("/api/v1/auth/login", json=payload, headers=headers)
             assert response.status_code == 403 and response.headers["cache-control"] == "no-store"
         response = client.post(
-            "/auth/login",
+            "/api/v1/auth/login",
             json=payload,
             headers={"x-csrf-token": "login", "origin": "https://testserver"},
         )
@@ -324,21 +324,21 @@ def test_cookie_csrf_logout_and_http_fail_closed(auth_settings: Settings) -> Non
         assert "HttpOnly" in cookies[0] and "HttpOnly" not in cookies[1]
         token = client.cookies[SESSION_COOKIE]
         csrf = client.cookies[CSRF_COOKIE]
-        assert client.get("/auth/session").status_code == 200
+        assert client.get("/api/v1/auth/session").status_code == 200
         for headers in ({}, {"x-csrf-token": "wrong"}, {"x-csrf-token": csrf, "origin": "null"}):
-            assert client.post("/auth/logout", headers=headers).status_code == 403
-        assert client.get("/auth/session").status_code == 200
-        logout = client.post("/auth/logout", headers={"x-csrf-token": csrf})
+            assert client.post("/api/v1/auth/logout", headers=headers).status_code == 403
+        assert client.get("/api/v1/auth/session").status_code == 200
+        logout = client.post("/api/v1/auth/logout", headers={"x-csrf-token": csrf})
         assert logout.status_code == 200 and logout.json() == {"logged_out": True}
         assert SESSION_COOKIE not in client.cookies and CSRF_COOKIE not in client.cookies
         assert all("Max-Age=0" in value for value in logout.headers.get_list("set-cookie"))
         client.cookies.set(SESSION_COOKIE, token)
-        assert client.get("/auth/session").status_code == 401
+        assert client.get("/api/v1/auth/session").status_code == 401
         # Missing limiter configuration cannot disable login throttling.
         app.state.rate_limiter = None
-        assert client.post("/auth/login", json=payload).status_code == 503
+        assert client.post("/api/v1/auth/login", json=payload).status_code == 503
     with TestClient(create_app(Settings()), base_url="https://testserver") as client:
-        assert client.get("/auth/session").status_code == 503
+        assert client.get("/api/v1/auth/session").status_code == 503
     no_database = Settings(
         valkey_url=auth_settings.valkey_url,
         cache_enabled=False,
@@ -346,7 +346,9 @@ def test_cookie_csrf_logout_and_http_fail_closed(auth_settings: Settings) -> Non
     )
     with TestClient(create_app(no_database), base_url="https://testserver") as client:
         assert (
-            client.post("/auth/login", json=payload, headers={"x-csrf-token": "login"}).status_code
+            client.post(
+                "/api/v1/auth/login", json=payload, headers={"x-csrf-token": "login"}
+            ).status_code
             == 503
         )
     unavailable = auth_settings.model_copy(
@@ -354,13 +356,15 @@ def test_cookie_csrf_logout_and_http_fail_closed(auth_settings: Settings) -> Non
     )
     with TestClient(create_app(unavailable), base_url="https://testserver") as client:
         assert (
-            client.post("/auth/login", json=payload, headers={"x-csrf-token": "login"}).status_code
+            client.post(
+                "/api/v1/auth/login", json=payload, headers={"x-csrf-token": "login"}
+            ).status_code
             == 503
         )
     with psycopg.connect(auth_settings.database_url.get_secret_value()) as connection:
         connection.execute("DROP TABLE auth_session")
     with TestClient(create_app(auth_settings), base_url="https://testserver") as client:
-        assert client.get("/auth/session").status_code == 503
+        assert client.get("/api/v1/auth/session").status_code == 503
 
 
 def test_cli_bootstrap_and_validation(
@@ -398,7 +402,7 @@ def test_http_bad_credentials_account_and_endpoint_limits(auth_settings: Setting
     with TestClient(app, base_url="https://testserver") as client:
         headers = {"x-csrf-token": "login"}
         bad = client.post(
-            "/auth/login",
+            "/api/v1/auth/login",
             json={"username": "owner", "password": "incorrect password value"},
             headers=headers,
         )
@@ -406,17 +410,19 @@ def test_http_bad_credentials_account_and_endpoint_limits(auth_settings: Setting
         for _ in range(4):
             assert (
                 client.post(
-                    "/auth/login", json={"username": "owner", "password": PASSWORD}, headers=headers
+                    "/api/v1/auth/login",
+                    json={"username": "owner", "password": PASSWORD},
+                    headers=headers,
                 ).status_code
                 == 200
             )
         denied = client.post(
-            "/auth/login", json={"username": "owner", "password": PASSWORD}, headers=headers
+            "/api/v1/auth/login", json={"username": "owner", "password": PASSWORD}, headers=headers
         )
         assert denied.status_code == 429 and int(denied.headers["retry-after"]) > 0
         for _ in range(4):
-            assert client.post("/auth/login", json={}, headers=headers).status_code == 422
-        denied = client.post("/auth/login", json={}, headers=headers)
+            assert client.post("/api/v1/auth/login", json={}, headers=headers).status_code == 422
+        denied = client.post("/api/v1/auth/login", json={}, headers=headers)
         assert denied.status_code == 429 and denied.headers["cache-control"] == "no-store"
         assert denied.json()["request_id"] == denied.headers["x-request-id"]
 

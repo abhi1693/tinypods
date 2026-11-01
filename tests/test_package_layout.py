@@ -27,6 +27,7 @@ PUBLIC_PACKAGES = (
     "tinypods_core.applications",
     "tinypods_core.logging",
     "tinypods_api",
+    "tinypods_api.applications",
     "tinypods_api.cache",
     "tinypods_api.auth",
     "tinypods_api.auth.providers",

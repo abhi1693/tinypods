@@ -177,7 +177,7 @@ class Settings(BaseSettings):
                 raise ValueError("Enabled Zitadel requires issuer, client ID and callback")
             if self.zitadel_issuer.endswith("/"):
                 raise ValueError("Use the exact canonical issuer without a trailing slash")
-            if not self.zitadel_redirect_uri.endswith("/auth/providers/zitadel/callback"):
+            if not self.zitadel_redirect_uri.endswith("/api/v1/auth/providers/zitadel/callback"):
                 raise ValueError("Zitadel callback must use the supported callback path")
             if (
                 self.zitadel_token_auth_method == "client_secret_basic"

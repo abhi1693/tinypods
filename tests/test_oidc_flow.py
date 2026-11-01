@@ -35,7 +35,7 @@ from tinypods_core.settings import ConfigurationError, Settings, load_settings
 from typer.testing import CliRunner
 
 ISSUER = "https://identity.example"
-CALLBACK = "https://testserver/auth/providers/zitadel/callback"
+CALLBACK = "https://testserver/api/v1/auth/providers/zitadel/callback"
 SUBJECT = "allowed-subject"
 BINDING_COOKIE = "__Host-tinypods-oidc"
 
@@ -431,10 +431,12 @@ def test_public_provider_discovery_is_configured_safe_and_upstream_independent(
     if app.state.browser_login is not None:
         app.state.browser_login.provider = fake
     with TestClient(app, base_url="https://testserver") as client:
-        response = client.get("/auth/providers")
+        response = client.get("/api/v1/auth/providers")
         assert response.status_code == 200
         assert [item["id"] for item in response.json()["data"]] == expected
-        assert all(item["login_path"].startswith("/auth/") for item in response.json()["data"])
+        assert all(
+            item["login_path"].startswith("/api/v1/auth/") for item in response.json()["data"]
+        )
         assert not fake.challenges and not fake.exchanges
         assert all(
             value not in response.text
@@ -451,7 +453,7 @@ def test_public_provider_discovery_is_configured_safe_and_upstream_independent(
         if not local:
             assert (
                 client.post(
-                    "/auth/login",
+                    "/api/v1/auth/login",
                     json={"username": "owner", "password": PASSWORD},
                     headers={"x-csrf-token": "login"},
                 ).status_code
@@ -460,14 +462,20 @@ def test_public_provider_discovery_is_configured_safe_and_upstream_independent(
         if external:
             assert (
                 client.post(
-                    "/auth/providers/zitadel/start", json={}, headers={"x-csrf-token": "login"}
+                    "/api/v1/auth/providers/zitadel/start",
+                    json={},
+                    headers={"x-csrf-token": "login"},
                 ).status_code
                 == 503
             )
-            assert [item["id"] for item in client.get("/auth/providers").json()["data"]] == expected
+            assert [
+                item["id"] for item in client.get("/api/v1/auth/providers").json()["data"]
+            ] == expected
         else:
             assert (
-                client.get("/auth/providers/zitadel/callback?state=unknown&code=code").status_code
+                client.get(
+                    "/api/v1/auth/providers/zitadel/callback?state=unknown&code=code"
+                ).status_code
                 == 404
             )
 
@@ -475,7 +483,7 @@ def test_public_provider_discovery_is_configured_safe_and_upstream_independent(
 def test_discovery_defaults_without_database_or_zitadel() -> None:
     """Keep pre-login discovery available without upstream configuration or startup I/O."""
     with TestClient(create_app(Settings()), base_url="https://testserver") as client:
-        response = client.get("/auth/providers")
+        response = client.get("/api/v1/auth/providers")
         assert response.status_code == 200
         assert [item["id"] for item in response.json()["data"]] == ["local"]
 
@@ -489,7 +497,7 @@ def test_oidc_http_cross_site_callback_multitab_csrf_and_logout(
     settings = enabled(
         auth_settings,
         environment="development" if development else "production",
-        zitadel_redirect_uri=base_url + "/auth/providers/zitadel/callback",
+        zitadel_redirect_uri=base_url + "/api/v1/auth/providers/zitadel/callback",
     )
     prefix = "" if development else "__Host-"
     session_cookie = prefix + "tinypods-session"
@@ -510,7 +518,7 @@ def test_oidc_http_cross_site_callback_multitab_csrf_and_logout(
     app.state.browser_login.provider = fake
     with TestClient(app, base_url=base_url) as client:
         login = client.post(
-            "/auth/login",
+            "/api/v1/auth/login",
             json={"username": "owner", "password": PASSWORD},
             headers={"x-csrf-token": "login"},
         )
@@ -522,12 +530,14 @@ def test_oidc_http_cross_site_callback_multitab_csrf_and_logout(
             {"x-csrf-token": "login", "origin": "https://foreign.example"},
         ):
             assert (
-                client.post("/auth/providers/zitadel/start", json={}, headers=headers).status_code
+                client.post(
+                    "/api/v1/auth/providers/zitadel/start", json={}, headers=headers
+                ).status_code
                 == 403
             )
         headers = {"x-csrf-token": "login", "origin": base_url}
         first = client.post(
-            "/auth/providers/zitadel/start", json={"return_to": "/apps"}, headers=headers
+            "/api/v1/auth/providers/zitadel/start", json={"return_to": "/apps"}, headers=headers
         )
         assert first.status_code == 200
         state = state_from(first.json()["authorization_url"])
@@ -541,7 +551,7 @@ def test_oidc_http_cross_site_callback_multitab_csrf_and_logout(
         )
         assert "Domain=" not in cookie and fake.challenges[-1][2] not in first.text
         second = client.post(
-            "/auth/providers/zitadel/start", json={"return_to": "/clusters"}, headers=headers
+            "/api/v1/auth/providers/zitadel/start", json={"return_to": "/clusters"}, headers=headers
         )
         assert second.status_code == 200
         assert client.cookies[binding_cookie] == binding
@@ -552,7 +562,7 @@ def test_oidc_http_cross_site_callback_multitab_csrf_and_logout(
         client.cookies.delete(session_cookie)
         client.cookies.delete(csrf_cookie)
         callback = client.get(
-            "/auth/providers/zitadel/callback",
+            "/api/v1/auth/providers/zitadel/callback",
             params={"state": state, "code": "accepted", "iss": ISSUER},
             headers={"sec-fetch-site": "cross-site"},
             follow_redirects=False,
@@ -564,33 +574,35 @@ def test_oidc_http_cross_site_callback_multitab_csrf_and_logout(
         )
         assert client.cookies[binding_cookie] == binding
         assert "access_token" not in callback.text and "id_token" not in callback.text
-        identity = client.get("/auth/session").json()
+        identity = client.get("/api/v1/auth/session").json()
         assert identity["user_id"] != owner_id and identity["is_owner"] is False
         # Callback state is single use, while a different outstanding tab still completes.
         assert (
             client.get(
-                "/auth/providers/zitadel/callback",
+                "/api/v1/auth/providers/zitadel/callback",
                 params={"state": state, "code": "accepted"},
                 follow_redirects=False,
             ).status_code
             == 401
         )
         other = client.get(
-            "/auth/providers/zitadel/callback",
+            "/api/v1/auth/providers/zitadel/callback",
             params={"state": second_state, "code": "accepted"},
             follow_redirects=False,
         )
         assert other.status_code == 303 and other.headers["location"] == "/clusters"
         csrf = client.cookies[csrf_cookie]
         token = client.cookies[session_cookie]
-        assert client.post("/auth/providers/zitadel/logout").status_code == 403
-        logged_out = client.post("/auth/providers/zitadel/logout", headers={"x-csrf-token": csrf})
+        assert client.post("/api/v1/auth/providers/zitadel/logout").status_code == 403
+        logged_out = client.post(
+            "/api/v1/auth/providers/zitadel/logout", headers={"x-csrf-token": csrf}
+        )
         assert logged_out.status_code == 200 and logged_out.json()["logged_out"] is True
         assert logged_out.json()["logout_url"].startswith(ISSUER + "/logout?")
         assert "id_token" not in logged_out.text
         assert session_cookie not in client.cookies
         client.cookies.set(session_cookie, token)
-        assert client.get("/auth/session").status_code == 401
+        assert client.get("/api/v1/auth/session").status_code == 401
     with psycopg.connect(settings.database_url.get_secret_value()) as connection:
         assert connection.execute(
             "SELECT revoked_at IS NOT NULL FROM auth_session WHERE token_digest=%s",
@@ -617,7 +629,9 @@ def test_http_callback_parameter_attacks_are_redacted(
     app.state.browser_login.provider = fake
     with TestClient(app, base_url="https://testserver") as client:
         response = client.get(
-            "/auth/providers/zitadel/callback?" + query + "&error_description=sensitive-upstream",
+            "/api/v1/auth/providers/zitadel/callback?"
+            + query
+            + "&error_description=sensitive-upstream",
             follow_redirects=False,
         )
         assert response.status_code == status
@@ -645,20 +659,20 @@ def test_external_http_failure_does_not_activate_disabled_local_login(
     app.state.browser_login.provider = fake
     with TestClient(app, base_url="https://testserver") as client:
         started = client.post(
-            "/auth/providers/zitadel/start", json={}, headers={"x-csrf-token": "login"}
+            "/api/v1/auth/providers/zitadel/start", json={}, headers={"x-csrf-token": "login"}
         )
         assert started.status_code == 200
         state = state_from(started.json()["authorization_url"])
         failed = client.get(
-            "/auth/providers/zitadel/callback",
+            "/api/v1/auth/providers/zitadel/callback",
             params={"state": state, "code": "network-failure"},
             follow_redirects=False,
         )
         assert failed.status_code == 503 and SESSION_COOKIE not in client.cookies
-        assert client.get("/auth/providers").json()["data"][0]["id"] == "zitadel"
+        assert client.get("/api/v1/auth/providers").json()["data"][0]["id"] == "zitadel"
         assert (
             client.post(
-                "/auth/login",
+                "/api/v1/auth/login",
                 json={"username": "owner", "password": PASSWORD},
                 headers={"x-csrf-token": "login"},
             ).status_code
@@ -667,7 +681,7 @@ def test_external_http_failure_does_not_activate_disabled_local_login(
         # A consumed challenge cannot be retried after an upstream outage.
         assert (
             client.get(
-                "/auth/providers/zitadel/callback",
+                "/api/v1/auth/providers/zitadel/callback",
                 params={"state": state, "code": "accepted"},
                 follow_redirects=False,
             ).status_code
@@ -914,13 +928,13 @@ def test_enabled_browser_service_absence_and_logout_upstream_failure(
     app.state.browser_login.provider = fake
     with TestClient(app, base_url="https://testserver") as client:
         started = client.post(
-            "/auth/providers/zitadel/start", json={}, headers={"x-csrf-token": "login"}
+            "/api/v1/auth/providers/zitadel/start", json={}, headers={"x-csrf-token": "login"}
         )
         assert started.status_code == 200
         state = state_from(started.json()["authorization_url"])
         assert (
             client.get(
-                "/auth/providers/zitadel/callback",
+                "/api/v1/auth/providers/zitadel/callback",
                 params={"state": state, "code": "accepted"},
                 follow_redirects=False,
             ).status_code
@@ -933,15 +947,17 @@ def test_enabled_browser_service_absence_and_logout_upstream_failure(
             raise AuthError(503)
 
         fake.logout_url = unavailable_logout
-        failed = client.post("/auth/providers/zitadel/logout", headers={"x-csrf-token": csrf})
+        failed = client.post(
+            "/api/v1/auth/providers/zitadel/logout", headers={"x-csrf-token": csrf}
+        )
         assert failed.status_code == 503
         assert SESSION_COOKIE not in client.cookies and CSRF_COOKIE not in client.cookies
         client.cookies.set(SESSION_COOKIE, token)
-        assert client.get("/auth/session").status_code == 401
+        assert client.get("/api/v1/auth/session").status_code == 401
         app.state.browser_login = None
         assert (
             client.post(
-                "/auth/providers/zitadel/start", json={}, headers={"x-csrf-token": "login"}
+                "/api/v1/auth/providers/zitadel/start", json={}, headers={"x-csrf-token": "login"}
             ).status_code
             == 404
         )
@@ -953,10 +969,10 @@ def test_disabled_provider_routes_are_not_registered(external: bool) -> None:
     settings = enabled(Settings(), auth_local_enabled=False) if external else Settings()
     app = create_app(settings)
     paths = app.openapi()["paths"]
-    assert ("/auth/providers/zitadel/start" in paths) is external
-    assert ("/auth/login" in paths) is not external
+    assert ("/api/v1/auth/providers/zitadel/start" in paths) is external
+    assert ("/api/v1/auth/login" in paths) is not external
     with TestClient(app, base_url="https://testserver") as client:
-        absent = "/auth/login" if external else "/auth/providers/zitadel/start"
+        absent = "/api/v1/auth/login" if external else "/api/v1/auth/providers/zitadel/start"
         response = client.post(absent, json={})
         assert response.status_code == 404
 
@@ -971,16 +987,18 @@ def test_provider_dependencies_reject_disabled_settings_after_composition(
     settings.zitadel_enabled = False
     with TestClient(app, base_url="https://testserver") as client:
         assert (
-            client.post("/auth/login", json={"username": "owner", "password": PASSWORD}).status_code
+            client.post(
+                "/api/v1/auth/login", json={"username": "owner", "password": PASSWORD}
+            ).status_code
             == 404
         )
-        assert client.post("/auth/providers/zitadel/start", json={}).status_code == 404
+        assert client.post("/api/v1/auth/providers/zitadel/start", json={}).status_code == 404
 
 
 @pytest.mark.parametrize("field", ["zitadel_redirect_uri", "zitadel_post_logout_uri"])
 def test_development_redirect_validation(field: str) -> None:
     """Allow HTTP browser redirects explicitly while retaining HTTPS issuer validation."""
-    url = "http://192.168.1.101:8000/auth/providers/zitadel/callback"
+    url = "http://192.168.1.101:8000/api/v1/auth/providers/zitadel/callback"
     assert getattr(Settings(environment="development", **{field: url}), field) == url
     with pytest.raises(ValidationError):
         Settings(**{field: url})
@@ -1022,7 +1040,7 @@ def test_provider_display_configuration_and_upstream_selection(auth_settings: Se
     provider = FakeProvider()
     app.state.browser_login.provider = provider
     with TestClient(app, base_url="https://testserver") as client:
-        data = client.get("/auth/providers").json()["data"]
+        data = client.get("/api/v1/auth/providers").json()["data"]
         assert data[0]["label"] == "Local account"
         assert data[0]["icon_url"] == "https://assets.example/local.png"
         assert "identity_providers" not in data[0]
@@ -1049,7 +1067,9 @@ def test_provider_display_configuration_and_upstream_selection(auth_settings: Se
             assert response.status_code == 200
             assert provider.selected_identity_providers[-1] == selected
         settings.zitadel_enabled = False
-        assert [item["id"] for item in client.get("/auth/providers").json()["data"]] == ["local"]
+        assert [item["id"] for item in client.get("/api/v1/auth/providers").json()["data"]] == [
+            "local"
+        ]
 
 
 @pytest.mark.parametrize(

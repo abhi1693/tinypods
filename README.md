@@ -252,7 +252,7 @@ installed project checks pass; verify the selected SDK before changing valid typ
 
 TinyPods supports built-in local username/password and Zitadel OIDC authentication.
 Local-only is the default; each method is explicitly enabled by deployment settings.
-Public `GET /auth/providers` describes enabled methods for a future login page.
+Public `GET /api/v1/auth/providers` describes enabled methods for a future login page.
 There is no web console in this backend slice. See [authentication setup and security
 boundaries](docs/authentication.md) and the [API guide](apps/api/README.md).
 

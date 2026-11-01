@@ -10,6 +10,13 @@
 - **Dependencies:** Use typed `Annotated[T, Depends(provider)]` parameters for shared services and sessions. Pass the provider, not its result; reuse annotated aliases where useful. See [dependency injection](https://fastapi.tiangolo.com/tutorial/dependencies/).
 - **I/O:** Use `async def` with awaited async clients. FastAPI runs synchronous route functions and dependencies in a thread pool, but ordinary synchronous helpers called inside an async route still run on the event loop. Explicitly offload unavoidable blocking I/O. See [async guidance](https://fastapi.tiangolo.com/async/).
 
+## Shared resource standard
+
+Business endpoints are mounted under `/api/v1`; operational probes keep their
+existing paths. Follow [the resource API standard](../../docs/api-resources.md)
+for CRUD action declarations, authentication/CSRF, endpoint budgets, public-read
+cache eligibility, collection queries and service-owned transactions.
+
 ## TinyPods choices
 
 These are project rules, not requirements imposed by FastAPI.
@@ -24,11 +31,11 @@ These are project rules, not requirements imposed by FastAPI.
 
 ## Current coverage and remaining work
 
-The application exposes /healthz, /readyz, public /info and the local /auth routes. All have typed responses and published docstrings; login accepts a JSON body. Liveness returns 200. Readiness returns the same typed shape on 200 and 503 and awaits configured checks.
+The application exposes /healthz and /readyz probes, public /api/v1/info, versioned authentication flows, and authenticated application/category/release management routes. All have typed responses and published docstrings; login accepts a JSON body. Liveness returns 200. Readiness returns the same typed shape on 200 and 503 and awaits configured checks.
 
 The exporter enforces operation IDs, public route documentation and primary response DTOs, including nested APIRouter routes. Router traversal uses FastAPI's public route-context helper, so the package requires FastAPI 0.162.0 or newer. CI checks deterministic export, schema validity and version alignment. It does not yet enforce every future input annotation, DTO separation, dependency boundary or async I/O choice automatically; those still require review and feature-specific tests.
 
-Feature APIRouter modules, annotated input/dependency aliases and collection/operation endpoints should arrive with their features. The application factory owns the probes; feature routers own their operations.
+Feature routers use the common resource-action standard; non-resource authentication flows retain explicit typed handlers and their independent security policies. The application factory owns probes and version mounting.
 
 ## Export
 
@@ -60,7 +67,7 @@ The sync script generates matching versions in every workspace pyproject.toml. C
 
 ## Public response cache
 
-GET /info is the initial opt-in metadata endpoint. Installing CachedReadRoute does not enable caching automatically. Only a GET endpoint with an explicit CachePolicy opts in. Current health/readiness and ordinary routes have no policy and run live; there is no special path-name blacklist. A future public route can opt in with CachedReadRoute and CachePolicy only if its response is independent of identity, cookies, authorization and varying request headers. Never opt authenticated or personalized routes into the shared cache.
+GET /api/v1/info is the initial opt-in metadata endpoint. Installing CachedReadRoute does not enable caching automatically. Only a GET endpoint with an explicit CachePolicy opts in. Current health/readiness and ordinary routes have no policy and run live; there is no special path-name blacklist. A future public route can opt in with CachedReadRoute and CachePolicy only if its response is independent of identity, cookies, authorization and varying request headers. Never opt authenticated or personalized routes into the shared cache.
 
 The route wrapper runs before dependencies, so a valid hit avoids database checkout. Redis operations use the native async client with 200 ms socket/connect timeouts, no retries and a five-second failure circuit breaker. A miss may wait up to one second for another loader. Cache outages and write failures read through to the source.
 
@@ -88,9 +95,9 @@ admission/linking, logout semantics and precise integration evidence.
 CSRF on every method except GET/HEAD/OPTIONS. Resource services must call
 `AuthorizationService.require_access` with the resource's stored owner ID and
 `Scope.APP`, `CLUSTER` or `SECRET`; catalog administration uses `CATALOG_ADMIN`.
-`SessionService.require_access` delegates to that same policy. There are no app,
-cluster, secret or catalog CRUD services yet; resource services must invoke this
-boundary before data access. Even an installation owner cannot cross another
+`SessionService.require_access` delegates to that same policy. Application definition services now invoke this boundary before writes and
+revalidate credentials before shared-definition reads. Future installed-app,
+cluster and secret services must enforce ownership before data access. Even an installation owner cannot cross another
 owner's resource scope. Unknown scopes, absent owners and stale/forged principals
 fail closed. Policy uses an injected `PrincipalValidator` and opaque credential
 context, so non-browser authenticators can validate credentials without password/cookie assumptions.

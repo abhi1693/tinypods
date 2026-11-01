@@ -15,9 +15,14 @@ from tinypods_api.http.dependencies import get_session
 from tinypods_api.http.errors import ERROR_RESPONSES, install_error_handlers
 from tinypods_api.http.middleware import RequestLoggingMiddleware
 from tinypods_api.http.operations import build_operation_id
+from tinypods_api.http.resources import ResourceAction, ResourceRouter
 from tinypods_api.http.schema import export_schema, render_schema
+from tinypods_api.http.versioning import API_V1_PREFIX
 
 __all__ = [
+    "API_V1_PREFIX",
+    "ResourceAction",
+    "ResourceRouter",
     "build_operation_id",
     "ERROR_RESPONSES",
     "ErrorResponse",

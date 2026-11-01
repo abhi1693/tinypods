@@ -18,7 +18,7 @@ from tinypods_core.settings import Settings
 
 ISSUER = "https://issuer.example"
 CLIENT = "client-id"
-CALLBACK = "https://tinypods.example/auth/providers/zitadel/callback"
+CALLBACK = "https://tinypods.example/api/v1/auth/providers/zitadel/callback"
 STATE = "s" * 43
 NONCE = "n" * 43
 # RFC 7636 section 4.2 example, independent of Authlib's challenge implementation.

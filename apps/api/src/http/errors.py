@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException
 from tinypods_api.http.contracts import ErrorResponse, ValidationIssue
+from tinypods_core.applications.service import DefinitionError
 from tinypods_core.auth import AuthError
 from tinypods_core.rate_limit import RateLimitUnavailable
 
@@ -121,6 +122,12 @@ async def storage_unavailable(request: Request, exc: Exception) -> JSONResponse:
     return await http_error(request, HTTPException(503))
 
 
+async def definition_error(request: Request, exc: Exception) -> JSONResponse:
+    """Translate deliberate definition conflicts/missing records without SQL details."""
+    assert isinstance(exc, DefinitionError)
+    return await http_error(request, HTTPException(exc.status))
+
+
 def install_error_handlers(app: FastAPI) -> None:
     """Register deliberate HTTP, validation and unexpected-error translations.
 
@@ -131,5 +138,6 @@ def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RequestValidationError, validation_error)
     app.add_exception_handler(Exception, unexpected_error)
     app.add_exception_handler(AuthError, authentication_error)
+    app.add_exception_handler(DefinitionError, definition_error)
     app.add_exception_handler(RateLimitUnavailable, storage_unavailable)
     app.add_exception_handler(SQLAlchemyError, storage_unavailable)

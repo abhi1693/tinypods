@@ -178,11 +178,11 @@ def test_endpoint_policy_precedes_cache_and_is_not_auth_specific(valkey_url: str
         assert len(calls) == 1
         assert client.post("/another").status_code == 200
         assert client.post("/another").status_code == 429
-        assert client.get("/info").status_code == 200
+        assert client.get("/api/v1/info").status_code == 200
         assert client.get("/no-peer").status_code == 200
     # A fresh app shares the same backend budget, rather than resetting an in-process counter.
     with TestClient(create_app(settings)) as client:
-        assert client.get("/info").status_code == 200
+        assert client.get("/api/v1/info").status_code == 200
 
 
 def test_global_budget_and_fail_closed_with_probe_exemption(valkey_url: str) -> None:
@@ -200,20 +200,20 @@ def test_global_budget_and_fail_closed_with_probe_exemption(valkey_url: str) -> 
     with TestClient(app) as client:
         with client.websocket_connect("/socket") as socket:
             assert socket.receive_text() == "alive"
-        assert client.get("/info").status_code == 200
+        assert client.get("/api/v1/info").status_code == 200
         assert client.get("/missing").status_code == 404
-        denied = client.get("/info")
+        denied = client.get("/api/v1/info")
         assert denied.status_code == 429 and denied.headers["retry-after"]
         assert denied.json()["request_id"] == denied.headers["x-request-id"]
         assert client.get("/healthz").status_code == client.get("/readyz").status_code == 200
     with TestClient(create_app(settings)) as client:
-        assert client.get("/info").status_code == 429
+        assert client.get("/api/v1/info").status_code == 429
     with TestClient(create_app(Settings(rate_limit_global_per_minute=1))) as client:
-        assert client.get("/info").status_code == 503
+        assert client.get("/api/v1/info").status_code == 503
         assert client.get("/healthz").status_code == 200
     offline = settings.model_copy(
         update={"rate_limit_valkey_url": SecretStr("redis://127.0.0.1:1/0")}
     )
     with TestClient(create_app(offline)) as client:
-        assert client.get("/info").status_code == 503
+        assert client.get("/api/v1/info").status_code == 503
         assert client.get("/healthz").status_code == 200

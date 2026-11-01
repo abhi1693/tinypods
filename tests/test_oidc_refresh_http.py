@@ -33,7 +33,7 @@ def test_refresh_cookie_transport_and_expired_access_logout(
     settings = enabled(
         auth_settings,
         environment="development" if development else "production",
-        zitadel_redirect_uri=base + "/auth/providers/zitadel/callback",
+        zitadel_redirect_uri=base + "/api/v1/auth/providers/zitadel/callback",
         zitadel_refresh_enabled=True,
         zitadel_refresh_encryption_keys=(SecretStr(Fernet.generate_key().decode()),),
     )
@@ -62,11 +62,11 @@ def test_refresh_cookie_transport_and_expired_access_logout(
 
         def login() -> None:
             start = client.post(
-                "/auth/providers/zitadel/start", json={}, headers={"x-csrf-token": "login"}
+                "/api/v1/auth/providers/zitadel/start", json={}, headers={"x-csrf-token": "login"}
             )
             assert start.status_code == 200
             response = client.get(
-                "/auth/providers/zitadel/callback",
+                "/api/v1/auth/providers/zitadel/callback",
                 params={"state": state_from(start.json()["authorization_url"]), "code": "accepted"},
                 follow_redirects=False,
             )
@@ -94,8 +94,8 @@ def test_refresh_cookie_transport_and_expired_access_logout(
             ).status_code
             == 403
         )
-        advertised = client.get("/auth/providers").json()["data"][1]
-        assert advertised["refresh_path"] == "/auth/providers/zitadel/refresh"
+        advertised = client.get("/api/v1/auth/providers").json()["data"][1]
+        assert advertised["refresh_path"] == "/api/v1/auth/providers/zitadel/refresh"
         original_refresh, original_csrf = (
             client.cookies[policy.refresh],
             client.cookies[policy.csrf],
@@ -114,7 +114,7 @@ def test_refresh_cookie_transport_and_expired_access_logout(
         assert "upstream-private" not in renewed.text and "refresh_token" not in renewed.text
         assert client.cookies[policy.refresh] != original_refresh
         assert client.cookies[policy.csrf] != original_csrf
-        assert client.get("/auth/session").status_code == 200
+        assert client.get("/api/v1/auth/session").status_code == 200
         replay = client.post(
             advertised["refresh_path"],
             headers={
@@ -123,11 +123,11 @@ def test_refresh_cookie_transport_and_expired_access_logout(
             },
         )
         assert replay.status_code == 401
-        assert client.get("/auth/session").status_code == 401
+        assert client.get("/api/v1/auth/session").status_code == 401
         login()
         csrf = client.cookies[policy.csrf]
         client.cookies.delete(policy.session)
-        logout = client.post("/auth/logout", headers={"x-csrf-token": csrf})
+        logout = client.post("/api/v1/auth/logout", headers={"x-csrf-token": csrf})
         assert logout.status_code == 200
         assert policy.refresh not in client.cookies and policy.csrf not in client.cookies
         assert (
@@ -146,14 +146,14 @@ def test_refresh_cookie_transport_and_expired_access_logout(
             provider.session_id,
         )
         response = client.post(
-            "/auth/providers/zitadel/backchannel-logout",
+            "/api/v1/auth/providers/zitadel/backchannel-logout",
             content=urlencode({"logout_token": "verified", "ignored": "value"}),
             headers={"content-type": "application/x-www-form-urlencoded"},
         )
         assert response.status_code == 200 and response.json()["logged_out"] is True
         assert "set-cookie" not in response.headers
         assert response.headers["cache-control"] == "no-store"
-        assert client.get("/auth/session").status_code == 401
+        assert client.get("/api/v1/auth/session").status_code == 401
 
 
 @pytest.mark.parametrize(
@@ -176,7 +176,7 @@ def test_backchannel_rejects_invalid_requests_without_browser_credentials(
     app.state.zitadel_sessions.provider = LifecycleProvider()
     with TestClient(app, base_url="https://testserver") as client:
         response = client.post(
-            "/auth/providers/zitadel/backchannel-logout",
+            "/api/v1/auth/providers/zitadel/backchannel-logout",
             content=body,
             headers={"content-type": content_type},
         )
@@ -191,7 +191,7 @@ def test_provider_session_dependencies_and_upstream_logout_failure(auth_settings
         create_app(settings.model_copy(update={"database_url": None})),
         base_url="https://testserver",
     ) as client:
-        assert client.post("/auth/providers/zitadel/refresh").status_code == 404
+        assert client.post("/api/v1/auth/providers/zitadel/refresh").status_code == 404
     app = create_app(settings)
 
     async def unavailable(encoded: str) -> LogoutNotice:
@@ -200,7 +200,7 @@ def test_provider_session_dependencies_and_upstream_logout_failure(auth_settings
     app.state.zitadel_sessions.provider.validate_logout_token = unavailable
     with TestClient(app, base_url="https://testserver") as client:
         response = client.post(
-            "/auth/providers/zitadel/backchannel-logout",
+            "/api/v1/auth/providers/zitadel/backchannel-logout",
             content="logout_token=opaque",
             headers={"content-type": "application/x-www-form-urlencoded"},
         )

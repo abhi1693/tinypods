@@ -46,7 +46,7 @@ ZITADEL = (
     "ghcr.io/zitadel/zitadel@sha256:"
     "15543f7a80c3e37905fe8c7db56af7ed2a9ece256704322c1449d7e8453afdab"
 )
-CALLBACK = "https://tinypods.example/auth/providers/zitadel/callback"
+CALLBACK = "https://tinypods.example/api/v1/auth/providers/zitadel/callback"
 
 
 def docker(*arguments: str) -> str:

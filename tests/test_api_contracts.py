@@ -455,7 +455,7 @@ def test_literal_http_contracts_preserve_validated_wire_values(
 def test_login_contract_exposes_required_header_and_request_example() -> None:
     """Present callable login requirements through OpenAPI metadata rather than status prose."""
     schema = export_schema(create_app(Settings(), include_disabled_providers=True))
-    for path in ("/auth/login", "/auth/providers/zitadel/start"):
+    for path in ("/api/v1/auth/login", "/api/v1/auth/providers/zitadel/start"):
         operation = schema["paths"][path]["post"]
         header = next(item for item in operation["parameters"] if item["name"] == "x-csrf-token")
         assert header["required"] and header["example"] == "login"

@@ -10,6 +10,7 @@ from tinypods_api.auth.providers.local.routes import router as local_router
 from tinypods_api.auth.providers.zitadel.routes import router as zitadel_router
 from tinypods_api.auth.session_routes import router as session_router
 from tinypods_api.http.operations import build_operation_id
+from tinypods_api.http.versioning import API_V1_PREFIX
 from tinypods_api.rate_limit import RateLimitedRoute
 from tinypods_core.settings import Settings
 
@@ -38,7 +39,7 @@ async def providers(request: Request) -> ProvidersResponse:
                 label=settings.auth_local_label,
                 type="password",
                 icon_url=settings.auth_local_icon_url,
-                login_path="/auth/login",
+                login_path=API_V1_PREFIX + "/auth/login",
             )
         )
     if settings.zitadel_enabled:
@@ -57,8 +58,8 @@ async def providers(request: Request) -> ProvidersResponse:
                     for provider in settings.zitadel_identity_providers
                 ],
                 type="redirect",
-                login_path="/auth/providers/zitadel/start",
-                refresh_path="/auth/providers/zitadel/refresh"
+                login_path=API_V1_PREFIX + "/auth/providers/zitadel/start",
+                refresh_path=API_V1_PREFIX + "/auth/providers/zitadel/refresh"
                 if settings.zitadel_refresh_enabled
                 else None,
             )

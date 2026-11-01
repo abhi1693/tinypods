@@ -9,6 +9,7 @@ import anyio
 import uvicorn
 from fastapi import FastAPI, Response
 from starlette.types import ASGIApp
+from tinypods_api.applications import router as applications_router
 from tinypods_api.auth import build_router
 from tinypods_api.cache import CachePolicy
 from tinypods_api.http.constants import LIVENESS_PATH, READINESS_PATH
@@ -16,6 +17,7 @@ from tinypods_api.http.contracts import LivenessResponse, PlatformInfoResponse, 
 from tinypods_api.http.errors import ERROR_RESPONSES, install_error_handlers
 from tinypods_api.http.middleware import RequestLoggingMiddleware
 from tinypods_api.http.operations import build_operation_id
+from tinypods_api.http.versioning import API_V1_PREFIX
 from tinypods_api.rate_limit import GlobalRateLimitMiddleware, RateLimitedRoute
 from tinypods_core import __version__
 from tinypods_core.auth import AuthService, Credentials, LocalPasswordProvider, SessionService
@@ -166,10 +168,15 @@ def create_app(
         browser.lifecycle = lifecycle
         app.state.zitadel_sessions = lifecycle
     app.state.ready = False
-    app.include_router(build_router(config, include_disabled_providers=include_disabled_providers))
+    app.include_router(
+        build_router(config, include_disabled_providers=include_disabled_providers),
+        prefix=API_V1_PREFIX,
+    )
+
+    app.include_router(applications_router, prefix=API_V1_PREFIX)
 
     @app.get(
-        "/info",
+        API_V1_PREFIX + "/info",
         operation_id=build_operation_id("platform", "info", "get"),
         summary="Show service information",
         response_model=PlatformInfoResponse,
