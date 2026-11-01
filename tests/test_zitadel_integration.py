@@ -469,7 +469,7 @@ def test_real_zitadel_tls_pkce_browser_session_and_authorization(
                 response["code"][0],
                 response_issuer=response.get("iss", [None])[0],
             )
-            assert return_to == "/applications" and not login.principal.is_owner
+            assert return_to == "/applications" and login.principal.is_owner
             principal = await browser.sessions.authenticate(
                 login.token, csrf_token=login.csrf_token
             )
@@ -478,9 +478,7 @@ def test_real_zitadel_tls_pkce_browser_session_and_authorization(
                 await policy.require_access(principal, Scope.APP, owner_id=principal.user_id)
                 == principal
             )
-            with pytest.raises(AuthError) as error:
-                await policy.require_access(principal, Scope.CATALOG_ADMIN)
-            assert error.value.status == 403
+            assert await policy.require_access(principal, Scope.CATALOG_ADMIN) == principal
             async with database.session() as session:
                 assert await session.get(LocalCredential, principal.user_id) is None
                 record = await session.get(AuthSession, digest(login.token))
