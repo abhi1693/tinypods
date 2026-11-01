@@ -55,7 +55,7 @@ state machine belongs to this API foundation.
 
 Applications, categories and releases have collection GET/POST and item
 GET/PUT/PATCH/DELETE routes under the version root. Shared-definition reads require
-a live session; writes additionally require installation-owner privileges.
+a live session; writes additionally require instance-owner privileges.
 Applications filter by slug/status, categories by slug, and releases by exact
 application ID/source type. Search treats input as a literal substring. Ordering
 accepts explicit fields only, always with an ID tie-breaker; chart versions sort

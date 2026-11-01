@@ -8,6 +8,7 @@ from pydantic import SecretStr, ValidationError
 from tinypods_cli.runtime import command_settings
 from tinypods_core.auth import AuthError, Credentials, LocalPasswordProvider
 from tinypods_core.auth.federation import IdentityMappings
+from tinypods_core.auth.ownership import OwnerAccess
 from tinypods_core.db import Database
 
 auth_app = typer.Typer(help="Manage authentication and identity links.", add_completion=False)
@@ -15,7 +16,7 @@ auth_app = typer.Typer(help="Manage authentication and identity links.", add_com
 
 @auth_app.command()
 def bootstrap() -> None:
-    """Create the installation owner once after migrations, using hidden password prompts."""
+    """Create the instance owner once after migrations, using hidden password prompts."""
     settings = command_settings()
     username = typer.prompt("Username")
     password = typer.prompt("Password", hide_input=True, confirmation_prompt=True)
@@ -39,7 +40,7 @@ def bootstrap() -> None:
         asyncio.run(initialize())
     except AuthError as exc:
         raise typer.BadParameter(f"Owner bootstrap unavailable ({exc.status})") from None
-    typer.echo("Installation owner created")
+    typer.echo("Instance owner created")
 
 
 @auth_app.command()
@@ -64,3 +65,27 @@ def link(provider: str, subject: str, user_id: UUID) -> None:
     except AuthError as exc:
         raise typer.BadParameter(f"Identity linking unavailable ({exc.status})") from None
     typer.echo("External identity linked")
+
+
+@auth_app.command()
+def owner(user_id: UUID, revoke: bool = typer.Option(False, "--revoke")) -> None:
+    """Grant instance ownership, or revoke it while preserving at least one owner.
+
+    Run only from a trusted operator shell after verifying the exact account ID
+    through its session response or identity mapping. Changes use the CLI audit actor.
+    """
+    settings = command_settings()
+
+    async def update() -> None:
+        """Dispose the temporary database even if access management is rejected."""
+        database = Database(settings)
+        try:
+            await OwnerAccess(database).set_owner(user_id, enabled=not revoke)
+        finally:
+            await database.close()
+
+    try:
+        asyncio.run(update())
+    except AuthError as exc:
+        raise typer.BadParameter(f"Instance owner update unavailable ({exc.status})") from None
+    typer.echo("Instance owner access revoked" if revoke else "Instance owner access granted")

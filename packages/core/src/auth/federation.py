@@ -76,7 +76,7 @@ class IdentityMappings:
         self.provider = provider
 
     async def resolve(self, identity: VerifiedIdentity) -> UUID:
-        """Map verified issuer and subject to an account, provisioning non-owners on first login."""
+        """Map verified identity; only the first account of a new instance becomes its owner."""
         policy = identity_policy(self.settings, self.provider)
         if not policy.enabled or identity.issuer != policy.issuer:
             raise AuthError(403)
@@ -96,9 +96,15 @@ class IdentityMappings:
             ).one_or_none()
             if mapping is not None:
                 return mapping.user_id
-            user = User(username="oidc_" + uuid4().hex, is_owner=False)
+            # The singleton lock serializes local and external bootstrap together.
+            # The persisted first-owner marker prevents later sign-ins from claiming it.
+            first_user = installation.owner_id is None
+            user = User(username="oidc_" + uuid4().hex, is_owner=first_user)
             session.add(user)
             await session.flush()
+            if first_user:
+                installation.owner_id = user.id
+                session.add(installation)
             session.add(
                 ExternalIdentity(issuer=identity.issuer, subject=identity.subject, user_id=user.id)
             )

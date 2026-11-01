@@ -26,7 +26,7 @@ router.include_router(session_router)
     response_model_exclude_none=True,
 )
 async def providers(request: Request) -> ProvidersResponse:
-    """Show the sign-in methods available for this installation.
+    """Show the sign-in methods available for this instance.
 
     Use this list to display a local account form or an external sign-in button.
     """
