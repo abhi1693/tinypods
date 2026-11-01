@@ -12,6 +12,7 @@ from starlette.types import ASGIApp
 from tinypods_api.applications import router as applications_router
 from tinypods_api.auth import build_router
 from tinypods_api.cache import CachePolicy
+from tinypods_api.clusters import router as clusters_router
 from tinypods_api.http.constants import LIVENESS_PATH, READINESS_PATH
 from tinypods_api.http.contracts import LivenessResponse, PlatformInfoResponse, ReadinessResponse
 from tinypods_api.http.errors import ERROR_RESPONSES, install_error_handlers
@@ -176,6 +177,7 @@ def create_app(
 
     app.include_router(applications_router, prefix=API_V1_PREFIX)
     app.include_router(repositories_router, prefix=API_V1_PREFIX)
+    app.include_router(clusters_router, prefix=API_V1_PREFIX)
 
     @app.get(
         API_V1_PREFIX + "/info",

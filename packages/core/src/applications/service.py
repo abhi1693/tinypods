@@ -11,6 +11,7 @@ from tinypods_core.applications.models import Application, ApplicationCategory, 
 from tinypods_core.audit import AuditTrailMixin
 from tinypods_core.auth import Principal, Scope
 from tinypods_core.auth.authorization import AuthorizationService
+from tinypods_core.clusters.models import Cluster, Region
 from tinypods_core.repositories.models import Chart, ChartRepository, ChartVersion
 from tinypods_core.repositories.sources import repository_url
 
@@ -21,6 +22,8 @@ DEFINITION_FIELDS: dict[type[AuditTrailMixin], frozenset[str]] = {
     ChartRepository: frozenset({"name", "source_type", "url", "enabled"}),
     Chart: frozenset({"repository_id", "name"}),
     ChartVersion: frozenset(),
+    Region: frozenset({"name", "slug", "description", "parent_id", "flag"}),
+    Cluster: frozenset({"name", "slug", "description", "region_id"}),
 }
 
 
@@ -66,7 +69,7 @@ class DefinitionService[Record: AuditTrailMixin]:
         offset: int,
         ordering: str,
         q: str | None = None,
-        filters: Mapping[str, str | UUID] | None = None,
+        filters: Mapping[str, str | UUID | None] | None = None,
     ) -> tuple[list[Record], int]:
         """Return one bounded, deterministically ordered page after identity validation.
 
@@ -112,6 +115,8 @@ class DefinitionService[Record: AuditTrailMixin]:
             ChartRepository: {"source_type", "enabled"},
             Chart: {"repository_id", "available"},
             ChartVersion: {"chart_id", "available", "is_latest"},
+            Region: {"slug", "parent_id"},
+            Cluster: {"slug", "region_id"},
         }[self.model]
         for name, value in (filters or {}).items():
             if name not in allowed_filters:
