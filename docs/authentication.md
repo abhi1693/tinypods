@@ -7,7 +7,7 @@ organization management and a browser console are not implemented.
 
 ## Enable methods explicitly
 
-Default settings enable local login and disable Zitadel. `GET /auth/providers`
+Default settings enable local login and disable Zitadel. `GET /api/v1/auth/providers`
 is unauthenticated and returns `{ "data": [...] }` descriptors with ID, label,
 password/redirect type and same-origin action paths. It never contacts an IdP or
 exposes issuer/client configuration, secrets, tokens or a static authorization URL.
@@ -39,7 +39,7 @@ TINYPODS_ZITADEL_ENABLED=true
 TINYPODS_ZITADEL_ISSUER=https://identity.example.org
 TINYPODS_ZITADEL_CLIENT_ID=your-client-id
 TINYPODS_ZITADEL_TOKEN_AUTH_METHOD=none
-TINYPODS_ZITADEL_REDIRECT_URI=https://tinypods.example.org/auth/providers/zitadel/callback
+TINYPODS_ZITADEL_REDIRECT_URI=https://tinypods.example.org/api/v1/auth/providers/zitadel/callback
 TINYPODS_ZITADEL_POST_LOGOUT_URI=https://tinypods.example.org/
 # Optional external-only policy, never an outage-triggered switch:
 TINYPODS_AUTH_LOCAL_ENABLED=false
@@ -90,7 +90,7 @@ No organization administration or automatic provider-admin role mapping is added
 
 ## Browser flow and session boundaries
 
-1. `POST /auth/providers/zitadel/start`, JSON `{ "return_to": "/apps" }`, with
+1. `POST /api/v1/auth/providers/zitadel/start`, JSON `{ "return_to": "/apps" }`, with
    `X-CSRF-Token: login` and a matching Origin when supplied. A shared Valkey budget
    reserves the attempt. Only bounded local paths of letters/digits/underscore/
    hyphen/slash are accepted; no query, scheme, traversal or encoded destinations.
@@ -121,7 +121,7 @@ No organization administration or automatic provider-admin role mapping is added
    bounded; response size checks are after buffering, not a streaming memory cap
    against a malicious trusted provider.
 
-Local login is `POST /auth/login` with JSON credentials and `X-CSRF-Token: login`.
+Local login is `POST /api/v1/auth/login` with JSON credentials and `X-CSRF-Token: login`.
 It uses the same rotated session issuance. In production, every app session cookie uses
 Secure, HttpOnly, SameSite=Strict, Path=/ and a `__Host-` name; the separate readable
 CSRF cookie is Secure/Strict. Send its value in X-CSRF-Token for mutations.
@@ -146,9 +146,9 @@ key issuance, storage and routes are not implemented.
 
 ## Logout and limitations
 
-`POST /auth/logout` requires the bound CSRF header, revokes the TinyPods session
+`POST /api/v1/auth/logout` requires the bound CSRF header, revokes the TinyPods session
 immediately and clears app cookies, independently of IdP availability. For optional
-upstream logout, `POST /auth/providers/zitadel/logout` first revokes locally and
+upstream logout, `POST /api/v1/auth/providers/zitadel/logout` first revokes locally and
 returns a token-free client-ID-based end-session URL. The browser must navigate
 there. If discovery fails, it returns a generic failure **with cleared app cookies**;
 local revocation is already committed. Discovery descriptors advertise the ordinary
@@ -207,7 +207,7 @@ only for provider refresh credentials that must be sent back to Zitadel.
 
 The Zitadel application must allow the refresh-token grant and `offline_access`.
 Discovery advertises `refresh_path` when renewal is enabled. The browser calls
-`POST /auth/providers/zitadel/refresh` with its current CSRF header; no request
+`POST /api/v1/auth/providers/zitadel/refresh` with its current CSRF header; no request
 body or provider token is needed. This works after the access cookie expires.
 Success replaces access, refresh and CSRF cookies. Provider refresh tokens never
 enter browser storage. If the provider does not issue a refresh token, the login
@@ -225,7 +225,7 @@ renewal from restoring the session.
 
 ## Provider-initiated sign-out
 
-Register the API origin plus `/auth/providers/zitadel/backchannel-logout` as the
+Register the API origin plus `/api/v1/auth/providers/zitadel/backchannel-logout` as the
 Zitadel application's back-channel logout URI. This is a server-to-server
 notification: the Zitadel server must be able to reach the address, and its
 outbound destination policy must permit it. Browser access to a LAN callback does

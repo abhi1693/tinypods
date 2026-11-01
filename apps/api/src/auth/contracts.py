@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, HttpUrl, SecretStr
 from tinypods_api.http.contracts import RequestDTO
+from tinypods_api.http.versioning import API_V1_PREFIX
 
 
 class LoginRequest(RequestDTO):
@@ -54,7 +55,7 @@ class ProviderDescriptor(BaseModel):
     icon_url: HttpUrl | None = None
     identity_providers: list[IdentityProviderDescriptor] | None = None
     login_path: str
-    logout_path: str = "/auth/logout"
+    logout_path: str = API_V1_PREFIX + "/auth/logout"
     refresh_path: str | None = None
 
 

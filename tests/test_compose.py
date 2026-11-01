@@ -153,9 +153,9 @@ def test_compose_startup_health_and_private_services(compose_stack: ComposeStack
     assert stack.run("exec", "-T", "valkey", "id", "-u") == "999"
     assert services["api"]["environment"]["TINYPODS_CACHE_ENABLED"] == "true"
     port = stack.run("port", "api", "8000").rsplit(":", 1)[1]
-    with urlopen(f"http://127.0.0.1:{port}/info", timeout=5) as response:
+    with urlopen(f"http://127.0.0.1:{port}/api/v1/info", timeout=5) as response:
         assert response.headers["X-Cache"] == "MISS"
-    with urlopen(f"http://127.0.0.1:{port}/info", timeout=5) as response:
+    with urlopen(f"http://127.0.0.1:{port}/api/v1/info", timeout=5) as response:
         assert response.headers["X-Cache"] == "HIT"
     assert configuration["networks"]["data"]["internal"] is True
     assert services["worker"]["scale"] == 1

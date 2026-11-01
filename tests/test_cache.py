@@ -222,7 +222,7 @@ async def test_info_hits_skip_dependencies_and_keep_fresh_request_ids(
 
     app.include_router(router)
     async with client_for(cache_settings, app) as (_, client):
-        first, second = await client.get("/info"), await client.get("/info")
+        first, second = await client.get("/api/v1/info"), await client.get("/api/v1/info")
         assert first.headers["x-cache"] == "MISS" and second.headers["x-cache"] == "HIT"
         assert first.headers["x-request-id"] != second.headers["x-request-id"]
         assert second.json() == {"service": "TinyPods", "version": __version__}
@@ -261,7 +261,7 @@ async def test_sensitive_or_explicit_requests_bypass(
     """
     async with client_for(cache_settings) as (_, client):
         for _ in range(2):
-            response = await client.get("/info" + query, headers=headers)
+            response = await client.get("/api/v1/info" + query, headers=headers)
             assert response.status_code == 200
             assert response.headers["x-cache"] == "BYPASS"
             assert response.headers["x-cache-bypass-reason"] == reason
@@ -282,7 +282,7 @@ async def test_optional_cache_failure_reads_through(mode: str) -> None:
         valkey_url=SecretStr("redis://127.0.0.1:1/0") if mode != "unconfigured" else None,
     )
     async with client_for(settings) as (_, client):
-        response = await client.get("/info")
+        response = await client.get("/api/v1/info")
         assert response.status_code == 200 and response.headers["x-cache"] == "BYPASS"
         assert response.headers["x-cache-bypass-reason"] == (
             "cache_unavailable" if mode == "offline" else "disabled"
@@ -462,7 +462,7 @@ async def test_async_lookup_keeps_event_loop_responsive(
 
     monkeypatch.setattr(cache, "lookup", delayed)
     async with client_for(cache_settings, app) as (_, client):
-        task = asyncio.create_task(client.get("/info"))
+        task = asyncio.create_task(client.get("/api/v1/info"))
         await asyncio.sleep(0.05)
         assert not task.done()
         assert (await task).status_code == 200
@@ -502,7 +502,7 @@ async def test_cached_json_is_validated_and_extra_fields_are_not_replayed(
     app = create_app(cache_settings)
     cache: ResponseCache = app.state.response_cache
     async with client_for(cache_settings, app) as (_, client):
-        assert (await client.get("/info")).headers["x-cache"] == "MISS"
+        assert (await client.get("/api/v1/info")).headers["x-cache"] == "MISS"
         keys = [
             key
             async for key in cache.redis.scan_iter(match=f"{cache.namespace}:public:*")
@@ -510,12 +510,12 @@ async def test_cached_json_is_validated_and_extra_fields_are_not_replayed(
         ]
         assert len(keys) == 1
         await cache.redis.set(keys[0], b'{"private":"not-a-platform-response"}', ex=30)
-        response = await client.get("/info")
+        response = await client.get("/api/v1/info")
         assert response.headers["x-cache-bypass-reason"] == "invalid_entry"
         assert response.json()["version"] == __version__
         assert b"not-a-platform-response" not in response.content
         assert await cache.redis.get(keys[0]) is None
-        await client.get("/info")
+        await client.get("/api/v1/info")
         await cache.redis.set(
             keys[0],
             json.dumps(
@@ -523,7 +523,7 @@ async def test_cached_json_is_validated_and_extra_fields_are_not_replayed(
             ),
             ex=30,
         )
-        response = await client.get("/info")
+        response = await client.get("/api/v1/info")
         assert response.headers["x-cache"] == "HIT" and "password" not in response.json()
 
 
@@ -592,7 +592,7 @@ async def test_optional_write_and_cleanup_failures_do_not_fail_reads(
     broken = AsyncMock(side_effect=CacheUnavailable)
     monkeypatch.setattr(app.state.response_cache, failure, broken)
     async with client_for(cache_settings, app) as (_, client):
-        response = await client.get("/info")
+        response = await client.get("/api/v1/info")
         assert response.status_code == 200 and response.headers["x-cache"] == "MISS"
     broken.assert_awaited()
 
@@ -674,7 +674,7 @@ async def test_cache_wait_deadline_is_bounded(
 
     monkeypatch.setattr(cache, "lookup", contested)
     async with client_for(cache_settings, app) as (_, client):
-        assert (await client.get("/info")).headers["x-cache"] == "MISS"
+        assert (await client.get("/api/v1/info")).headers["x-cache"] == "MISS"
 
 
 async def test_response_size_limit_prevents_storage(cache_settings: Settings) -> None:
@@ -786,7 +786,7 @@ async def test_real_read_timeout_is_bounded_and_does_not_fail_http(
         await cache.redis.ping()
         await cache.redis.execute_command("CLIENT", "PAUSE", 350, "ALL")
         started = time.monotonic()
-        task = asyncio.create_task(client.get("/info"))
+        task = asyncio.create_task(client.get("/api/v1/info"))
         await asyncio.sleep(0.05)
         assert not task.done()
         response = await task
@@ -809,7 +809,7 @@ async def test_ignored_query_variations_do_not_allocate_cache_entries(
     """
     async with client_for(cache_settings) as (app, client):
         for value in range(10):
-            response = await client.get(f"/info?ignored={value}")
+            response = await client.get(f"/api/v1/info?ignored={value}")
             assert response.headers["x-cache-bypass-reason"] == "undeclared_query"
         cache: ResponseCache = app.state.response_cache
         assert not [key async for key in cache.redis.scan_iter(match=f"{cache.namespace}:public:*")]
@@ -931,7 +931,7 @@ async def test_lifespan_awaits_cache_pool_shutdown(
     monkeypatch.setattr(cache, "close", close)
     with pytest.raises(RuntimeError, match="database shutdown"):
         async with client_for(cache_settings, app) as (_, client):
-            assert (await client.get("/info")).status_code == 200
+            assert (await client.get("/api/v1/info")).status_code == 200
     close.assert_awaited_once()
 
 
