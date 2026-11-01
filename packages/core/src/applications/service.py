@@ -11,6 +11,7 @@ from tinypods_core.applications.models import Application, ApplicationCategory, 
 from tinypods_core.audit import AuditTrailMixin
 from tinypods_core.auth import Principal, Scope
 from tinypods_core.auth.authorization import AuthorizationService
+from tinypods_core.clusters.models import Cluster, Region
 from tinypods_core.repositories.models import Chart, ChartRepository, ChartVersion
 from tinypods_core.repositories.sources import repository_url
 
@@ -21,6 +22,8 @@ DEFINITION_FIELDS: dict[type[AuditTrailMixin], frozenset[str]] = {
     ChartRepository: frozenset({"name", "source_type", "url", "enabled"}),
     Chart: frozenset({"repository_id", "name"}),
     ChartVersion: frozenset(),
+    Region: frozenset({"name", "slug", "description", "parent_id", "flag"}),
+    Cluster: frozenset({"name", "slug", "description", "region_id"}),
 }
 
 
@@ -66,7 +69,7 @@ class DefinitionService[Record: AuditTrailMixin]:
         offset: int,
         ordering: str,
         q: str | None = None,
-        filters: Mapping[str, str | UUID] | None = None,
+        filters: Mapping[str, str | UUID | None] | None = None,
     ) -> tuple[list[Record], int]:
         """Return one bounded, deterministically ordered page after identity validation.
 
@@ -112,6 +115,8 @@ class DefinitionService[Record: AuditTrailMixin]:
             ChartRepository: {"source_type", "enabled"},
             Chart: {"repository_id", "available"},
             ChartVersion: {"chart_id", "available", "is_latest"},
+            Region: {"slug", "parent_id"},
+            Cluster: {"slug", "region_id"},
         }[self.model]
         for name, value in (filters or {}).items():
             if name not in allowed_filters:
@@ -152,6 +157,17 @@ class DefinitionService[Record: AuditTrailMixin]:
             raise DefinitionError(404)
         return record
 
+    async def _before_write(
+        self, values: Mapping[str, object] | None, *, creating: bool = False
+    ) -> None:
+        """Allow domain services to lock shared invariants before any object row.
+
+        Args:
+            values: Fields to save, or None for deletion.
+            creating: Whether this transaction will insert a new record.
+        """
+        return None
+
     async def save(
         self, principal: Principal, values: Mapping[str, object], *, identity: UUID | None = None
     ) -> Record:
@@ -173,6 +189,7 @@ class DefinitionService[Record: AuditTrailMixin]:
             raise ValueError("Unknown definition write field")
         try:
             async with self.session.begin():
+                await self._before_write(values, creating=identity is None)
                 record = (
                     self.model.model_validate(values)
                     if identity is None
@@ -219,6 +236,7 @@ class DefinitionService[Record: AuditTrailMixin]:
         await self.authorization.require_access(principal, Scope.CATALOG_ADMIN)
         try:
             async with self.session.begin():
+                await self._before_write(None)
                 record = await self._get(identity, lock=True)
                 if isinstance(record, (ChartRepository, Chart)):
                     # Lock children before checking pins, preventing concurrent additions

@@ -288,3 +288,5 @@ The pool has 16 connections, 200 ms socket/connect waits and no automatic retrie
 Authentication models now use transactional, allowlisted object change logging.
 See [change logging](docs/audit-trail.md) for registry, execution context,
 redaction, transaction behavior and supported write boundaries.
+
+Region hierarchy and Kubernetes cluster registration are described in the [region and cluster guide](docs/regions-clusters.md).
