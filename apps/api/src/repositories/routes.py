@@ -75,7 +75,7 @@ async def retrieve_repository(
 async def create_repository(
     payload: RepositoryWrite, service: RepositoryService, principal: PrincipalDependency
 ) -> RepositoryRead:
-    """Create an audited repository; requires installation-owner privileges."""
+    """Create an audited repository; requires instance-owner privileges."""
     return RepositoryRead.model_validate(await service.save(principal, payload.model_dump()))
 
 
@@ -163,7 +163,7 @@ async def retrieve_chart(
 async def create_chart(
     payload: ChartWrite, service: ChartService, principal: PrincipalDependency
 ) -> ChartRead:
-    """Create an audited chart; requires installation-owner privileges."""
+    """Create an audited chart; requires instance-owner privileges."""
     return ChartRead.model_validate(await service.save(principal, payload.model_dump()))
 
 

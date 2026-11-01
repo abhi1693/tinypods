@@ -20,7 +20,7 @@ The API listens on `0.0.0.0:8000` by default for LAN access. Set
 `TINYPODS_API_HOST` and `TINYPODS_API_PORT` to override the direct process binding. `/healthz` reports process liveness.
 `/readyz` returns 503 outside the application lifespan or when a registered
 dependency fails or times out. If a database URL is configured, readiness verifies
-the migrated installation record. Liveness does not depend on the database.
+the migrated instance record. Liveness does not depend on the database.
 
 Settings use the `TINYPODS_` environment prefix; `.env.example` lists supported
 settings. Environment files are not loaded implicitly. Keep credentials out of
@@ -42,7 +42,7 @@ uv run --no-sync tinypods doctor --database
 
 Run these commands from the repository root, or pass `--config` with the Alembic
 configuration path. Migrations run explicitly, never during API or worker startup.
-The initial migration creates a persistent installation identity. Core models own
+The initial migration creates a persistent instance identity. Core models own
 separate metadata; core migration discovery excludes plugin and unmanaged tables.
 New core schema changes get their own Alembic revision.
 
@@ -258,8 +258,9 @@ boundaries](docs/authentication.md) and the [API guide](apps/api/README.md).
 
 After explicit migrations, run `uv run --no-sync tinypods auth bootstrap` on the
 backend host. It prompts for credentials without default accounts or password
-arguments. For external-only installations, the operator can explicitly link an
-allowlisted Zitadel subject to that existing owner with `tinypods auth link`.
+arguments. For external-only instances, the first verified Zitadel user on a fresh instance
+becomes its owner. Later grants/revocations use `tinypods auth owner`; explicit
+account linking remains available through `tinypods auth link`.
 
 ## Shared request rate limits
 
@@ -269,7 +270,7 @@ fixed-window counter and expiry across processes. Denials do not extend windows;
 transport/storage failure rejects rather than granting a fallback allowance.
 `TINYPODS_RATE_LIMIT_VALKEY_URL` overrides `TINYPODS_VALKEY_URL` independently of
 optional response caching. Set a unique `TINYPODS_RATE_LIMIT_NAMESPACE` per
-installation sharing Valkey, and the same value on all of its API replicas.
+instance sharing Valkey, and the same value on all of its API replicas.
 
 `TINYPODS_RATE_LIMIT_GLOBAL_PER_MINUTE` optionally limits aggregate HTTP requests;
 default 0 disables only this global budget. Health/readiness probes and WebSockets

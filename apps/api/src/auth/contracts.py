@@ -47,7 +47,7 @@ class IdentityProviderDescriptor(BaseModel):
 
 
 class ProviderDescriptor(BaseModel):
-    """A sign-in method available for this installation."""
+    """A sign-in method available for this instance."""
 
     id: str
     label: str

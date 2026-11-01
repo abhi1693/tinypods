@@ -11,13 +11,13 @@ from tinypods_core.settings import Settings
 
 
 async def check_database(settings: Settings) -> str:
-    """Read installation identity and always dispose the temporary async engine.
+    """Read instance identity and always dispose the temporary async engine.
 
     Args:
         settings: Validated runtime settings controlling the resource configuration.
 
     Returns:
-        JSON containing the installation identifier and creation time.
+        JSON containing the instance identifier and creation time.
     """
     database = Database(settings)
     try:
