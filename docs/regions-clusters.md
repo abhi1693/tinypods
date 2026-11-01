@@ -109,3 +109,5 @@ connection/capability checks. Kubeconfig will be a scoped secret linked by forei
 key, rather than a field in cluster registry responses. Installed applications and
 application-scoped secrets follow their actual resource models. Queues, background
 jobs and billing are outside this registry implementation.
+
+Measured query, projection and contention results are recorded in the [region benchmark report](region-benchmarks.md).
