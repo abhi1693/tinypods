@@ -45,11 +45,7 @@ class ReleaseWrite(RequestDTO):
     """Complete shared Helm definition; no installed values or generated secrets."""
 
     application_id: UUID
-    chart_version: str = Field(min_length=1, max_length=128, pattern=r"\S")
-    source_type: SourceType = SourceType.HELM_REPOSITORY
-    source_location: str = Field(min_length=1, pattern=r"\S")
-    chart_name: str = Field(min_length=1, pattern=r"\S")
-    digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    chart_version_id: UUID
     configuration_fields: list[ConfigurationField] = Field(default_factory=list)
 
 
@@ -87,11 +83,7 @@ class ReleasePatch(DefinitionPatch):
     """Only supplied shared Helm definition fields are changed."""
 
     application_id: UUID | None = None
-    chart_version: str | None = Field(default=None, min_length=1, max_length=128, pattern=r"\S")
-    source_type: SourceType | None = None
-    source_location: str | None = Field(default=None, min_length=1, pattern=r"\S")
-    chart_name: str | None = Field(default=None, min_length=1, pattern=r"\S")
-    digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    chart_version_id: UUID | None = None
     configuration_fields: list[ConfigurationField] | None = None
 
 
@@ -116,6 +108,7 @@ class ReleaseQuery(PageParams):
     ordering: Literal["created", "-created", "chart_version", "-chart_version"] = "created"
     application_id: UUID | None = None
     source_type: SourceType | None = None
+    chart_version_id: UUID | None = None
 
 
 class MembershipWrite(RequestDTO):

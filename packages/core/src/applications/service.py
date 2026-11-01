@@ -11,21 +11,16 @@ from tinypods_core.applications.models import Application, ApplicationCategory, 
 from tinypods_core.audit import AuditTrailMixin
 from tinypods_core.auth import Principal, Scope
 from tinypods_core.auth.authorization import AuthorizationService
+from tinypods_core.repositories.models import Chart, ChartRepository, ChartVersion
+from tinypods_core.repositories.sources import repository_url
 
 DEFINITION_FIELDS: dict[type[AuditTrailMixin], frozenset[str]] = {
     Application: frozenset({"name", "slug", "description", "icon", "status"}),
     Category: frozenset({"name", "slug", "description", "icon"}),
-    Release: frozenset(
-        {
-            "application_id",
-            "chart_version",
-            "source_type",
-            "source_location",
-            "chart_name",
-            "digest",
-            "configuration_fields",
-        }
-    ),
+    Release: frozenset({"application_id", "chart_version_id", "configuration_fields"}),
+    ChartRepository: frozenset({"name", "source_type", "url", "enabled"}),
+    Chart: frozenset({"repository_id", "name"}),
+    ChartVersion: frozenset(),
 }
 
 
@@ -87,30 +82,52 @@ class DefinitionService[Record: AuditTrailMixin]:
             Page records and the matching total before pagination.
         """
         await self.authorization.validator.validate_principal(principal)
-        allowed_order = (
-            {"created", "name"} if self.model is not Release else {"created", "chart_version"}
-        )
+        allowed_order = {"created", "name"}
+        if self.model is Release:
+            allowed_order = {"created", "chart_version"}
+        elif self.model is ChartVersion:
+            allowed_order = {"created", "version"}
         key = ordering.removeprefix("-")
         validate_page(limit, offset)
         if key not in allowed_order:
             raise ValueError("Invalid definition page or ordering")
         query = select(self.model)
+        if self.model is Release:
+            query = (
+                query.join(ChartVersion, self.columns["chart_version_id"] == ChartVersion.id)
+                .join(Chart, col(ChartVersion.chart_id) == col(Chart.id))
+                .join(ChartRepository, col(Chart.repository_id) == col(ChartRepository.id))
+            )
         if q:
-            search = self.columns["chart_name" if self.model is Release else "name"]
+            search = (
+                col(Chart.name)
+                if self.model is Release
+                else self.columns["version" if self.model is ChartVersion else "name"]
+            )
             query = query.where(search.icontains(q, autoescape=True))
-        allowed_filters = (
-            {"status", "slug"}
-            if self.model is Application
-            else {"slug"}
-            if self.model is Category
-            else {"application_id", "source_type"}
-        )
+        allowed_filters = {
+            Application: {"status", "slug"},
+            Category: {"slug"},
+            Release: {"application_id", "source_type", "chart_version_id"},
+            ChartRepository: {"source_type", "enabled"},
+            Chart: {"repository_id", "available"},
+            ChartVersion: {"chart_id", "available", "is_latest"},
+        }[self.model]
         for name, value in (filters or {}).items():
             if name not in allowed_filters:
                 raise ValueError("Unknown definition filter")
-            query = query.where(self.columns[name] == value)
+            column = (
+                col(ChartRepository.source_type)
+                if self.model is Release and name == "source_type"
+                else self.columns[name]
+            )
+            query = query.where(column == value)
         total = (await self.session.exec(select(func.count()).select_from(query.subquery()))).one()
-        order = self.columns[key]
+        order = (
+            col(ChartVersion.version)
+            if self.model is Release and key == "chart_version"
+            else self.columns[key]
+        )
         query = (
             query.order_by(
                 order.desc() if ordering.startswith("-") else order.asc(), self.columns["id"]
@@ -161,11 +178,39 @@ class DefinitionService[Record: AuditTrailMixin]:
                     if identity is None
                     else await self._get(identity, lock=True)
                 )
+                if isinstance(record, ChartRepository):
+                    normalized = repository_url(
+                        record.source_type
+                        if "source_type" not in values
+                        else str(values["source_type"]),
+                        record.url if "url" not in values else str(values["url"]),
+                    )
+                    values = {**values, "url": normalized}
                 for name, value in values.items():
                     setattr(record, name, value)
+                if isinstance(record, Release):
+                    # A release chooses the source version for the user-facing app.
+                    # Fill missing presentation metadata without overwriting an
+                    # operator's explicit description or icon on later releases.
+                    application = (
+                        await self.session.exec(
+                            select(Application)
+                            .where(Application.id == record.application_id)
+                            .with_for_update()
+                        )
+                    ).one_or_none()
+                    source = await self.session.get(ChartVersion, record.chart_version_id)
+                    if application is not None and source is not None:
+                        if not application.description:
+                            application.description = source.description
+                        if application.icon is None:
+                            application.icon = source.icon
+                        self.session.add(application)
                 self.session.add(record)
                 await self.session.flush()
             return record
+        except ValueError as exc:
+            raise DefinitionError(422) from exc
         except IntegrityError as exc:
             raise DefinitionError(409) from exc
 
@@ -174,7 +219,57 @@ class DefinitionService[Record: AuditTrailMixin]:
         await self.authorization.require_access(principal, Scope.CATALOG_ADMIN)
         try:
             async with self.session.begin():
-                await self.session.delete(await self._get(identity, lock=True))
+                record = await self._get(identity, lock=True)
+                if isinstance(record, (ChartRepository, Chart)):
+                    # Lock children before checking pins, preventing concurrent additions
+                    # from escaping this transaction's deletion decision.
+                    charts = (
+                        list(
+                            (
+                                await self.session.exec(
+                                    select(Chart)
+                                    .where(Chart.repository_id == identity)
+                                    .with_for_update()
+                                )
+                            ).all()
+                        )
+                        if isinstance(record, ChartRepository)
+                        else [record]
+                    )
+                    versions = list(
+                        (
+                            await self.session.exec(
+                                select(ChartVersion)
+                                .where(
+                                    col(ChartVersion.chart_id).in_([chart.id for chart in charts])
+                                )
+                                .with_for_update()
+                            )
+                        ).all()
+                    )
+                    pinned = (
+                        await self.session.exec(
+                            select(Release.id)
+                            .where(
+                                col(Release.chart_version_id).in_(
+                                    [version.id for version in versions]
+                                )
+                            )
+                            .limit(1)
+                        )
+                    ).first()
+                    if pinned is not None:
+                        raise DefinitionError(409)
+                    # Delete through the ORM so automatic audit capture sees each child.
+                    # Database cascades provide the same integrity for direct SQL callers.
+                    for version in versions:
+                        await self.session.delete(version)
+                    await self.session.flush()
+                    if isinstance(record, ChartRepository):
+                        for chart in charts:
+                            await self.session.delete(chart)
+                        await self.session.flush()
+                await self.session.delete(record)
         except IntegrityError as exc:
             raise DefinitionError(409) from exc
 

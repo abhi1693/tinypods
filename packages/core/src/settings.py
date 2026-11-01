@@ -34,6 +34,19 @@ class IdentityProviderSettings(BaseModel):
     icon_url: HttpUrl | None = None
 
 
+class RepositoryCredentials(BaseModel):
+    """Operator-supplied account credentials, outside database/API representations.
+
+    token_host explicitly trusts a different OCI token-service host; a registry
+    challenge cannot otherwise redirect account credentials to another service.
+    """
+
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    username: SecretStr = Field(min_length=1, max_length=255)
+    password: SecretStr = Field(min_length=1, max_length=8192)
+    token_host: str | None = Field(default=None, max_length=253)
+
+
 class Settings(BaseSettings):
     """Validate process configuration loaded from TINYPODS_ environment variables.
 
@@ -78,6 +91,13 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = Field(default=300, ge=1, le=3600)
     cache_metadata_ttl_seconds: int = Field(default=600, ge=1, le=3600)
     cache_max_bytes: int = Field(default=1_000_000, ge=1024, le=5_000_000)
+    repository_credentials: dict[str, RepositoryCredentials] = Field(
+        default_factory=dict, repr=False
+    )
+    repository_allowed_hosts: tuple[str, ...] = Field(default=(), max_length=256)
+    repository_max_bytes: int = Field(default=8_000_000, ge=1024, le=64_000_000)
+    repository_max_items: int = Field(default=10_000, ge=1, le=100_000)
+    repository_timeout_seconds: float = Field(default=60, gt=0, le=300)
     auth_local_label: str = Field(default="Username and password", min_length=1, max_length=80)
     auth_local_icon_url: HttpUrl | None = None
     zitadel_label: str = Field(default="Zitadel", min_length=1, max_length=80)

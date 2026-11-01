@@ -77,3 +77,7 @@ for these authenticated endpoints, so no cache can bypass their access checks.
 
 No release publication, cloning workflow, chart downloads/execution, runtime
 configuration generation, secret storage or billing enforcement is included.
+
+Repository synchronization uses authenticated POST detail actions through the same
+resource router. Source/chart CRUD and version browsing follow these conventions;
+see [chart repositories](chart-repositories.md) for persistence and deletion rules.

@@ -6,6 +6,7 @@ from uuid import uuid4
 import psycopg
 import pytest
 from alembic import command
+from chart_fixtures import chart_version
 from conftest import PostgresEndpoints
 from pydantic import SecretStr, ValidationError
 from sqlalchemy import create_engine, text
@@ -98,14 +99,10 @@ def test_application_migration_constraints_and_audit(postgres_endpoints: Postgre
             category = Category(name="Finance", slug="finance", icon="finance.svg")
             session.add_all([app, other, category])
             session.commit()
-            app_id, other_id, category_id = app.id, other.id, category.id
+            app_id, other_id, category_id = (app.id, other.id, category.id)
             session.add(ApplicationCategory(application_id=app_id, category_id=category_id))
             release = Release(
                 application_id=app_id,
-                chart_version="1.0.0",
-                source_location="https://charts.example.test",
-                chart_name="actual",
-                digest=DIGEST,
                 configuration_fields=[
                     {"label": "Replicas", "type": "number", "path": "server.replicas", "value": 2},
                     {
@@ -117,14 +114,24 @@ def test_application_migration_constraints_and_audit(postgres_endpoints: Postgre
                         "sensitive": True,
                     },
                 ],
+                chart_version_id=chart_version(
+                    session,
+                    version="1.0.0",
+                    source_location="https://charts.example.test",
+                    chart_name="actual",
+                    digest=DIGEST,
+                ),
             )
             second = Release(
                 application_id=other_id,
-                chart_version="1.0.0",
-                source_type=SourceType.OCI_REGISTRY,
-                source_location="oci://registry.example.test/charts",
-                chart_name="umami",
-                digest=DIGEST,
+                chart_version_id=chart_version(
+                    session,
+                    version="1.0.0",
+                    source_type=SourceType.OCI_REGISTRY,
+                    source_location="oci://registry.example.test/charts",
+                    chart_name="umami",
+                    digest=DIGEST,
+                ),
             )
             session.add_all([release, second])
             session.commit()
@@ -145,8 +152,6 @@ def test_application_migration_constraints_and_audit(postgres_endpoints: Postgre
             ).one()
             assert event.related_object_id == str(app_id)
             assert "configuration_fields" not in event.postchange_data
-            # Replacing definitions persists validation and produces an audit event
-            # without copying arbitrary configuration literals into history.
             release.configuration_fields = [
                 {"label": "Mode", "type": "choice", "path": "mode", "choices": ["a", "b"]}
             ]
@@ -156,10 +161,11 @@ def test_application_migration_constraints_and_audit(postgres_endpoints: Postgre
             ).all()
             assert len(events) == 2
             assert all("configuration_fields" not in event.postchange_data for event in events)
-            release.chart_name = "rolled-back"
+            pinned = release.chart_version_id
+            release.chart_version_id = second.chart_version_id
             session.flush()
             session.rollback()
-            assert session.get(Release, release_id).chart_name == "actual"
+            assert session.get(Release, release_id).chart_version_id == pinned
             assert (
                 len(
                     session.exec(
@@ -198,13 +204,14 @@ def test_application_migration_constraints_and_audit(postgres_endpoints: Postgre
                 {"app": app_id, "category": uuid4()},
             ),
             (
-                "UPDATE releases SET application_id=:app WHERE application_id=:other",
-                {"app": app_id, "other": other_id},
+                "UPDATE releases SET application_id=:app, chart_version_id=:version "
+                "WHERE application_id=:other",
+                {"app": app_id, "other": other_id, "version": pinned},
             ),
             ("UPDATE releases SET application_id=:missing", {"missing": uuid4()}),
-            ("UPDATE releases SET source_type='git'", {}),
-            ("UPDATE releases SET digest='latest'", {}),
-            ("UPDATE releases SET chart_version=' '", {}),
+            ("UPDATE chart_repositories SET source_type='git'", {}),
+            ("UPDATE chart_versions SET digest='latest'", {}),
+            ("UPDATE chart_versions SET version=' '", {}),
             ("UPDATE releases SET configuration_fields='{}'::jsonb", {}),
             ("DELETE FROM applications WHERE id=:id", {"id": app_id}),
             ("DELETE FROM categories WHERE id=:id", {"id": category_id}),

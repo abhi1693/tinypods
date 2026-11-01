@@ -784,16 +784,26 @@ async def test_real_read_timeout_is_bounded_and_does_not_fail_http(
     async with client_for(cache_settings) as (app, client):
         cache: ResponseCache = app.state.response_cache
         await cache.redis.ping()
-        await cache.redis.execute_command("CLIENT", "PAUSE", 350, "ALL")
+        # Keep the real fault active longer than the HTTP deadline. A short pause
+        # can expire before a loaded CI runner schedules the request's first read.
         started = time.monotonic()
-        task = asyncio.create_task(client.get("/api/v1/info"))
-        await asyncio.sleep(0.05)
-        assert not task.done()
-        response = await task
-        assert response.status_code == 200
-        assert response.headers["x-cache-bypass-reason"] == "cache_unavailable"
-        assert time.monotonic() - started < 2
-        await asyncio.sleep(0.4)
+        await cache.redis.execute_command("CLIENT", "PAUSE", 5000, "ALL")
+        resumes_at = time.monotonic() + 5.1
+        try:
+            # Reproduce a scheduling delay longer than the old 350 ms fault window.
+            await asyncio.sleep(0.4)
+            task = asyncio.create_task(client.get("/api/v1/info"))
+            await asyncio.sleep(0)
+            assert not task.done()
+            response = await asyncio.wait_for(task, timeout=2)
+            assert response.status_code == 200
+            assert response.headers["x-cache-bypass-reason"] == "cache_unavailable"
+            assert time.monotonic() - started < 2
+        finally:
+            # Valkey also queues UNPAUSE while an ALL pause is active. Wait for
+            # expiry even on assertion failure so later tests inherit a live server.
+            await asyncio.sleep(max(0, resumes_at - time.monotonic()))
+        assert await cache.redis.ping()
 
 
 async def test_ignored_query_variations_do_not_allocate_cache_entries(
