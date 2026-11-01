@@ -21,6 +21,7 @@ from tinypods_api.http.operations import build_operation_id
 from tinypods_api.http.versioning import API_V1_PREFIX
 from tinypods_api.rate_limit import GlobalRateLimitMiddleware, RateLimitedRoute
 from tinypods_api.repositories import router as repositories_router
+from tinypods_api.secrets import router as secrets_router
 from tinypods_core import __version__
 from tinypods_core.auth import AuthService, Credentials, LocalPasswordProvider, SessionService
 from tinypods_core.auth.federation import BrowserLogin
@@ -178,6 +179,7 @@ def create_app(
     app.include_router(applications_router, prefix=API_V1_PREFIX)
     app.include_router(repositories_router, prefix=API_V1_PREFIX)
     app.include_router(clusters_router, prefix=API_V1_PREFIX)
+    app.include_router(secrets_router, prefix=API_V1_PREFIX)
 
     @app.get(
         API_V1_PREFIX + "/info",

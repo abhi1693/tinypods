@@ -1,5 +1,7 @@
 """Validated process configuration; connection adapters are added by their own features."""
 
+import base64
+import binascii
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -65,6 +67,44 @@ class Settings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(env_prefix="TINYPODS_", hide_input_in_errors=True)
+
+    secret_keys: dict[str, SecretStr] = Field(default_factory=dict)
+    secret_active_key_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,64}$")
+
+    @field_validator("secret_active_key_id", mode="before")
+    @classmethod
+    def empty_secret_key_id(cls, value: object) -> object:
+        """Allow an unset Compose variable to keep secret writes disabled."""
+        return None if value == "" else value
+
+    @model_validator(mode="after")
+    def validate_secret_keys(self) -> "Settings":
+        """Reject incomplete keyrings before a process accepts confidential writes."""
+        if bool(self.secret_keys) != (self.secret_active_key_id is not None):
+            raise ValueError("Secret keys and active key identifier must be configured together")
+        if (
+            self.secret_active_key_id is not None
+            and self.secret_active_key_id not in self.secret_keys
+        ):
+            raise ValueError("Active secret key is missing")
+        for name, value in self.secret_keys.items():
+            if (
+                not name
+                or len(name) > 64
+                or any(
+                    character
+                    not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+                    for character in name
+                )
+            ):
+                raise ValueError("Invalid secret key identifier")
+            try:
+                decoded = base64.b64decode(value.get_secret_value(), altchars=b"-_", validate=True)
+            except (ValueError, binascii.Error):
+                raise ValueError("Secret keys must encode 32 bytes") from None
+            if len(decoded) != 32:
+                raise ValueError("Secret keys must encode 32 bytes")
+        return self
 
     environment: Literal["production", "development"] = "production"
     service_name: str = Field(default="TinyPods", min_length=1, max_length=80)
