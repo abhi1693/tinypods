@@ -4,6 +4,7 @@ import asyncio
 from uuid import uuid4
 
 import pytest
+from chart_fixtures import seed_source
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from test_auth import PASSWORD, credentials
@@ -66,13 +67,16 @@ def test_application_resources_and_memberships(auth_settings: Settings) -> None:
         app_id = application["id"]
         release_body = {
             "application_id": app_id,
-            "chart_version": "1.0",
-            "source_location": "https://charts.example.test",
-            "chart_name": "example",
-            "digest": DIGEST,
             "configuration_fields": [
                 {"label": "Replicas", "type": "number", "path": "replicas", "value": 2}
             ],
+            "chart_version_id": seed_source(
+                auth_settings,
+                version="1.0",
+                source_location="https://charts.example.test",
+                chart_name="example",
+                digest=DIGEST,
+            ),
         }
         release = post("/releases", release_body)
         for resource, data in (
@@ -142,7 +146,10 @@ def test_application_resources_and_memberships(auth_settings: Settings) -> None:
             ).status_code
             == 200
         )
-        assert client.get(BASE + "/releases/" + release["id"]).json()["digest"] == DIGEST
+        assert (
+            client.get(BASE + "/releases/" + release["id"]).json()["chart_version_id"]
+            == release_body["chart_version_id"]
+        )
         assert (
             client.patch(
                 BASE + "/applications/" + app_id, json={"name": None}, headers=headers
@@ -171,7 +178,7 @@ def test_application_resources_and_memberships(auth_settings: Settings) -> None:
         for resource, identity, body in (
             ("categories", category["id"], {"name": "Renamed", "slug": "renamed"}),
             ("applications", app_id, {"name": "Replaced", "slug": "replaced"}),
-            ("releases", release["id"], {**release_body, "chart_name": "patched"}),
+            ("releases", release["id"], {**release_body}),
         ):
             assert (
                 client.put(
@@ -188,7 +195,9 @@ def test_application_resources_and_memberships(auth_settings: Settings) -> None:
         assert client.get(BASE + "/applications/" + app_id).json()["description"] == ""
         assert (
             client.patch(
-                BASE + "/releases/" + str(uuid4()), json={"chart_name": "missing"}, headers=headers
+                BASE + "/releases/" + str(uuid4()),
+                json={"configuration_fields": []},
+                headers=headers,
             ).status_code
             == 404
         )
@@ -293,7 +302,7 @@ def test_non_owner_cannot_mutate_shared_definitions(auth_settings: Settings) -> 
                 user = User(username="reader")
                 session.add(user)
             login = await SessionService(database).issue(user.id)
-            return login.token, login.csrf_token
+            return (login.token, login.csrf_token)
         finally:
             await database.close()
 
@@ -371,11 +380,14 @@ def test_definition_services_are_atomic_without_http(auth_settings: Settings) ->
                     owner,
                     {
                         "application_id": application.id,
-                        "chart_version": "1",
-                        "source_location": "oci://example.test/charts",
-                        "source_type": "oci_registry",
-                        "chart_name": "direct",
-                        "digest": DIGEST,
+                        "chart_version_id": seed_source(
+                            auth_settings,
+                            version="1",
+                            source_location="oci://example.test/charts",
+                            source_type="oci_registry",
+                            chart_name="direct",
+                            digest=DIGEST,
+                        ),
                     },
                 )
             for model, identity, handler, query in (
@@ -414,7 +426,7 @@ def test_definition_services_are_atomic_without_http(auth_settings: Settings) ->
                     await DefinitionService(Application, session, authorization).delete(
                         owner, application.id
                     )
-                assert protected.value.status == 409 and not session.in_transaction()
+                assert protected.value.status == 409 and (not session.in_transaction())
             async with database.session() as session:
                 pair = await MembershipService(session, authorization).add(
                     owner, application.id, category.id
@@ -458,7 +470,7 @@ def test_definition_services_are_atomic_without_http(auth_settings: Settings) ->
                         await MembershipService(session, authorization).add(
                             owner, app_id, category_id
                         )
-                    assert absent.value.status == 404 and not session.in_transaction()
+                    assert absent.value.status == 404 and (not session.in_transaction())
             for model, identity in (
                 (Release, release.id),
                 (Application, application.id),

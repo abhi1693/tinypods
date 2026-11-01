@@ -198,7 +198,9 @@ async def list_releases(
     """List accessible releases using bounded, explicitly declared query fields."""
     filters = {
         key: value
-        for key, value in query.model_dump(include={"application_id", "source_type"}).items()
+        for key, value in query.model_dump(
+            include={"application_id", "source_type", "chart_version_id"}
+        ).items()
         if value is not None
     }
     items, total = await service.list(

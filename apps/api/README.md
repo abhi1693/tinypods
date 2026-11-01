@@ -136,3 +136,9 @@ remain useful during saturation. Endpoint and auth limits cannot be disabled by
 setting the global budget to zero. Pools close with the API lifespan even when
 another cleanup operation fails. The cache retains its independent fail-open
 semantics for eligible public data; rate limiting fails closed.
+
+## External repositories
+
+See [repository management and sync](../../docs/chart-repositories.md) for metadata
+resources, the admin sync action, CLI command, normalized release references and
+operator network/credential configuration.

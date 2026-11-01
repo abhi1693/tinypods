@@ -61,6 +61,7 @@ class ResourceRouter(APIRouter):
         self.resource = resource
         self.public_reads = public_reads
         self._actions: set[ResourceAction] = set()
+        self._detail_actions: set[str] = set()
         super().__init__(
             prefix=prefix, tags=[domain], route_class=RateLimitedRoute, responses=ERROR_RESPONSES
         )
@@ -117,6 +118,49 @@ class ResourceRouter(APIRouter):
                 openapi_extra=extra,
             )
             self._actions.add(action)
+            return endpoint
+
+        return register
+
+    def detail_action(
+        self,
+        action: str,
+        *,
+        response_model: type[BaseModel],
+        rate: EndpointRatePolicy | None = None,
+    ) -> Callable[[Endpoint], Endpoint]:
+        """Register an authenticated, CSRF-protected POST action for one resource.
+
+        Args:
+            action: Stable lowerCamelCase action name and final URL component.
+            response_model: Explicit public result DTO.
+            rate: Optional budget replacing the five-per-minute external-work default.
+
+        Returns:
+            Signature-preserving handler registration decorator.
+
+        Raises:
+            ValueError: Action naming conflicts with an existing operation.
+        """
+        operation = build_operation_id(self.domain, self.resource, action)
+        if action in self._detail_actions or action in ResourceAction:
+            raise ValueError("Resource action is already registered")
+        policy = rate or EndpointRatePolicy(name=operation, limit=5)
+        extra = {**policy.openapi_extra(), **SESSION_CSRF_METADATA}
+
+        def register(endpoint: Endpoint) -> Endpoint:
+            """Register an explicit operation with the resource's standard security policies."""
+            self.add_api_route(
+                "/{id}/" + action,
+                endpoint,
+                methods=["POST"],
+                status_code=200,
+                operation_id=operation,
+                response_model=response_model,
+                dependencies=[Depends(get_principal)],
+                openapi_extra=extra,
+            )
+            self._detail_actions.add(action)
             return endpoint
 
         return register

@@ -14,10 +14,11 @@ from tinypods_api.http.contracts import ErrorResponse, ValidationIssue
 from tinypods_core.applications.service import DefinitionError
 from tinypods_core.auth import AuthError
 from tinypods_core.rate_limit import RateLimitUnavailable
+from tinypods_core.repositories.sources import SourceError
 
 ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     code: {"model": ErrorResponse, "description": HTTPStatus(code).phrase}
-    for code in (400, 401, 403, 404, 405, 409, 422, 429, 500, 503)
+    for code in (400, 401, 403, 404, 405, 409, 422, 429, 500, 502, 503, 504)
 }
 
 
@@ -128,6 +129,12 @@ async def definition_error(request: Request, exc: Exception) -> JSONResponse:
     return await http_error(request, HTTPException(exc.status))
 
 
+async def source_error(request: Request, exc: Exception) -> JSONResponse:
+    """Return fixed repository failure codes without upstream URLs, bodies or tokens."""
+    assert isinstance(exc, SourceError)
+    return error_response(request, exc.status, exc.code, "External repository request failed")
+
+
 def install_error_handlers(app: FastAPI) -> None:
     """Register deliberate HTTP, validation and unexpected-error translations.
 
@@ -139,5 +146,6 @@ def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(Exception, unexpected_error)
     app.add_exception_handler(AuthError, authentication_error)
     app.add_exception_handler(DefinitionError, definition_error)
+    app.add_exception_handler(SourceError, source_error)
     app.add_exception_handler(RateLimitUnavailable, storage_unavailable)
     app.add_exception_handler(SQLAlchemyError, storage_unavailable)

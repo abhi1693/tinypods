@@ -1,13 +1,15 @@
 # Application definitions
 
-The collection contains four tables: `applications`, `categories`,
-`application_categories`, and `releases`.
+Application metadata uses `applications`, `categories`, `application_categories`
+and `releases`. External source metadata uses the linked repository/chart/version
+records described in [chart repositories](chart-repositories.md).
 Application and category slugs are unique. Membership is a unique pair with
-restrictive foreign keys. Chart versions are unique within an application.
+restrictive foreign keys. Exact chart-version selections are unique within an application.
 Application metadata can change independently of release definitions.
 
-Releases identify a Helm repository or OCI chart by source location, chart name,
-chart version and SHA-256 digest. These are stored references: this module does
+Releases reference an exact synchronized chart version through a foreign key.
+That version links to its chart and configured external repository; source/version
+strings are not duplicated on each application release. These are stored references: this module does
 not fetch, verify or run charts. Status has three choices: experimental, stable and premium. It is a single
 classification, not billing
 or access enforcement. Releases remain editable definitions; publication,

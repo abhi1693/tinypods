@@ -7,7 +7,6 @@ from sqlmodel import Field
 from tinypods_core.applications.definitions import (
     ApplicationStatus,
     ConfigurationFields,
-    SourceType,
 )
 from tinypods_core.audit import AuditTrailMixin
 from tinypods_core.audit import capture as _capture  # noqa: F401
@@ -72,24 +71,14 @@ class Release(AuditTrailMixin, table=True):
 
     __tablename__ = "releases"
     __table_args__ = (
-        UniqueConstraint("application_id", "chart_version"),
-        CheckConstraint("source_type IN ('helm_repository', 'oci_registry')", name="source_type"),
-        CheckConstraint("digest ~ '^sha256:[0-9a-f]{64}$'", name="digest"),
+        UniqueConstraint("application_id", "chart_version_id"),
         CheckConstraint(
             "jsonb_typeof(configuration_fields) = 'array'", name="configuration_fields"
-        ),
-        *(
-            CheckConstraint(f"length(trim({name})) > 0", name=name)
-            for name in ("chart_version", "source_location", "chart_name")
         ),
     )
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     application_id: UUID = Field(foreign_key="applications.id", ondelete="RESTRICT", index=True)
-    chart_version: str = Field(max_length=128)
-    source_type: str = SourceType.HELM_REPOSITORY
-    source_location: str
-    chart_name: str
-    digest: str
+    chart_version_id: UUID = Field(foreign_key="chart_versions.id", ondelete="RESTRICT", index=True)
     configuration_fields: list[JsonRecord] = Field(
         default_factory=list, sa_column=Column(ConfigurationFields, nullable=False)
     )
@@ -103,11 +92,7 @@ for _model, _fields, _related in (
         (
             "id",
             "application_id",
-            "chart_version",
-            "source_type",
-            "source_location",
-            "chart_name",
-            "digest",
+            "chart_version_id",
         ),
         ("application_id", Application),
     ),

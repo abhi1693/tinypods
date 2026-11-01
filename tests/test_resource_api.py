@@ -253,3 +253,29 @@ def test_only_business_routes_are_versioned() -> None:
         )
         assert client.get("/info").status_code == 404
         assert client.get("/auth/providers").status_code == 404
+
+
+def test_detail_actions_keep_security_and_reject_collisions() -> None:
+    """Custom operations retain authentication/CSRF even on a public-read resource."""
+    router = ResourceRouter(domain="test", resource="detail", prefix="/details", public_reads=True)
+
+    @router.detail_action(
+        "sync", response_model=ItemRead, rate=EndpointRatePolicy(name="test-detail", limit=2)
+    )
+    async def synchronize(id: UUID) -> ItemRead:
+        """Return an explicit typed result for the protected detail operation."""
+        return ItemRead(id=id, name="synced")
+
+    for action in ("sync", "create"):
+        with pytest.raises(ValueError, match="already registered"):
+            router.detail_action(action, response_model=ItemRead)
+    app = create_app(Settings(environment="development"))
+    app.state.rate_limiter = FakeLimiter()
+    app.state.sessions = FakeSessions()
+    app.include_router(router, prefix=API_V1_PREFIX)
+    with TestClient(app) as client:
+        path = "/api/v1/details/" + str(uuid4()) + "/sync"
+        assert client.post(path).status_code == 401
+        client.cookies.set("tinypods-session", "session")
+        assert client.post(path).status_code == 403
+        assert client.post(path, headers={"x-csrf-token": "csrf"}).json()["name"] == "synced"
