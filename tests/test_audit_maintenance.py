@@ -119,7 +119,7 @@ def test_cleanup_preserves_active_and_referenced_types(audit_settings: Settings)
         assert dry["deleted"] == 0 and len(dry["stale"]) == 3
         assert dry["retained"] == 2
         with engine.connect() as connection:
-            assert connection.scalar(select(func.count()).select_from(types)) == 11
+            assert connection.scalar(select(func.count()).select_from(types)) == len(registry) + 3
         applied = invoke(audit_settings, "cleanup-types", "--apply")
         assert applied["deleted"] == 1 and applied["retained"] == 2
         again = invoke(audit_settings, "cleanup-types", "--apply")
@@ -220,10 +220,9 @@ def test_prune_age_and_range_boundaries(audit_settings: Settings) -> None:
             assert list(
                 connection.execute(select(inspect(AuditRecord).local_table.c.id)).scalars()
             ) == [ids[-1]]
-            assert (
-                connection.scalar(select(func.count()).select_from(inspect(ObjectType).local_table))
-                == 8
-            )
+            assert connection.scalar(
+                select(func.count()).select_from(inspect(ObjectType).local_table)
+            ) == len(registry)
         assert invoke(audit_settings, "prune", "--older-than-days", "1")["apply"] is False
     finally:
         engine.dispose()

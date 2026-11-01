@@ -24,6 +24,7 @@ PUBLIC_PACKAGES = (
     "tinypods_core.rate_limit",
     "tinypods_core.db",
     "tinypods_core.audit",
+    "tinypods_core.applications",
     "tinypods_core.logging",
     "tinypods_api",
     "tinypods_api.cache",
