@@ -159,7 +159,15 @@ def test_repository_api_cli_and_cascade_rules(
             await database.close()
 
     asyncio.run(bootstrap())
-    observations = [Observation(chart="example", version="1.0.0", digest=DIGEST)]
+    observations = [
+        Observation(
+            chart="example",
+            version="1.0.0",
+            digest=DIGEST,
+            description="Published upstream description",
+            icon="https://charts.example.test/icon.svg",
+        )
+    ]
     failed = False
     throttled = False
 
@@ -314,6 +322,41 @@ def test_repository_api_cli_and_cascade_rules(
             headers=headers,
         )
         assert release.status_code == 201, release.text
+        populated = client.get(BASE + "/applications/" + app["id"]).json()
+        assert populated["description"] == "Published upstream description"
+        assert populated["icon"] == "https://charts.example.test/icon.svg"
+        assert version["description"] == populated["description"]
+        assert version["icon"] == populated["icon"]
+        assert (
+            client.patch(
+                BASE + "/applications/" + app["id"],
+                json={
+                    "description": "Operator description",
+                    "icon": "https://custom.example.test/icon.svg",
+                },
+                headers=headers,
+            ).status_code
+            == 200
+        )
+        assert (
+            client.patch(
+                BASE + "/releases/" + release.json()["id"],
+                json={"configuration_fields": []},
+                headers=headers,
+            ).status_code
+            == 200
+        )
+        preserved = client.get(BASE + "/applications/" + app["id"]).json()
+        assert preserved["description"] == "Operator description"
+        assert preserved["icon"] == "https://custom.example.test/icon.svg"
+        assert (
+            client.post(
+                BASE + "/releases",
+                json={"application_id": app["id"], "chart_version_id": str(uuid4())},
+                headers=headers,
+            ).status_code
+            == 409
+        )
         # A changed upstream tag is a distinct observation; an existing pin is unchanged.
         observations[0] = Observation(chart="example", version="1.0.0", digest="sha256:" + "b" * 64)
         assert client.post(sync, headers=headers).json()["versions"] == 1
@@ -732,3 +775,66 @@ def test_version_selection_semantics() -> None:
     with pytest.raises(SourceError) as caught:
         select_versions((Observation(chart="example", version="invalid", digest=DIGEST),), {}, 3)
     assert caught.value.code == "invalid_source_metadata"
+
+
+def test_application_upstream_metadata_defaults(auth_settings: Settings) -> None:
+    """Seed from a pinned version, preserve explicit metadata, and roll back invalid links."""
+    from tinypods_cli.commands.repositories import OperatorValidator
+
+    async def exercise() -> None:
+        """Exercise the service transaction directly, including retained presentation values."""
+        database = Database(auth_settings)
+        principal = Principal(UUID(int=0), "operator", True, "local", credential_kind="operator")
+        authorization = AuthorizationService(OperatorValidator())
+        try:
+            async with database.transaction() as session:
+                repository = ChartRepository(name="Metadata source", url="https://example.com")
+                chart = Chart(repository_id=repository.id, name="example")
+                version = ChartVersion(
+                    chart_id=chart.id,
+                    version="1.0.0",
+                    digest=DIGEST,
+                    description="Upstream description",
+                    icon="https://example.com/upstream.svg",
+                )
+                blank = Application(name="Blank", slug="blank")
+                manual = Application(
+                    name="Manual",
+                    slug="manual",
+                    description="Custom description",
+                    icon="https://example.com/custom.svg",
+                )
+                session.add(repository)
+                await session.flush()
+                session.add(chart)
+                session.add(blank)
+                session.add(manual)
+                await session.flush()
+                session.add(version)
+            for application in (blank, manual):
+                async with database.session() as session:
+                    await DefinitionService(Release, session, authorization).save(
+                        principal,
+                        {"application_id": application.id, "chart_version_id": version.id},
+                    )
+            async with database.session() as session:
+                populated = await session.get(Application, blank.id)
+                preserved = await session.get(Application, manual.id)
+                assert (populated.description, populated.icon) == (
+                    version.description,
+                    version.icon,
+                )
+                assert (preserved.description, preserved.icon) == (manual.description, manual.icon)
+            for application_id, version_id in ((blank.id, uuid4()), (uuid4(), version.id)):
+                async with database.session() as session:
+                    with pytest.raises(DefinitionError) as rejected:
+                        await DefinitionService(Release, session, authorization).save(
+                            principal,
+                            {"application_id": application_id, "chart_version_id": version_id},
+                        )
+                    assert rejected.value.status == 409
+                    assert not session.in_transaction()
+        finally:
+            await database.close()
+
+    asyncio.run(exercise())

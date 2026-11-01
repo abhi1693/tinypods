@@ -1692,9 +1692,24 @@
             "title": "Created",
             "type": "string"
           },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
           "digest": {
             "title": "Digest",
             "type": "string"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
           },
           "id": {
             "format": "uuid",
@@ -1722,6 +1737,8 @@
           "chart_id",
           "version",
           "digest",
+          "description",
+          "icon",
           "is_latest",
           "available"
         ],

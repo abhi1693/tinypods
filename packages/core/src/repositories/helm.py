@@ -15,6 +15,8 @@ class IndexVersion(BaseModel):
     name: str
     version: str = Field(min_length=1, max_length=128)
     digest: str
+    description: str = Field(default="", max_length=10000)
+    icon: str | None = Field(default=None, max_length=2048)
 
     @field_validator("digest")
     @classmethod
@@ -52,7 +54,13 @@ def parse_index(body: bytes, maximum: int) -> list[Observation]:
                 if version.name != name or version.version.lower() == "latest":
                     raise SourceError(422, "invalid_source_metadata")
                 result.append(
-                    Observation(chart=name, version=version.version, digest=version.digest)
+                    Observation(
+                        chart=name,
+                        version=version.version,
+                        digest=version.digest,
+                        description=version.description,
+                        icon=version.icon,
+                    )
                 )
                 if len(result) > maximum:
                     raise SourceError(422, "source_item_limit")

@@ -42,6 +42,8 @@ class ChartConfig(BaseModel):
     model_config = ConfigDict(strict=True)
     name: str
     version: str = Field(min_length=1, max_length=128)
+    description: str = Field(default="", max_length=10000)
+    icon: str | None = Field(default=None, max_length=2048)
 
 
 class Names(BaseModel):
@@ -216,7 +218,13 @@ class OCIRepositoryClient:
                 ):
                     raise SourceError(422, "invalid_source_metadata")
                 observations.append(
-                    Observation(chart=chart, version=config.version, digest=layers[0].digest)
+                    Observation(
+                        chart=chart,
+                        version=config.version,
+                        digest=layers[0].digest,
+                        description=config.description,
+                        icon=config.icon,
+                    )
                 )
                 if len(observations) > self.http.settings.repository_max_items:
                     raise SourceError(422, "source_item_limit")

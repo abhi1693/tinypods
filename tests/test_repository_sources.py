@@ -23,7 +23,7 @@ DIGEST = "sha256:" + "a" * 64
 INDEX = (
     "entries:\n  example:\n    - name: example\n      version: 1.0.0\n      digest: "
     + "a" * 64
-    + "\n"
+    + "\n      description: Upstream chart description\n      icon: https://charts.example.test/icon.svg\n"
 ).encode()
 
 
@@ -59,6 +59,8 @@ def test_helm_index_and_pinned_transport() -> None:
     )
     assert result.discovery_supported and len(result.versions) == 1
     assert result.versions[0].digest == DIGEST
+    assert result.versions[0].description == "Upstream chart description"
+    assert result.versions[0].icon == "https://charts.example.test/icon.svg"
     assert len(seen) == 1
 
 
@@ -532,7 +534,16 @@ def test_oci_pagination_limits_and_malformed_metadata() -> None:
         ({"name": "other", "version": "1.0.0"}, "1.0.0", False),
         ({"name": "example", "version": "2.0.0"}, "1.0.0", False),
         ({"name": "example", "version": "latest"}, "latest", False),
-        ({"name": "example", "version": "1.0.0+build"}, "1.0.0_build", True),
+        (
+            {
+                "name": "example",
+                "version": "1.0.0+build",
+                "description": "OCI upstream description",
+                "icon": "https://charts.example.test/oci.svg",
+            },
+            "1.0.0_build",
+            True,
+        ),
     ],
 )
 def test_oci_verified_config_identity(config: dict[str, str], tag: str, valid: bool) -> None:
@@ -558,6 +569,11 @@ def test_oci_verified_config_identity(config: dict[str, str], tag: str, valid: b
         return oci_handler(request)
 
     if valid:
+        metadata = asyncio.run(
+            client(handler).fetch("oci_registry", "oci://registry.example.test/team")
+        ).versions[0]
+        assert metadata.description == "OCI upstream description"
+        assert metadata.icon == "https://charts.example.test/oci.svg"
         assert (
             asyncio.run(client(handler).fetch("oci_registry", "oci://registry.example.test/team"))
             .versions[0]

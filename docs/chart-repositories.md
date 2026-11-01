@@ -151,3 +151,13 @@ other prerelease identifiers are skipped before applying the initial N-version
 limit. Build metadata (for example `1.2.3+build.1`) remains supported. Previously
 pinned prerelease records are retained but become unavailable and cannot be
 latest after sync; they do not determine the stable import window.
+
+
+### Application presentation metadata
+
+Sync retains each version's upstream description and icon URL from the Helm
+index or verified OCI chart config. Version API responses expose both fields.
+When a release is linked to an application, its selected chart version fills
+an empty application description and missing icon. Explicit operator edits are
+preserved on later release writes. Sync never invents descriptions or downloads
+icon files, and fetching metadata does not create applications automatically.

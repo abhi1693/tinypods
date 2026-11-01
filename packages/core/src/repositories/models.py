@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     Index,
+    String,
     UniqueConstraint,
     text,
 )
@@ -79,6 +80,10 @@ class ChartVersion(AuditTrailMixin, table=True):
     chart_id: UUID = Field(foreign_key="charts.id", ondelete="CASCADE", index=True)
     version: str = Field(max_length=128)
     digest: str
+    description: str = Field(
+        default="", sa_column=Column(String, nullable=False, server_default="")
+    )
+    icon: str | None = Field(default=None, max_length=2048)
     available: bool = False
     is_latest: bool = Field(
         default=False, sa_column=Column(Boolean, nullable=False, server_default="false")
@@ -90,7 +95,7 @@ for _model, _fields, _related in (
     (Chart, ("id", "repository_id", "name", "available"), ("repository_id", ChartRepository)),
     (
         ChartVersion,
-        ("id", "chart_id", "version", "digest", "available", "is_latest"),
+        ("id", "chart_id", "version", "digest", "description", "icon", "available", "is_latest"),
         ("chart_id", Chart),
     ),
 ):

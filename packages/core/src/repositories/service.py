@@ -172,6 +172,8 @@ class RepositorySync:
                     )
                     session.add(version)
                     by_key[key] = version
+                version.description = observation.description
+                version.icon = observation.icon
                 version.available = True
                 observed.add(key)
             # Old flags were flushed above before choosing replacements, keeping

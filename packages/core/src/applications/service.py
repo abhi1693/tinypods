@@ -188,6 +188,24 @@ class DefinitionService[Record: AuditTrailMixin]:
                     values = {**values, "url": normalized}
                 for name, value in values.items():
                     setattr(record, name, value)
+                if isinstance(record, Release):
+                    # A release chooses the source version for the user-facing app.
+                    # Fill missing presentation metadata without overwriting an
+                    # operator's explicit description or icon on later releases.
+                    application = (
+                        await self.session.exec(
+                            select(Application)
+                            .where(Application.id == record.application_id)
+                            .with_for_update()
+                        )
+                    ).one_or_none()
+                    source = await self.session.get(ChartVersion, record.chart_version_id)
+                    if application is not None and source is not None:
+                        if not application.description:
+                            application.description = source.description
+                        if application.icon is None:
+                            application.icon = source.icon
+                        self.session.add(application)
                 self.session.add(record)
                 await self.session.flush()
             return record

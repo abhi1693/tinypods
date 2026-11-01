@@ -57,6 +57,8 @@ class Observation(BaseModel):
     chart: str = Field(pattern=CHART_NAME, max_length=255)
     version: str = Field(min_length=1, max_length=128)
     digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    description: str = Field(default="", max_length=10000)
+    icon: str | None = Field(default=None, max_length=2048)
 
 
 @dataclass(frozen=True)

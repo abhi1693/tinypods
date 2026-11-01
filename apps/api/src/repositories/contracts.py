@@ -91,6 +91,8 @@ class VersionRead(DefinitionRead):
     chart_id: UUID
     version: str
     digest: str
+    description: str
+    icon: str | None
     is_latest: bool
     available: bool
 

@@ -63,6 +63,8 @@ def upgrade():
         sa.Column("chart_id", sa.Uuid(), nullable=False),
         sa.Column("version", sqlmodel.sql.sqltypes.AutoString(length=128), nullable=False),
         sa.Column("digest", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("description", sa.String(), nullable=False, server_default=""),
+        sa.Column("icon", sqlmodel.sql.sqltypes.AutoString(length=2048), nullable=True),
         sa.Column("available", sa.Boolean(), nullable=False),
         sa.Column("is_latest", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.CheckConstraint(
