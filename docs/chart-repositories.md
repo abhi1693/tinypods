@@ -52,7 +52,7 @@ It does not impersonate a user or bypass HTTP authentication through an API rout
 The admin equivalent is `POST /api/v1/chart-repositories/{id}/sync`, using the
 shared detail-action authentication, CSRF and rate policy. Repository/chart CRUD
 and read-only chart-version browsing use the standard resource APIs. Reads
-require current credentials; writes/sync require installation-owner privileges.
+require current credentials; writes/sync require instance-owner privileges.
 Filter charts by repository_id and versions by chart_id; availability filters,
 search and bounded pagination are supported. Link a selected version through
 `chart_version_id` when creating/updating an application release. Legacy source

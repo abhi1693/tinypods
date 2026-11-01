@@ -97,7 +97,7 @@ CSRF on every method except GET/HEAD/OPTIONS. Resource services must call
 `Scope.APP`, `CLUSTER` or `SECRET`; catalog administration uses `CATALOG_ADMIN`.
 `SessionService.require_access` delegates to that same policy. Application definition services now invoke this boundary before writes and
 revalidate credentials before shared-definition reads. Future installed-app,
-cluster and secret services must enforce ownership before data access. Even an installation owner cannot cross another
+cluster and secret services must enforce ownership before data access. Even an instance owner cannot cross another
 owner's resource scope. Unknown scopes, absent owners and stale/forged principals
 fail closed. Policy uses an injected `PrincipalValidator` and opaque credential
 context, so non-browser authenticators can validate credentials without password/cookie assumptions.

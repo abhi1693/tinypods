@@ -1402,7 +1402,7 @@
         "type": "object"
       },
       "ProviderDescriptor": {
-        "description": "A sign-in method available for this installation.",
+        "description": "A sign-in method available for this instance.",
         "properties": {
           "icon_url": {
             "anyOf": [
@@ -2400,7 +2400,7 @@
         }
       },
       "post": {
-        "description": "Create an audited application; requires installation-owner privileges.",
+        "description": "Create an audited application; requires instance-owner privileges.",
         "operationId": "applicationsApplicationCreate",
         "parameters": [
           {
@@ -4065,7 +4065,7 @@
     },
     "/api/v1/auth/providers": {
       "get": {
-        "description": "Show the sign-in methods available for this installation.\n\nUse this list to display a local account form or an external sign-in button.",
+        "description": "Show the sign-in methods available for this instance.\n\nUse this list to display a local account form or an external sign-in button.",
         "operationId": "authProvidersList",
         "responses": {
           "200": {
@@ -4921,7 +4921,7 @@
             "description": "Open the returned link to sign in with Zitadel."
           },
           "400": {
-            "description": "Choose a page within this installation to return to after sign-in."
+            "description": "Choose a page within this instance to return to after sign-in."
           },
           "401": {
             "content": {
@@ -5395,7 +5395,7 @@
         }
       },
       "post": {
-        "description": "Create an audited category; requires installation-owner privileges.",
+        "description": "Create an audited category; requires instance-owner privileges.",
         "operationId": "applicationsCategoryCreate",
         "parameters": [
           {
@@ -6468,7 +6468,7 @@
         }
       },
       "post": {
-        "description": "Create an audited repository; requires installation-owner privileges.",
+        "description": "Create an audited repository; requires instance-owner privileges.",
         "operationId": "repositoriesRepositoryCreate",
         "parameters": [
           {
@@ -8135,7 +8135,7 @@
         }
       },
       "post": {
-        "description": "Create an audited chart; requires installation-owner privileges.",
+        "description": "Create an audited chart; requires instance-owner privileges.",
         "operationId": "repositoriesChartCreate",
         "parameters": [
           {
@@ -11530,7 +11530,7 @@
         }
       },
       "post": {
-        "description": "Create an audited release; requires installation-owner privileges.",
+        "description": "Create an audited release; requires instance-owner privileges.",
         "operationId": "applicationsReleaseCreate",
         "parameters": [
           {

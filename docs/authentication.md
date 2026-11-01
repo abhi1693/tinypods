@@ -22,10 +22,26 @@ trusted backend host with `tinypods auth bootstrap` (Compose: `docker compose ru
 --rm api tinypods auth bootstrap`). It prompts for an ASCII account name and a
 hidden, confirmed 15-128 character password. Names normalize to lowercase;
 passwords are not trimmed or normalized. Concurrent bootstraps serialize on the
-installation row, and later attempts cannot overwrite the owner. No default
+instance row, and later attempts cannot overwrite the owner. No default
 credentials, password arguments or bootstrap HTTP endpoint exist. Argon2id uses
 argon2-cffi's RFC 9106 low-memory profile; at most two hash jobs per process run
 outside the event loop. Account identity and optional local credentials are separate.
+
+## Operator access management
+
+From a trusted backend shell, run `tinypods auth owner USER_ID` to grant instance
+owner access, or `tinypods auth owner USER_ID --revoke` to revoke it. Verify the
+exact core user ID using the account's authenticated session or the stored
+issuer/subject mapping before granting access. This command works for local and
+Zitadel accounts; it does not create credentials or infer access from email/roles.
+The last owner cannot be revoked. Changes are audited and current sessions see
+the new rights on their next authorization check. No HTTP owner-management route
+is exposed. Internal installation table/field names remain compatible; the user-facing
+term is instance.
+
+For external-only instances, restrict initial sign-in through the configured
+Zitadel project/organization before opening the new service: the first admitted
+user becomes its owner. No separate local-password bootstrap is needed.
 
 ## Zitadel setup
 
@@ -70,10 +86,14 @@ to that provider. Omit the selection to use Zitadel’s hosted login page. Both 
 a sign-in button and follows the fresh link returned by the start action. Only
 local accounts use the frontend's username/password form. Organization selection
 is checked at sign-in; it does not continuously poll membership for existing
-sessions. Provider authentication and installation-owner rights remain separate.
+sessions. Provider authentication and instance-owner rights remain separate.
 
 There is no per-user admission list. A verified
-`(issuer, sub)` may create a new non-owner core account with no local password.
+`(issuer, sub)` creates a core account with no local password. On a fresh instance,
+only the very first admitted account becomes the instance owner. Local bootstrap
+and verified Zitadel admission share a database lock, so simultaneous sign-ins
+cannot assign multiple bootstrap owners. Subsequent accounts remain non-owners.
+Revoking ownership never reopens bootstrap.
 Email, names and organization/role claims never link accounts or elevate access.
 To link a provider subject to an existing account (including the existing owner),
 run `tinypods auth link PROVIDER SUBJECT USER_ID` (currently `zitadel` is the supported external provider) from a trusted operator shell. Obtain the
@@ -82,7 +102,7 @@ administration. This explicit security-sensitive link cannot reassign an existin
 mapping; it is not an unauthenticated registration or email-matching shortcut.
 
 Zitadel project/organization policies remain upstream controls. Enable project
-access enforcement/appropriate grants in Zitadel as required for the installation;
+access enforcement/appropriate grants in Zitadel as required for the instance;
 merely asserting roles is not equivalent to requiring project access. TinyPods
 applies configured organization validation and its own ownership checks. See
 [project controls](https://zitadel.com/docs/guides/manage/console/projects-overview).
@@ -161,9 +181,9 @@ has expired. Upstream account deletion alone is not continuously polled; use
 provider logout notifications, configuration removal or local revocation as
 appropriate. Access-session expiry remains independent of provider token expiry.
 
-Local login allows 30 attempts/minute per installation and five per normalized
+Local login allows 30 attempts/minute per instance and five per normalized
 login name, whether or not an account exists; endpoint limits allow ten attempts/minute per transport peer, including
-malformed requests. OIDC start similarly has installation and per-peer budgets.
+malformed requests. OIDC start similarly has instance and per-peer budgets.
 Denials include Retry-After; missing/unavailable Valkey rejects, independent of the
 optional public cache. Use non-evicting Valkey persistence: data loss resets budgets.
 

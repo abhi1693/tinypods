@@ -21,10 +21,10 @@ class LocalPasswordProvider:
         self.limiter = limiter
 
     async def bootstrap(self, credentials: Credentials) -> UUID:
-        """Create the sole installation owner, serializing races on the installation row.
+        """Create the first instance owner, serializing races on the installation row.
 
         Raises:
-            AuthError: Bootstrap already completed (409) or installation is absent (503).
+            AuthError: Bootstrap already completed (409) or instance is absent (503).
         """
         encoded = await hash_password(credentials.password.get_secret_value())
         async with self.database.transaction() as session:

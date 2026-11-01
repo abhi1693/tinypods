@@ -66,7 +66,7 @@ BrowserDependency = Annotated[BrowserLogin, Depends(get_browser_login)]
     },
     responses={
         200: {"description": "Open the returned link to sign in with Zitadel."},
-        400: {"description": "Choose a page within this installation to return to after sign-in."},
+        400: {"description": "Choose a page within this instance to return to after sign-in."},
         403: {"description": "This sign-in request could not be verified."},
         429: {
             "description": "Too many sign-in attempts. Wait before trying again.",

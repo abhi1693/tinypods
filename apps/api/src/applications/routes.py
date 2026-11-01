@@ -75,7 +75,7 @@ async def retrieve_application(
 async def create_application(
     payload: ApplicationWrite, service: ApplicationService, principal: PrincipalDependency
 ) -> ApplicationRead:
-    """Create an audited application; requires installation-owner privileges."""
+    """Create an audited application; requires instance-owner privileges."""
     return ApplicationRead.model_validate(await service.save(principal, payload.model_dump()))
 
 
@@ -152,7 +152,7 @@ async def retrieve_category(
 async def create_category(
     payload: CategoryWrite, service: CategoryService, principal: PrincipalDependency
 ) -> CategoryRead:
-    """Create an audited category; requires installation-owner privileges."""
+    """Create an audited category; requires instance-owner privileges."""
     return CategoryRead.model_validate(await service.save(principal, payload.model_dump()))
 
 
@@ -231,7 +231,7 @@ async def retrieve_release(
 async def create_release(
     payload: ReleaseWrite, service: ReleaseService, principal: PrincipalDependency
 ) -> ReleaseRead:
-    """Create an audited release; requires installation-owner privileges."""
+    """Create an audited release; requires instance-owner privileges."""
     return ReleaseRead.model_validate(await service.save(principal, payload.model_dump()))
 
 
