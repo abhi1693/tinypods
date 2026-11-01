@@ -117,3 +117,15 @@ disposable PostgreSQL/Valkey fixtures:
 ```sh
 TINYPODS_LIVE_REPOSITORY_TEST=1 uv run --no-sync pytest tests/test_repository_live.py -s --no-cov
 ```
+
+
+### Initial version window
+
+Newly synced charts import only their latest three distinct semantic versions by
+default, independently for each chart. Override with
+`tinypods repositories sync --initial-versions 5` or
+`POST /api/v1/chart-repositories/{id}/sync?initial_versions=5` (1–10000).
+This also applies to charts discovered later or registered without versions.
+Subsequent syncs retain existing records and import versions at or above the
+oldest already imported version, so skipped history is not backfilled. Changing
+N does not trim existing history. Digest changes remain separate immutable pins.

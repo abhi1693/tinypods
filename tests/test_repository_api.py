@@ -3,7 +3,7 @@
 import asyncio
 import json
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import psycopg
 import pytest
@@ -171,7 +171,7 @@ def test_repository_api_cli_and_cascade_rules(
         assert repository["last_synced_at"] is None
         sync = BASE + "/chart-repositories/" + identity + "/sync"
         assert client.post(sync).status_code == 403
-        assert client.post(sync, headers=headers).json()["versions"] == 1
+        assert client.post(sync + "?initial_versions=2", headers=headers).json()["versions"] == 1
         charts = client.get(
             BASE + "/charts?repository_id=" + identity + "&available=true&q=example&ordering=-name"
         ).json()
@@ -312,7 +312,9 @@ def test_repository_api_cli_and_cascade_rules(
             "TINYPODS_DATABASE_URL": auth_settings.database_url.get_secret_value(),
             "TINYPODS_REPOSITORY_CREDENTIALS": "{}",
         }
-        outcome = CliRunner().invoke(cli, ["repositories", "sync", identity], env=env)
+        outcome = CliRunner().invoke(
+            cli, ["repositories", "sync", identity, "--initial-versions", "2"], env=env
+        )
         assert outcome.exit_code == 0, outcome.output + str(outcome.exception)
         assert json.loads(outcome.stdout)["repositories"][0]["versions"] == 1
         all_sources = CliRunner().invoke(cli, ["repositories", "sync"], env=env)
@@ -540,3 +542,91 @@ def test_repository_service_and_dto_boundaries(auth_settings: Settings) -> None:
             await database.close()
 
     asyncio.run(scenario())
+
+
+def test_initial_version_window_and_incremental_sync(auth_settings: Settings) -> None:
+    """Persist only each chart's initial window; later syncs never backfill skipped history."""
+    from tinypods_cli.commands.repositories import OperatorValidator
+
+    class Source(RepositoryClient):
+        """Return intentionally shuffled versions without external traffic."""
+
+        async def fetch(self, *args: object) -> SourceSnapshot:
+            """Expose the mutable complete upstream snapshot."""
+            return SourceSnapshot(tuple(observations), True)
+
+    observations = [
+        Observation(chart=name, version=version, digest=DIGEST)
+        for name in ("first", "second")
+        for version in ("1.9.0", "1.0.0", "1.11.0", "1.2.0", "1.10.0")
+    ]
+
+    async def exercise() -> None:
+        """Exercise selection, persistence and the subsequent-sync boundary together."""
+        database = Database(auth_settings)
+        principal = Principal(UUID(int=0), "operator", True, "local", credential_kind="operator")
+        service = RepositorySync(
+            database, AuthorizationService(OperatorValidator()), Source.__new__(Source)
+        )
+        repository = ChartRepository(name="Window test", url="https://example.com")
+        try:
+            async with database.transaction() as session:
+                session.add(repository)
+            assert (await service.run(principal, repository.id)).versions == 6
+            async with database.session() as session:
+                rows = (await session.exec(select(ChartVersion))).all()
+                assert sorted(row.version for row in rows) == [
+                    "1.10.0",
+                    "1.10.0",
+                    "1.11.0",
+                    "1.11.0",
+                    "1.9.0",
+                    "1.9.0",
+                ]
+            observations.extend(
+                [
+                    Observation(chart="first", version="1.12.0", digest=DIGEST),
+                    Observation(chart="first", version="1.11.0", digest="sha256:" + "b" * 64),
+                    *[
+                        Observation(chart="later", version=f"2.{number}.0", digest=DIGEST)
+                        for number in range(5)
+                    ],
+                ]
+            )
+            assert (await service.run(principal, repository.id, 2)).versions == 10
+            async with database.session() as session:
+                rows = (await session.exec(select(ChartVersion))).all()
+                assert len(rows) == 10
+                assert {row.version for row in rows}.isdisjoint(
+                    {"1.0.0", "1.2.0", "2.0.0", "2.1.0", "2.2.0"}
+                )
+            for invalid in (0, 10001):
+                with pytest.raises(DefinitionError) as caught:
+                    await service.run(principal, repository.id, invalid)
+                assert caught.value.status == 422
+        finally:
+            await database.close()
+
+    asyncio.run(exercise())
+
+
+def test_version_selection_semantics() -> None:
+    """Rank numeric versions and prereleases; reject invalid metadata."""
+    from tinypods_core.repositories.service import chart_version, select_versions
+
+    items = tuple(
+        Observation(chart="example", version=value, digest=DIGEST)
+        for value in ("v1.0.0", "2.0.0-rc.1", "2.0.0", "1.9.0", "1.10.0")
+    )
+    assert [item.version for item in select_versions(items, {}, 3)] == [
+        "2.0.0-rc.1",
+        "2.0.0",
+        "1.10.0",
+    ]
+    assert str(chart_version("v0.15-alpha.3")) == "0.15.0-alpha.3"
+    assert str(chart_version("1")) == "1.0.0"
+    assert select_versions((), {}, 3) == ()
+    assert select_versions(items[:1], {"example": ()}, 3) == items[:1]
+    with pytest.raises(SourceError) as caught:
+        select_versions((Observation(chart="example", version="invalid", digest=DIGEST),), {}, 3)
+    assert caught.value.code == "invalid_source_metadata"

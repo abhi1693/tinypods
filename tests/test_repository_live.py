@@ -72,6 +72,8 @@ def test_live_jetstack_repository_cli_and_api(auth_settings: Settings) -> None:
         versions = client.get(
             "/api/v1/chart-versions?chart_id=" + cert["id"] + "&ordering=created"
         ).json()
+        assert versions["total"] == 3
+        assert result["versions"] <= result["charts"] * 3
         pin = versions["items"][0]
         synced = client.post("/api/v1/chart-repositories/" + identity + "/sync", headers=headers)
         assert synced.status_code == 200, synced.text

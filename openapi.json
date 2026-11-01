@@ -6889,6 +6889,18 @@
             }
           },
           {
+            "in": "query",
+            "name": "initial_versions",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "maximum": 10000,
+              "minimum": 1,
+              "title": "Initial Versions",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Copy the current CSRF cookie value into this header.",
             "in": "header",
             "name": "x-csrf-token",

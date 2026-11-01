@@ -109,10 +109,13 @@ async def delete_repository(
 
 @repository_router.detail_action("sync", response_model=SyncRead)
 async def sync_repository(
-    id: UUID, service: SyncDependency, principal: PrincipalDependency
+    id: UUID,
+    service: SyncDependency,
+    principal: PrincipalDependency,
+    initial_versions: Annotated[int, Query(ge=1, le=10000)] = 3,
 ) -> SyncRead:
     """Fetch external metadata and commit a complete, still-current snapshot atomically."""
-    return SyncRead.model_validate(await service.run(principal, id))
+    return SyncRead.model_validate(await service.run(principal, id, initial_versions))
 
 
 router.include_router(repository_router)

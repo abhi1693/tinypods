@@ -40,6 +40,9 @@ def sync(
     repository_id: Annotated[
         UUID | None, typer.Argument(help="One source ID; omit to sync all enabled sources.")
     ] = None,
+    initial_versions: Annotated[
+        int, typer.Option(min=1, max=10000, help="Latest versions per newly synced chart.")
+    ] = 3,
 ) -> None:
     """Persist discovered chart/version metadata, reporting each source's outcome.
 
@@ -81,7 +84,7 @@ def sync(
                 identities = [repository_id]
             for identity in identities:
                 try:
-                    result = await service.run(principal, identity)
+                    result = await service.run(principal, identity, initial_versions)
                     outcomes.append({"status": "synced", **asdict(result)})
                 except (SourceError, DefinitionError) as exc:
                     failed = True
