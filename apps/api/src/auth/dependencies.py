@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request
 from tinypods_api.auth.cookies import request_cookie_policy
+from tinypods_core.audit import bind_user
 from tinypods_core.auth import AuthService, Credentials, Principal, SessionService
 from tinypods_core.json_types import JsonRecord
 
@@ -50,7 +51,9 @@ async def get_principal(request: Request, service: SessionDependency) -> Princip
     if request.method not in {"GET", "HEAD", "OPTIONS"}:
         check_origin(request)
         csrf = request.headers.get(CSRF_HEADER, "")
-    return await service.authenticate(token, csrf_token=csrf)
+    principal = await service.authenticate(token, csrf_token=csrf)
+    bind_user(principal.user_id, principal.username)
+    return principal
 
 
 PrincipalDependency = Annotated[Principal, Depends(get_principal)]

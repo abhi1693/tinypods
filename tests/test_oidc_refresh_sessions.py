@@ -702,3 +702,50 @@ def test_refresh_context_missing_grant_fails_closed() -> None:
     with pytest.raises(AuthError) as error:
         asyncio.run(SessionService.refresh_context(MissingGrantSession(), "handle", "csrf"))
     assert error.value.status == 401
+
+
+def test_expired_logout_cleanup_is_audited(auth_settings: Settings) -> None:
+    """Cleanup uses the unit of work and records deletion without provider identifiers."""
+    from sqlmodel import select
+    from tinypods_core.audit import AuditRecord
+    from tinypods_core.audit.registry import registry
+    from tinypods_core.db.models import ProviderLogoutEvent
+
+    async def scenario() -> None:
+        """Expire a real logout fence and verify its deletion history."""
+        async with lifecycle(auth_settings) as context:
+            now = datetime.now(UTC)
+            async with context.active.database.transaction() as session:
+                expired = ProviderLogoutEvent(
+                    event_digest="private-expired-digest",
+                    issuer=ISSUER,
+                    client_id=context.settings.zitadel_client_id,
+                    issued_at=now - timedelta(hours=1),
+                    expires_at=now - timedelta(minutes=1),
+                )
+                session.add(expired)
+            notice = LogoutNotice(
+                ISSUER,
+                context.settings.zitadel_client_id,
+                str(uuid4()),
+                now,
+                now + timedelta(minutes=5),
+                SUBJECT,
+                context.provider.session_id,
+            )
+            await context.service.apply_logout(notice)
+            async with context.active.database.session() as session:
+                assert await session.get(ProviderLogoutEvent, expired.event_digest) is None
+                event = (
+                    await session.exec(
+                        select(AuditRecord).where(
+                            AuditRecord.changed_object_type_id
+                            == registry[ProviderLogoutEvent].type_id,
+                            AuditRecord.changed_object_id == str(expired.id),
+                            AuditRecord.action == "delete",
+                        )
+                    )
+                ).one()
+                assert set(event.prechange_data) == {"id", "issued_at", "expires_at"}
+
+    asyncio.run(scenario())

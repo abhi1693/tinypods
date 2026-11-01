@@ -280,3 +280,10 @@ hits. Per-peer policies use the trusted ASGI transport peer, never raw forwarded
 headers. Users behind a NAT share a peer budget. All replicas must share policy
 settings. Valkey needs non-evicting persistence; eviction/data loss resets budgets.
 The pool has 16 connections, 200 ms socket/connect waits and no automatic retries.
+
+
+## Audit trail
+
+Authentication models now use transactional, allowlisted object change logging.
+See [change logging](docs/audit-trail.md) for registry, execution context,
+redaction, transaction behavior and supported write boundaries.

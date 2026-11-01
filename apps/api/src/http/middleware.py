@@ -10,6 +10,7 @@ from urllib.parse import quote
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from tinypods_api.http.constants import QUIET_PROBE_PATHS, REQUEST_ID_HEADER_BYTES
+from tinypods_core.audit import audit_context
 from tinypods_core.logging import elapsed_ms, failure_fields, log_context
 from tinypods_core.logging.constants import LogEvent, LogField
 
@@ -81,7 +82,10 @@ class RequestLoggingMiddleware:
             await send(message)
 
         fields = request_log_fields(scope)
-        with log_context(service=self.service, request_id=request_id, **fields):
+        with (
+            audit_context("system:api", request_id=uuid.UUID(request_id)),
+            log_context(service=self.service, request_id=request_id, **fields),
+        ):
             try:
                 await self.app(scope, receive, send_response)
             except asyncio.CancelledError:

@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import anyio
-from sqlalchemy import and_, delete, false, func, or_, update
+from sqlalchemy import and_, false, func, or_
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from tinypods_core.auth.contracts import AuthError, Login, LogoutNotice, VerifiedIdentity
@@ -263,11 +263,14 @@ class ZitadelSessions:
                 )
                 grant.status = "active"
                 session.add(grant)
-                await session.exec(
-                    update(AuthSession)
-                    .where(col(AuthSession.external_grant_id) == grant.id)
-                    .values(revoked_at=now)
-                )
+                for record in (
+                    await session.exec(
+                        select(AuthSession)
+                        .where(col(AuthSession.external_grant_id) == grant.id)
+                        .with_for_update()
+                    )
+                ).all():
+                    record.revoked_at = now
                 login = await self.sessions.issue_in_transaction(
                     session,
                     grant.user_id,
@@ -306,9 +309,14 @@ class ZitadelSessions:
             if installation is None:
                 raise AuthError(503)
             now = (await session.exec(select(func.clock_timestamp()))).one()
-            await session.exec(
-                delete(ProviderLogoutEvent).where(ProviderLogoutEvent.expires_at <= now)
-            )
+            for expired in (
+                await session.exec(
+                    select(ProviderLogoutEvent)
+                    .where(ProviderLogoutEvent.expires_at <= now)
+                    .with_for_update()
+                )
+            ).all():
+                await session.delete(expired)
             event_id = digest(json.dumps([notice.issuer, notice.client_id, notice.event_id]))
             if await session.get(ProviderLogoutEvent, event_id) is not None:
                 return
@@ -327,7 +335,7 @@ class ZitadelSessions:
                 ProviderGrant.issuer == notice.issuer,
                 ProviderGrant.client_id == notice.client_id,
             )
-            sessions = update(AuthSession).where(
+            sessions = select(AuthSession).where(
                 col(AuthSession.source_provider) == "zitadel",
                 col(AuthSession.external_issuer) == notice.issuer,
                 col(AuthSession.external_client_id) == notice.client_id,
@@ -348,4 +356,5 @@ class ZitadelSessions:
                 sessions = sessions.where(col(AuthSession.external_subject) == notice.subject)
             for grant in (await session.exec(grants.order_by(col(ProviderGrant.id)))).all():
                 await self.sessions.revoke_grant(session, grant.id, now)
-            await session.exec(sessions.values(revoked_at=now))
+            for record in (await session.exec(sessions.with_for_update())).all():
+                record.revoked_at = now

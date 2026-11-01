@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import func, update
+from sqlalchemy import func
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from tinypods_core.auth.contracts import AuthError, Login, Principal, Scope
@@ -169,11 +169,14 @@ class SessionService:
         if grant is not None:
             grant.status, grant.encrypted_state = "revoked", None
             session.add(grant)
-            await session.exec(
-                update(AuthSession)
-                .where(col(AuthSession.external_grant_id) == grant_id)
-                .values(revoked_at=now)
-            )
+            for record in (
+                await session.exec(
+                    select(AuthSession)
+                    .where(col(AuthSession.external_grant_id) == grant_id)
+                    .with_for_update()
+                )
+            ).all():
+                record.revoked_at = now
 
     @staticmethod
     async def refresh_context(

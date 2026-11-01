@@ -9,7 +9,7 @@ from datetime import timedelta
 from typing import Protocol, cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, func
+from sqlalchemy import func
 from sqlmodel import col, select
 from tinypods_core.auth.contracts import AuthError, Login, VerifiedIdentity
 from tinypods_core.auth.sessions import SessionService
@@ -232,7 +232,14 @@ class BrowserLogin:
         )
         async with self.database.transaction() as session:
             now = (await session.exec(select(func.clock_timestamp()))).one()
-            await session.exec(delete(LoginTransaction).where(LoginTransaction.expires_at <= now))
+            for expired in (
+                await session.exec(
+                    select(LoginTransaction)
+                    .where(LoginTransaction.expires_at <= now)
+                    .with_for_update()
+                )
+            ).all():
+                await session.delete(expired)
             session.add(
                 LoginTransaction(
                     state_digest=digest(state),
@@ -269,15 +276,17 @@ class BrowserLogin:
             raise AuthError(401)
         async with self.database.transaction() as session:
             statement = (
-                delete(LoginTransaction)
+                select(LoginTransaction)
                 .where(
                     col(LoginTransaction.state_digest) == digest(state),
                     col(LoginTransaction.browser_digest) == digest(browser_token),
                 )
-                .returning(LoginTransaction)
+                .with_for_update()
             )
             result = await session.exec(statement)
-            transaction = cast(LoginTransaction | None, result.scalar_one_or_none())
+            transaction = result.one_or_none()
+            if transaction is not None:
+                await session.delete(transaction)
             now = (await session.exec(select(func.clock_timestamp()))).one()
         if transaction is None:
             logger.warning("Login callback rejected: transaction absent or browser mismatch")
