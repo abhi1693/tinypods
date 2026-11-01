@@ -287,7 +287,7 @@ def test_populated_upgrade_and_registry_history(postgres_endpoints: PostgresEndp
     try:
         with engine.begin() as connection:
             sync_object_types(connection)
-            assert len(connection.execute(select(ObjectType)).all()) == 8
+            assert len(connection.execute(select(ObjectType)).all()) == len(registry)
             session_row = connection.execute(
                 text("SELECT id, created, last_updated FROM auth_session")
             ).one()
@@ -484,7 +484,7 @@ def test_relationships_cascades_and_registry_validation(audit_settings: Settings
         registry.pop(Parent)
         registry.pop(Child)
         with Session(engine) as session:
-            assert len(session.exec(select(ObjectType)).all()) == 10
+            assert len(session.exec(select(ObjectType)).all()) == len(registry) + 2
     finally:
         registry.pop(Parent, None)
         registry.pop(Child, None)
