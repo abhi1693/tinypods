@@ -115,7 +115,7 @@ migration preservation. The public Jetstack demonstration is opt-in and uses onl
 disposable PostgreSQL/Valkey fixtures:
 
 ```sh
-TINYPODS_LIVE_REPOSITORY_TEST=1 uv run --no-sync pytest tests/test_repository_live.py -s --no-cov
+uv run --no-sync pytest tests/test_repository_live.py -m live_repository -s --no-cov
 ```
 
 
@@ -129,3 +129,6 @@ This also applies to charts discovered later or registered without versions.
 Subsequent syncs retain existing records and import versions at or above the
 oldest already imported version, so skipped history is not backfilled. Changing
 N does not trim existing history. Digest changes remain separate immutable pins.
+
+The public-network demo is deselected from the default suite. Select its
+`live_repository` marker explicitly; the regular CI suite requires zero skips.

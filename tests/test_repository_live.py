@@ -15,10 +15,7 @@ from tinypods_core.db import Database
 from tinypods_core.settings import Settings
 
 
-@pytest.mark.skipif(
-    os.environ.get("TINYPODS_LIVE_REPOSITORY_TEST") != "1",
-    reason="Explicit opt-in required for real public repository traffic",
-)
+@pytest.mark.live_repository
 def test_live_jetstack_repository_cli_and_api(auth_settings: Settings) -> None:
     """Demonstrate real public sync, persisted rows, idempotency and protected deletion."""
     settings = auth_settings.model_copy(
