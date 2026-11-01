@@ -27,6 +27,13 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.sql.expression import Select
 from tinypods_api.clusters.contracts import RegionRead
+from tinypods_api.http.presentation import (
+    Computations,
+    Overrides,
+    collect,
+    loading_options,
+    serialize,
+)
 from tinypods_core.clusters import Region
 from tinypods_core.clusters.service import flag_query
 from tinypods_core.db import MigrationManager, core_metadata, database_url
@@ -207,14 +214,24 @@ async def exercise_page(
             for _ in range(repeats):
                 started = perf_counter()
                 records = (
-                    await session.exec(select(Region).where(col(Region.id).in_(identities)))
+                    await session.exec(
+                        select(Region)
+                        .where(col(Region.id).in_(identities))
+                        .options(*loading_options(RegionRead))
+                    )
                 ).all()
                 assert all("path" not in record.__dict__ for record in records)
-                flags = dict((await session.exec(flag_query(identities))).all())
+                computations: Computations = {}
+                for record in records:
+                    collect(RegionRead, record, computations)
+                overrides: Overrides = {}
+                for (model, resolver), (members, fields) in computations.items():
+                    values = await resolver(session, list(members.values()), frozenset(fields))
+                    overrides.update({(model, key): value for key, value in values.items()})
                 payload = [
-                    RegionRead.model_validate(record)
-                    .model_copy(update={"flag": flags.get(record.id)})
-                    .model_dump(mode="json")
+                    RegionRead.model_validate(serialize(RegionRead, record, overrides)).model_dump(
+                        mode="json"
+                    )
                     for record in records
                 ]
                 assert all("path" not in item and item["flag"] == FLAG for item in payload)

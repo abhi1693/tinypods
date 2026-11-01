@@ -1,6 +1,52 @@
 {
   "components": {
     "schemas": {
+      "ApplicationBrief": {
+        "additionalProperties": false,
+        "properties": {
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "maxLength": 128,
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "title": "Slug",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ApplicationStatus"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "icon",
+          "status"
+        ],
+        "title": "ApplicationBrief",
+        "type": "object"
+      },
       "ApplicationPatch": {
         "additionalProperties": false,
         "description": "Only supplied application fields are changed.",
@@ -199,6 +245,48 @@
         "title": "BackchannelErrorResponse",
         "type": "object"
       },
+      "CategoryBrief": {
+        "additionalProperties": false,
+        "properties": {
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "maxLength": 128,
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "icon"
+        ],
+        "title": "CategoryBrief",
+        "type": "object"
+      },
       "CategoryPatch": {
         "additionalProperties": false,
         "description": "Only supplied category fields are changed.",
@@ -356,6 +444,26 @@
         "title": "CategoryWrite",
         "type": "object"
       },
+      "ChartBrief": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "ChartBrief",
+        "type": "object"
+      },
       "ChartPatch": {
         "additionalProperties": false,
         "description": "Correct a chart identity before any version has been observed.",
@@ -390,6 +498,7 @@
         "type": "object"
       },
       "ChartRead": {
+        "additionalProperties": false,
         "description": "Chart identity and availability reported by the last successful source sync.",
         "properties": {
           "available": {
@@ -415,17 +524,15 @@
             "title": "Name",
             "type": "string"
           },
-          "repository_id": {
-            "format": "uuid",
-            "title": "Repository Id",
-            "type": "string"
+          "repository": {
+            "$ref": "#/components/schemas/RepositoryBrief"
           }
         },
         "required": [
           "id",
           "created",
           "last_updated",
-          "repository_id",
+          "repository",
           "name",
           "available"
         ],
@@ -515,7 +622,7 @@
       },
       "ClusterRead": {
         "additionalProperties": false,
-        "description": "Registry metadata; kubeconfig is not a cluster response field.",
+        "description": "Registry metadata with a prefetched region summary.",
         "properties": {
           "created": {
             "format": "date-time",
@@ -523,7 +630,6 @@
             "type": "string"
           },
           "description": {
-            "default": "",
             "title": "Description",
             "type": "string"
           },
@@ -538,31 +644,25 @@
             "type": "string"
           },
           "name": {
-            "maxLength": 255,
-            "minLength": 1,
-            "pattern": "\\S",
             "title": "Name",
             "type": "string"
           },
-          "region_id": {
-            "format": "uuid",
-            "title": "Region Id",
-            "type": "string"
+          "region": {
+            "$ref": "#/components/schemas/RegionBrief"
           },
           "slug": {
-            "maxLength": 128,
-            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
             "title": "Slug",
             "type": "string"
           }
         },
         "required": [
-          "name",
-          "slug",
-          "region_id",
           "id",
           "created",
-          "last_updated"
+          "last_updated",
+          "name",
+          "slug",
+          "description",
+          "region"
         ],
         "title": "ClusterRead",
         "type": "object"
@@ -808,26 +908,14 @@
         "type": "object"
       },
       "IdentityResponse": {
-        "description": "The currently signed-in account.",
+        "description": "The currently signed-in account as a public related representation.",
         "properties": {
-          "is_owner": {
-            "title": "Is Owner",
-            "type": "boolean"
-          },
-          "user_id": {
-            "format": "uuid",
-            "title": "User Id",
-            "type": "string"
-          },
-          "username": {
-            "title": "Username",
-            "type": "string"
+          "user": {
+            "$ref": "#/components/schemas/UserBrief"
           }
         },
         "required": [
-          "user_id",
-          "username",
-          "is_owner"
+          "user"
         ],
         "title": "IdentityResponse",
         "type": "object"
@@ -942,10 +1030,6 @@
             "title": "Expires At",
             "type": "string"
           },
-          "is_owner": {
-            "title": "Is Owner",
-            "type": "boolean"
-          },
           "refresh_expires_at": {
             "anyOf": [
               {
@@ -958,20 +1042,12 @@
             ],
             "title": "Refresh Expires At"
           },
-          "user_id": {
-            "format": "uuid",
-            "title": "User Id",
-            "type": "string"
-          },
-          "username": {
-            "title": "Username",
-            "type": "string"
+          "user": {
+            "$ref": "#/components/schemas/UserBrief"
           }
         },
         "required": [
-          "user_id",
-          "username",
-          "is_owner",
+          "user",
           "expires_at"
         ],
         "title": "LoginResponse",
@@ -1030,22 +1106,19 @@
         "type": "object"
       },
       "MembershipRead": {
+        "additionalProperties": false,
         "description": "The actual composite membership identity, without synthetic fields.",
         "properties": {
-          "application_id": {
-            "format": "uuid",
-            "title": "Application Id",
-            "type": "string"
+          "application": {
+            "$ref": "#/components/schemas/ApplicationBrief"
           },
-          "category_id": {
-            "format": "uuid",
-            "title": "Category Id",
-            "type": "string"
+          "category": {
+            "$ref": "#/components/schemas/CategoryBrief"
           }
         },
         "required": [
-          "application_id",
-          "category_id"
+          "application",
+          "category"
         ],
         "title": "MembershipRead",
         "type": "object"
@@ -1547,6 +1620,46 @@
         "title": "ReadinessResponse",
         "type": "object"
       },
+      "RegionBrief": {
+        "additionalProperties": false,
+        "properties": {
+          "flag": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flag"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 255,
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "maxLength": 128,
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "flag"
+        ],
+        "title": "RegionBrief",
+        "type": "object"
+      },
       "RegionPatch": {
         "additionalProperties": false,
         "description": "Reparent a region or change its explicit visual override.",
@@ -1618,6 +1731,7 @@
         "type": "object"
       },
       "RegionRead": {
+        "additionalProperties": false,
         "description": "Region metadata; flag includes inheritance without extra public fields.",
         "properties": {
           "created": {
@@ -1654,17 +1768,15 @@
             "title": "Name",
             "type": "string"
           },
-          "parent_id": {
+          "parent": {
             "anyOf": [
               {
-                "format": "uuid",
-                "type": "string"
+                "$ref": "#/components/schemas/RegionBrief"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Parent Id"
+            ]
           },
           "slug": {
             "title": "Slug",
@@ -1678,7 +1790,7 @@
           "name",
           "slug",
           "description",
-          "parent_id",
+          "parent",
           "flag"
         ],
         "title": "RegionRead",
@@ -1786,17 +1898,13 @@
       },
       "ReleaseRead": {
         "additionalProperties": false,
-        "description": "Public release definition without installation state.",
+        "description": "Public release definition with prefetched application and chart-version summaries.",
         "properties": {
-          "application_id": {
-            "format": "uuid",
-            "title": "Application Id",
-            "type": "string"
+          "application": {
+            "$ref": "#/components/schemas/ApplicationBrief"
           },
-          "chart_version_id": {
-            "format": "uuid",
-            "title": "Chart Version Id",
-            "type": "string"
+          "chart_version": {
+            "$ref": "#/components/schemas/VersionBrief"
           },
           "configuration_fields": {
             "items": {
@@ -1822,11 +1930,12 @@
           }
         },
         "required": [
-          "application_id",
-          "chart_version_id",
           "id",
           "created",
-          "last_updated"
+          "last_updated",
+          "application",
+          "chart_version",
+          "configuration_fields"
         ],
         "title": "ReleaseRead",
         "type": "object"
@@ -1858,6 +1967,30 @@
           "chart_version_id"
         ],
         "title": "ReleaseWrite",
+        "type": "object"
+      },
+      "RepositoryBrief": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "source_type": {
+            "$ref": "#/components/schemas/SourceType"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "source_type"
+        ],
+        "title": "RepositoryBrief",
         "type": "object"
       },
       "RepositoryPatch": {
@@ -1917,6 +2050,7 @@
         "type": "object"
       },
       "RepositoryRead": {
+        "additionalProperties": false,
         "description": "Public source configuration and last successful metadata refresh.",
         "properties": {
           "created": {
@@ -2030,10 +2164,8 @@
             "title": "Discovery Supported",
             "type": "boolean"
           },
-          "repository_id": {
-            "format": "uuid",
-            "title": "Repository Id",
-            "type": "string"
+          "repository": {
+            "$ref": "#/components/schemas/RepositoryBrief"
           },
           "synced_at": {
             "format": "date-time",
@@ -2046,13 +2178,38 @@
           }
         },
         "required": [
-          "repository_id",
+          "repository",
           "charts",
           "versions",
           "discovery_supported",
           "synced_at"
         ],
         "title": "SyncRead",
+        "type": "object"
+      },
+      "UserBrief": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_owner": {
+            "title": "Is Owner",
+            "type": "boolean"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "is_owner"
+        ],
+        "title": "UserBrief",
         "type": "object"
       },
       "ValidationIssue": {
@@ -2084,17 +2241,45 @@
         "title": "ValidationIssue",
         "type": "object"
       },
+      "VersionBrief": {
+        "additionalProperties": false,
+        "properties": {
+          "chart": {
+            "$ref": "#/components/schemas/ChartBrief"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "digest",
+          "chart"
+        ],
+        "title": "VersionBrief",
+        "type": "object"
+      },
       "VersionRead": {
+        "additionalProperties": false,
         "description": "Immutable upstream chart/version/digest identity; files remain external.",
         "properties": {
           "available": {
             "title": "Available",
             "type": "boolean"
           },
-          "chart_id": {
-            "format": "uuid",
-            "title": "Chart Id",
-            "type": "string"
+          "chart": {
+            "$ref": "#/components/schemas/ChartBrief"
           },
           "created": {
             "format": "date-time",
@@ -2143,7 +2328,7 @@
           "id",
           "created",
           "last_updated",
-          "chart_id",
+          "chart",
           "version",
           "digest",
           "description",

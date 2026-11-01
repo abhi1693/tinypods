@@ -23,8 +23,8 @@ from tinypods_api.applications.contracts import (
 )
 from tinypods_api.auth import PrincipalDependency
 from tinypods_api.http import Page, PageParams, ResourceAction, ResourceRouter
+from tinypods_api.http.presentation import MembershipResource, ResourceService
 from tinypods_core.applications import Application, Category, Release
-from tinypods_core.applications.service import DefinitionService, MembershipService
 
 router = APIRouter()
 
@@ -32,7 +32,9 @@ router = APIRouter()
 application_router = ResourceRouter(
     domain="applications", resource="application", prefix="/applications"
 )
-ApplicationService = Annotated[DefinitionService[Application], Depends(dependencies.applications)]
+ApplicationService = Annotated[
+    ResourceService[Application, ApplicationRead], Depends(dependencies.applications)
+]
 
 
 @application_router.action(ResourceAction.LIST, response_model=Page[ApplicationRead])
@@ -111,7 +113,9 @@ router.include_router(application_router)
 
 
 category_router = ResourceRouter(domain="applications", resource="category", prefix="/categories")
-CategoryService = Annotated[DefinitionService[Category], Depends(dependencies.categories)]
+CategoryService = Annotated[
+    ResourceService[Category, CategoryRead], Depends(dependencies.categories)
+]
 
 
 @category_router.action(ResourceAction.LIST, response_model=Page[CategoryRead])
@@ -188,7 +192,7 @@ router.include_router(category_router)
 
 
 release_router = ResourceRouter(domain="applications", resource="release", prefix="/releases")
-ReleaseService = Annotated[DefinitionService[Release], Depends(dependencies.releases)]
+ReleaseService = Annotated[ResourceService[Release, ReleaseRead], Depends(dependencies.releases)]
 
 
 @release_router.action(ResourceAction.LIST, response_model=Page[ReleaseRead])
@@ -267,7 +271,9 @@ router.include_router(release_router)
 membership_router = ResourceRouter(
     domain="applications", resource="membership", prefix="/applications/{application_id}/categories"
 )
-MembershipDependency = Annotated[MembershipService, Depends(dependencies.memberships)]
+MembershipDependency = Annotated[
+    MembershipResource[MembershipRead], Depends(dependencies.memberships)
+]
 
 
 @membership_router.action(ResourceAction.LIST, response_model=Page[MembershipRead])

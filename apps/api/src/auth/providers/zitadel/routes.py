@@ -230,10 +230,8 @@ async def refresh(
         request.cookies.get(policy.refresh, ""), request.headers.get(CSRF_HEADER, "")
     )
     set_session_cookies(response, result, policy)
-    return LoginResponse(
-        user_id=result.principal.user_id,
-        username=result.principal.username,
-        is_owner=result.principal.is_owner,
+    return LoginResponse.from_principal(
+        result.principal,
         expires_at=result.expires_at,
         refresh_expires_at=result.refresh_expires_at,
     )

@@ -94,7 +94,7 @@ def test_region_tree_flags_and_filters(auth_settings: Settings) -> None:
         assert client.get(child_path).json()["flag"] == OTHER_FLAG
         assert client.patch(path, json={"parent_id": us["id"]}).json()["flag"] is None
         assert client.get(child_path).json()["flag"] is None
-        assert client.patch(path, json={"parent_id": None}).json()["parent_id"] is None
+        assert client.patch(path, json={"parent_id": None}).json()["parent"] is None
         assert (
             client.put(
                 path,
@@ -204,7 +204,7 @@ def test_region_and_cluster_constraints(auth_settings: Settings) -> None:
         assert client.patch(path, json={"region_id": city["id"]}).status_code == 409
         assert client.patch(path, json={"region_id": None}).status_code == 422
         assert client.patch(path, json={"region_id": str(uuid4())}).status_code == 409
-        assert client.get(path).json()["region_id"] == elsewhere["id"]
+        assert client.get(path).json()["region"]["id"] == elsewhere["id"]
         assert client.get(BASE + "/clusters?region_id=" + city["id"]).json()["total"] == 1
         assert client.get(BASE + "/clusters?slug=cluster-1").json()["total"] == 2
         assert (
@@ -515,11 +515,14 @@ def test_async_registry_projection_preserves_stored_overrides(auth_settings: Set
         from tinypods_api.clusters.contracts import (
             ClusterPatch,
             ClusterQuery,
+            ClusterRead,
             ClusterWrite,
             RegionPatch,
             RegionQuery,
+            RegionRead,
             RegionWrite,
         )
+        from tinypods_api.http.presentation import ResourceService
         from tinypods_core.applications.service import DefinitionService
         from tinypods_core.clusters import Cluster
 
@@ -532,13 +535,13 @@ def test_async_registry_projection_preserves_stored_overrides(auth_settings: Set
             async with database.session() as session:
                 root = await routes.create_region(
                     RegionWrite(name="India", slug="india", flag=FLAG),
-                    RegionService(Region, session, authorization),
+                    ResourceService(RegionService(Region, session, authorization), RegionRead),
                     principal,
                 )
             async with database.session() as session:
                 child = await routes.create_region(
                     RegionWrite(name="Gurugram", slug="gurugram", parent_id=root.id),
-                    RegionService(Region, session, authorization),
+                    ResourceService(RegionService(Region, session, authorization), RegionRead),
                     principal,
                 )
             async with database.session() as session:
@@ -547,36 +550,59 @@ def test_async_registry_projection_preserves_stored_overrides(auth_settings: Set
                 projected = await service.resolve_flags([record])
                 assert record.flag is None and projected[0].flag == FLAG
                 assert record is not projected[0]
+                assert await service.resolve_flags([]) == []
+            async with database.session() as session:
+                service = ResourceService(RegionService(Region, session, authorization), RegionRead)
+                actual_region = await routes.retrieve_region(child.id, service, principal)
+                assert actual_region.parent.id == root.id and actual_region.flag == FLAG
+            async with database.session() as session:
+                changed_region = await routes.replace_region(
+                    child.id,
+                    RegionWrite(name="Gurugram", slug="gurugram", parent_id=root.id),
+                    ResourceService(RegionService(Region, session, authorization), RegionRead),
+                    principal,
+                )
+                assert changed_region.flag == FLAG and changed_region.parent.id == root.id
             async with database.session() as session:
                 page = await routes.list_region(
-                    RegionQuery(), RegionService(Region, session, authorization), principal
+                    RegionQuery(),
+                    ResourceService(RegionService(Region, session, authorization), RegionRead),
+                    principal,
                 )
                 assert page.total == 2 and {item.flag for item in page.items} == {FLAG}
             async with database.session() as session:
                 changed = await routes.update_region(
                     child.id,
                     RegionPatch(flag=None),
-                    RegionService(Region, session, authorization),
+                    ResourceService(RegionService(Region, session, authorization), RegionRead),
                     principal,
                 )
                 assert changed.flag == FLAG and "path" not in changed.model_dump()
             async with database.session() as session:
                 cluster = await routes.create_cluster(
                     ClusterWrite(name="Cluster 1", slug="cluster-1", region_id=child.id),
-                    DefinitionService(Cluster, session, authorization),
+                    ResourceService(
+                        DefinitionService(Cluster, session, authorization), ClusterRead
+                    ),
                     principal,
                 )
-                assert cluster.created and cluster.last_updated and cluster.region_id == child.id
+                assert cluster.created and cluster.last_updated and cluster.region.id == child.id
             async with database.session() as session:
                 actual = await routes.retrieve_cluster(
-                    cluster.id, DefinitionService(Cluster, session, authorization), principal
+                    cluster.id,
+                    ResourceService(
+                        DefinitionService(Cluster, session, authorization), ClusterRead
+                    ),
+                    principal,
                 )
                 assert actual == cluster and "path" not in actual.model_dump()
             async with database.session() as session:
                 changed_cluster = await routes.replace_cluster(
                     cluster.id,
                     ClusterWrite(name="Cluster 2", slug="cluster-2", region_id=child.id),
-                    DefinitionService(Cluster, session, authorization),
+                    ResourceService(
+                        DefinitionService(Cluster, session, authorization), ClusterRead
+                    ),
                     principal,
                 )
                 assert changed_cluster.id == cluster.id and changed_cluster.name == "Cluster 2"
@@ -584,14 +610,18 @@ def test_async_registry_projection_preserves_stored_overrides(auth_settings: Set
                 changed_cluster = await routes.update_cluster(
                     cluster.id,
                     ClusterPatch(description="Raspberry Pi"),
-                    DefinitionService(Cluster, session, authorization),
+                    ResourceService(
+                        DefinitionService(Cluster, session, authorization), ClusterRead
+                    ),
                     principal,
                 )
                 assert changed_cluster.description == "Raspberry Pi"
             async with database.session() as session:
                 page_clusters = await routes.list_cluster(
                     ClusterQuery(region_id=child.id),
-                    DefinitionService(Cluster, session, authorization),
+                    ResourceService(
+                        DefinitionService(Cluster, session, authorization), ClusterRead
+                    ),
                     principal,
                 )
                 assert page_clusters.total == 1 and page_clusters.items[0].id == cluster.id

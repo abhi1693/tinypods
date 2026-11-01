@@ -311,7 +311,7 @@ def test_cookie_csrf_logout_and_http_fail_closed(auth_settings: Settings) -> Non
             json=payload,
             headers={"x-csrf-token": "login", "origin": "https://testserver"},
         )
-        assert response.status_code == 200 and response.json()["username"] == "owner"
+        assert response.status_code == 200 and response.json()["user"]["username"] == "owner"
         assert "password" not in response.text and "token" not in response.text
         cookies = response.headers.get_list("set-cookie")
         assert all(

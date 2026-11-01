@@ -1,11 +1,16 @@
 """Explicit region and cluster DTOs, without credentials or connection state."""
 
+from __future__ import annotations
+
 from typing import Literal
 from uuid import UUID
 
 from pydantic import Field, HttpUrl, TypeAdapter, field_validator, model_validator
-from tinypods_api.applications.contracts import DefinitionRead
+from tinypods_api.clusters.computed import region_values
 from tinypods_api.http import PageParams, RequestDTO
+from tinypods_api.http.model_contracts import DefinitionRead
+from tinypods_api.http.representations import Related
+from tinypods_core.clusters import Cluster, Region
 
 
 class RegistryWrite(RequestDTO):
@@ -24,7 +29,7 @@ class RegistryPatch(RequestDTO):
     description: str | None = None
 
     @model_validator(mode="after")
-    def validate_nulls(self) -> "RegistryPatch":
+    def validate_nulls(self) -> RegistryPatch:
         """Allow clearing only a region's parent or flag."""
         if any(
             getattr(self, name) is None for name in self.model_fields_set - {"parent_id", "flag"}
@@ -68,7 +73,9 @@ class RegionRead(DefinitionRead):
     name: str
     slug: str
     description: str
-    parent_id: UUID | None
+    resource_model = Region
+    computed = region_values
+    parent: Related[RegionRead] | None
     flag: str | None
 
 
@@ -84,8 +91,14 @@ class ClusterPatch(RegistryPatch):
     region_id: UUID | None = None
 
 
-class ClusterRead(DefinitionRead, ClusterWrite):
-    """Registry metadata; kubeconfig is not a cluster response field."""
+class ClusterRead(DefinitionRead):
+    """Registry metadata with a prefetched region summary."""
+
+    resource_model = Cluster
+    name: str
+    slug: str
+    description: str
+    region: Related[RegionRead]
 
 
 class RegistryQuery(PageParams):
@@ -103,7 +116,7 @@ class RegionQuery(RegistryQuery):
     roots: bool = False
 
     @model_validator(mode="after")
-    def validate_scope(self) -> "RegionQuery":
+    def validate_scope(self) -> RegionQuery:
         """Reject contradictory root and direct-parent filters."""
         if self.roots and self.parent_id is not None:
             raise ValueError("Choose roots or a parent region")

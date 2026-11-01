@@ -1,6 +1,7 @@
 """External chart sources and synchronized metadata; chart bytes remain upstream."""
 
 from datetime import datetime
+from typing import ClassVar
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -14,7 +15,8 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlmodel import Field
+from sqlalchemy.orm import relationship
+from sqlmodel import Field, Relationship
 from tinypods_core.applications.definitions import SourceType
 from tinypods_core.audit import AuditTrailMixin
 from tinypods_core.audit import capture as _capture  # noqa: F401
@@ -23,6 +25,8 @@ from tinypods_core.audit.registry import ModelRegistration, register
 
 class ChartRepository(AuditTrailMixin, table=True):
     """Operator-selected external Helm repository or OCI registry/namespace."""
+
+    brief_fields: ClassVar[tuple[str, ...] | None] = ("id", "name", "source_type")
 
     __tablename__ = "chart_repositories"
     __table_args__ = (
@@ -52,6 +56,11 @@ class ChartRepository(AuditTrailMixin, table=True):
 class Chart(AuditTrailMixin, table=True):
     """Chart name/path within one configured external source."""
 
+    brief_fields: ClassVar[tuple[str, ...] | None] = ("id", "name")
+    repository: ChartRepository = Relationship(
+        sa_relationship=relationship("ChartRepository", lazy="raise")
+    )
+
     __tablename__ = "charts"
     __table_args__ = (
         UniqueConstraint("repository_id", "name", name="uq_charts_repository_name"),
@@ -65,6 +74,9 @@ class Chart(AuditTrailMixin, table=True):
 
 class ChartVersion(AuditTrailMixin, table=True):
     """Immutable observed version/digest pair, preserving pins when upstream changes."""
+
+    brief_fields: ClassVar[tuple[str, ...] | None] = ("id", "version", "digest", "chart")
+    chart: Chart = Relationship(sa_relationship=relationship("Chart", lazy="raise"))
 
     __tablename__ = "chart_versions"
     __table_args__ = (

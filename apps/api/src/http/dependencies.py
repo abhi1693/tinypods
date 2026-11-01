@@ -1,8 +1,9 @@
 """Request-scoped dependencies; services choose when to commit a write."""
 
 from collections.abc import AsyncIterator
+from typing import Annotated
 
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 from sqlmodel.ext.asyncio.session import AsyncSession
 from tinypods_core.db import Database
 
@@ -24,3 +25,6 @@ async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
         raise HTTPException(status_code=503, detail="Database is not configured")
     async with database.session() as session:
         yield session
+
+
+Session = Annotated[AsyncSession, Depends(get_session)]

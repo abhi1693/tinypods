@@ -20,3 +20,4 @@ class CoreModel(SQLModel):
     """Place core persistence tables in their dedicated SQLModel metadata registry."""
 
     metadata: ClassVar[MetaData] = core_metadata
+    brief_fields: ClassVar[tuple[str, ...] | None] = None

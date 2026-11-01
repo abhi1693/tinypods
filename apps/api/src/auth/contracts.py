@@ -1,12 +1,15 @@
 """Public authentication DTOs without persistence or bearer session material."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, Field, HttpUrl, SecretStr
 from tinypods_api.http.contracts import RequestDTO
+from tinypods_api.http.representations import Related, ResourceRead
 from tinypods_api.http.versioning import API_V1_PREFIX
+from tinypods_core.auth import Principal
+from tinypods_core.db.models import User
 
 
 class LoginRequest(RequestDTO):
@@ -16,12 +19,33 @@ class LoginRequest(RequestDTO):
     password: SecretStr = Field(min_length=15, max_length=128)
 
 
-class IdentityResponse(BaseModel):
-    """The currently signed-in account."""
+class UserRead(ResourceRead):
+    """Public signed-in account fields; credential records are separate."""
 
-    user_id: UUID
+    resource_model = User
+    id: UUID
     username: str
     is_owner: bool
+
+
+class IdentityResponse(BaseModel):
+    """The currently signed-in account as a public related representation."""
+
+    user: Related[UserRead]
+
+    @classmethod
+    def from_principal(cls, principal: Principal, **fields: object) -> Self:
+        """Copy an already verified identity without querying or exposing credentials."""
+        return cls.model_validate(
+            {
+                "user": {
+                    "id": principal.user_id,
+                    "username": principal.username,
+                    "is_owner": principal.is_owner,
+                },
+                **fields,
+            }
+        )
 
 
 class LoginResponse(IdentityResponse):

@@ -17,18 +17,12 @@ from tinypods_api.clusters.contracts import (
     RegionWrite,
 )
 from tinypods_api.http import Page, ResourceAction, ResourceRouter
-from tinypods_core.applications.service import DefinitionService
+from tinypods_api.http.presentation import ResourceService
 from tinypods_core.clusters import Cluster, Region
-from tinypods_core.clusters.service import RegionService
 
 router = APIRouter()
-Regions = Annotated[RegionService, Depends(dependencies.regions)]
-Clusters = Annotated[DefinitionService[Cluster], Depends(dependencies.clusters)]
-
-
-async def region_read(service: RegionService, record: Region) -> RegionRead:
-    """Resolve inherited presentation metadata without changing stored overrides."""
-    return RegionRead.model_validate((await service.resolve_flags([record]))[0])
+Regions = Annotated[ResourceService[Region, RegionRead], Depends(dependencies.regions)]
+Clusters = Annotated[ResourceService[Cluster, ClusterRead], Depends(dependencies.clusters)]
 
 
 region_router = ResourceRouter(domain="clusters", resource="region", prefix="/regions")
@@ -54,7 +48,6 @@ async def list_region(
         q=query.q,
         filters=filters,
     )
-    records = await service.resolve_flags(records)
     return Page(
         items=[RegionRead.model_validate(record) for record in records],
         total=total,
@@ -71,7 +64,7 @@ async def retrieve_region(
 ) -> RegionRead:
     """Read one registry identity with current authentication."""
     record = await service.get(principal, id)
-    return await region_read(service, record)
+    return RegionRead.model_validate(record)
 
 
 @region_router.action(ResourceAction.CREATE, response_model=RegionRead)
@@ -82,7 +75,7 @@ async def create_region(
 ) -> RegionRead:
     """Write audited registry metadata; requires instance-owner privileges."""
     record = await service.save(principal, payload.model_dump())
-    return await region_read(service, record)
+    return RegionRead.model_validate(record)
 
 
 @region_router.action(ResourceAction.REPLACE, response_model=RegionRead)
@@ -94,7 +87,7 @@ async def replace_region(
 ) -> RegionRead:
     """Write audited registry metadata; requires instance-owner privileges."""
     record = await service.save(principal, payload.model_dump(), identity=id)
-    return await region_read(service, record)
+    return RegionRead.model_validate(record)
 
 
 @region_router.action(ResourceAction.UPDATE, response_model=RegionRead)
@@ -106,7 +99,7 @@ async def update_region(
 ) -> RegionRead:
     """Write audited registry metadata; requires instance-owner privileges."""
     record = await service.save(principal, payload.model_dump(exclude_unset=True), identity=id)
-    return await region_read(service, record)
+    return RegionRead.model_validate(record)
 
 
 @region_router.action(ResourceAction.DELETE)

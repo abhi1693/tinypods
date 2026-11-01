@@ -54,9 +54,7 @@ def test_refresh_cookie_transport_and_expired_access_logout(
     @app.post("/private-mutation", response_model=IdentityResponse)
     async def mutation(principal: PrincipalDependency) -> IdentityResponse:
         """Model a protected unsafe feature route using the shared principal dependency."""
-        return IdentityResponse(
-            user_id=principal.user_id, username=principal.username, is_owner=principal.is_owner
-        )
+        return IdentityResponse.from_principal(principal)
 
     with TestClient(app, base_url=base) as client:
 

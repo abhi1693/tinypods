@@ -1,21 +1,15 @@
 """Explicit version-one public DTOs for application definitions."""
 
-from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field
 from tinypods_api.http import PageParams, RequestDTO
+from tinypods_api.http.model_contracts import DefinitionPatch, DefinitionRead
+from tinypods_api.http.representations import Related, ResourceRead
+from tinypods_api.repositories.contracts import VersionRead
 from tinypods_core.applications import ApplicationStatus, ConfigurationField, SourceType
-
-
-class DefinitionRead(BaseModel):
-    """Safe identity and audit timestamps shared by definition responses."""
-
-    model_config = ConfigDict(from_attributes=True)
-    id: UUID
-    created: datetime
-    last_updated: datetime
+from tinypods_core.applications.models import Application, ApplicationCategory, Category, Release
 
 
 class CategoryWrite(RequestDTO):
@@ -30,6 +24,8 @@ class CategoryWrite(RequestDTO):
 class CategoryRead(DefinitionRead, CategoryWrite):
     """Public category representation."""
 
+    resource_model = Category
+
 
 class ApplicationWrite(CategoryWrite):
     """Complete application state; status does not enforce billing/access."""
@@ -40,6 +36,8 @@ class ApplicationWrite(CategoryWrite):
 class ApplicationRead(DefinitionRead, ApplicationWrite):
     """Public application metadata, independent of deployment definitions."""
 
+    resource_model = Application
+
 
 class ReleaseWrite(RequestDTO):
     """Complete shared Helm definition; no installed values or generated secrets."""
@@ -49,19 +47,13 @@ class ReleaseWrite(RequestDTO):
     configuration_fields: list[ConfigurationField] = Field(default_factory=list)
 
 
-class ReleaseRead(DefinitionRead, ReleaseWrite):
-    """Public release definition without installation state."""
+class ReleaseRead(DefinitionRead):
+    """Public release definition with prefetched application and chart-version summaries."""
 
-
-class DefinitionPatch(RequestDTO):
-    """Reject explicit nulls except for a nullable icon; preserve omitted fields."""
-
-    @model_validator(mode="after")
-    def validate_nulls(self) -> "DefinitionPatch":
-        """Distinguish absence from clearing nullable data on partial updates."""
-        if any(getattr(self, name) is None for name in self.model_fields_set - {"icon"}):
-            raise ValueError("Only icon may be explicitly null")
-        return self
+    resource_model = Release
+    application: Related[ApplicationRead]
+    chart_version: Related[VersionRead]
+    configuration_fields: list[ConfigurationField]
 
 
 class CategoryPatch(DefinitionPatch):
@@ -117,9 +109,10 @@ class MembershipWrite(RequestDTO):
     category_id: UUID
 
 
-class MembershipRead(BaseModel):
+class MembershipRead(ResourceRead):
     """The actual composite membership identity, without synthetic fields."""
 
     model_config = ConfigDict(from_attributes=True)
-    application_id: UUID
-    category_id: UUID
+    resource_model = ApplicationCategory
+    application: Related[ApplicationRead]
+    category: Related[CategoryRead]

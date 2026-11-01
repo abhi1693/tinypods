@@ -147,7 +147,7 @@ def test_application_resources_and_memberships(auth_settings: Settings) -> None:
             == 200
         )
         assert (
-            client.get(BASE + "/releases/" + release["id"]).json()["chart_version_id"]
+            client.get(BASE + "/releases/" + release["id"]).json()["chart_version"]["id"]
             == release_body["chart_version_id"]
         )
         assert (
@@ -204,9 +204,10 @@ def test_application_resources_and_memberships(auth_settings: Settings) -> None:
         memberships = "/applications/" + app_id + "/categories"
         assert client.get(BASE + memberships).json()["total"] == 0
         post(memberships, {"category_id": category["id"]})
-        assert client.get(BASE + memberships).json()["items"] == [
-            {"application_id": app_id, "category_id": category["id"]}
-        ]
+        items = client.get(BASE + memberships).json()["items"]
+        assert len(items) == 1
+        assert items[0]["application"]["id"] == app_id
+        assert items[0]["category"]["id"] == category["id"]
         assert (
             client.post(
                 BASE + memberships, json={"category_id": category["id"]}, headers=headers
@@ -340,7 +341,12 @@ def test_definition_services_are_atomic_without_http(auth_settings: Settings) ->
     Args:
         auth_settings: Disposable migrated database for isolated service transactions.
     """
-    from tinypods_api.applications.contracts import ApplicationQuery, CategoryQuery, ReleaseQuery
+    from tinypods_api.applications.contracts import (
+        ApplicationQuery,
+        CategoryQuery,
+        MembershipRead,
+        ReleaseQuery,
+    )
     from tinypods_api.applications.routes import (
         list_applications,
         list_categories,
@@ -348,6 +354,7 @@ def test_definition_services_are_atomic_without_http(auth_settings: Settings) ->
         list_releases,
     )
     from tinypods_api.http import PageParams
+    from tinypods_api.http.presentation import MembershipResource
     from tinypods_core.applications import Category, Release
     from tinypods_core.applications.service import DefinitionError, MembershipService
     from tinypods_core.auth import AuthError
@@ -401,7 +408,19 @@ def test_definition_services_are_atomic_without_http(auth_settings: Settings) ->
                     with pytest.raises(DefinitionError) as absent:
                         await service.get(reader, uuid4())
                     assert absent.value.status == 404
-                    page = await handler(query, service, reader)
+                    from tinypods_api.applications.contracts import (
+                        ApplicationRead,
+                        CategoryRead,
+                        ReleaseRead,
+                    )
+                    from tinypods_api.http.presentation import ResourceService
+
+                    schema = {
+                        Application: ApplicationRead,
+                        Category: CategoryRead,
+                        Release: ReleaseRead,
+                    }[model]
+                    page = await handler(query, ResourceService(service, schema), reader)
                     assert page.total == 1 and page.items[0].id == identity
                 async with database.session() as session:
                     with pytest.raises(AuthError) as denied:
@@ -434,9 +453,12 @@ def test_definition_services_are_atomic_without_http(auth_settings: Settings) ->
                 assert pair.category_id == category.id
             async with database.session() as session:
                 page = await list_memberships(
-                    application.id, PageParams(), MembershipService(session, authorization), reader
+                    application.id,
+                    PageParams(),
+                    MembershipResource(MembershipService(session, authorization), MembershipRead),
+                    reader,
                 )
-                assert page.total == 1 and page.items[0].category_id == category.id
+                assert page.total == 1 and page.items[0].category.id == category.id
                 for limit, offset in ((0, 0), (101, 0), (25, -1)):
                     with pytest.raises(ValueError):
                         await MembershipService(session, authorization).list(
