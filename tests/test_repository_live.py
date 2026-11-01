@@ -7,6 +7,7 @@ import subprocess
 
 import pytest
 from fastapi.testclient import TestClient
+from semver import Version
 from test_auth import PASSWORD, credentials
 from test_auth import auth_settings as auth_settings
 from tinypods_api.main import create_app
@@ -70,6 +71,10 @@ def test_live_jetstack_repository_cli_and_api(auth_settings: Settings) -> None:
             "/api/v1/chart-versions?chart_id=" + cert["id"] + "&ordering=created"
         ).json()
         assert versions["total"] == 3
+        assert all(
+            Version.parse(row["version"].removeprefix("v")).prerelease is None
+            for row in versions["items"]
+        )
         assert result["versions"] <= result["charts"] * 3
         latest = client.get(
             "/api/v1/chart-versions?chart_id=" + cert["id"] + "&is_latest=true"

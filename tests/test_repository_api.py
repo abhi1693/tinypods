@@ -92,7 +92,7 @@ def test_populated_repository_migration_and_database_protection(
                 INSERT INTO chart_versions
                     (id,created,last_updated,chart_id,version,digest,available)
                 SELECT gen_random_uuid(),now(),now(),id,value,:digest,true FROM charts
-                CROSS JOIN (VALUES ('1.9.0'),('1.10.0')) AS versions(value)
+                CROSS JOIN (VALUES ('1.9.0'),('1.10.0'),('2.0.0-rc.1')) AS versions(value)
             """),
                 {"digest": DIGEST},
             )
@@ -101,6 +101,10 @@ def test_populated_repository_migration_and_database_protection(
         with Session(engine) as session:
             latest = session.exec(select(ChartVersion).where(ChartVersion.is_latest)).one()
             assert latest.version == "1.10.0" and latest.available
+            prerelease = session.exec(
+                select(ChartVersion).where(ChartVersion.version == "2.0.0-rc.1")
+            ).one()
+            assert not prerelease.available and not prerelease.is_latest
         for sql in (
             "UPDATE chart_versions SET is_latest=true",
             "UPDATE chart_versions SET available=false WHERE is_latest",
@@ -588,7 +592,7 @@ def test_initial_version_window_and_incremental_sync(auth_settings: Settings) ->
     observations = [
         Observation(chart=name, version=version, digest=DIGEST)
         for name in ("first", "second")
-        for version in ("1.9.0", "1.0.0", "1.11.0", "1.2.0", "1.10.0")
+        for version in ("1.9.0", "1.0.0", "1.11.0", "1.2.0", "1.10.0", "2.0.0-rc.1")
     ]
 
     async def exercise() -> None:
@@ -652,6 +656,42 @@ def test_initial_version_window_and_incremental_sync(auth_settings: Settings) ->
                     "1.11.0",
                     "2.4.0",
                 ]
+            # Preserve an old prerelease pin without letting its higher major
+            # version prevent the first stable-version window from being imported.
+            async with database.transaction() as session:
+                legacy_chart = Chart(repository_id=repository.id, name="legacy", available=True)
+                session.add(legacy_chart)
+                await session.flush()
+                legacy = ChartVersion(
+                    chart_id=legacy_chart.id,
+                    version="9.0.0-rc.1",
+                    digest=DIGEST,
+                    available=True,
+                    is_latest=True,
+                )
+                application = Application(name="Legacy prerelease pin", slug="legacy-prerelease")
+                session.add(legacy)
+                session.add(application)
+                await session.flush()
+                pin = Release(application_id=application.id, chart_version_id=legacy.id)
+                session.add(pin)
+            observations.extend(
+                Observation(chart="legacy", version=value, digest=DIGEST)
+                for value in ("1.0.0", "1.1.0", "1.2.0", "1.3.0", "9.0.0-rc.1")
+            )
+            assert (await service.run(principal, repository.id)).versions == 10
+            async with database.session() as session:
+                retained = await session.get(ChartVersion, legacy.id)
+                assert retained is not None and not retained.available and not retained.is_latest
+                assert (await session.get(Release, pin.id)).chart_version_id == legacy.id
+                stable = (
+                    await session.exec(
+                        select(ChartVersion).where(
+                            ChartVersion.chart_id == legacy_chart.id, ChartVersion.is_latest
+                        )
+                    )
+                ).one()
+                assert stable.version == "1.3.0"
             for invalid in (0, 10001):
                 with pytest.raises(DefinitionError) as caught:
                     await service.run(principal, repository.id, invalid)
@@ -663,7 +703,7 @@ def test_initial_version_window_and_incremental_sync(auth_settings: Settings) ->
 
 
 def test_version_selection_semantics() -> None:
-    """Rank numeric versions and prereleases; reject invalid metadata."""
+    """Select stable versions only; exclude prereleases before the initial window."""
     from tinypods_core.repositories.service import chart_version, select_versions
 
     items = tuple(
@@ -671,12 +711,21 @@ def test_version_selection_semantics() -> None:
         for value in ("v1.0.0", "2.0.0-rc.1", "2.0.0", "1.9.0", "1.10.0")
     )
     assert [item.version for item in select_versions(items, {}, 3)] == [
-        "2.0.0-rc.1",
         "2.0.0",
+        "1.9.0",
         "1.10.0",
     ]
     assert str(chart_version("v0.15-alpha.3")) == "0.15.0-alpha.3"
     assert str(chart_version("1")) == "1.0.0"
+    prereleases = tuple(
+        Observation(chart="only-pre", version=value, digest=DIGEST)
+        for value in ("1.0.0-alpha.1", "2.0.0-beta.2", "3.0.0-rc.1")
+    )
+    assert select_versions(prereleases, {}, 3) == ()
+    assert select_versions(items, {"example": ("9.0.0-rc.1",)}, 3) == select_versions(items, {}, 3)
+    build = Observation(chart="example", version="2.0.0+build.1", digest=DIGEST)
+    assert select_versions((build,), {}, 3) == (build,)
+
     assert select_versions((), {}, 3) == ()
     assert select_versions(items[:1], {"example": ()}, 3) == items[:1]
     with pytest.raises(SourceError) as caught:

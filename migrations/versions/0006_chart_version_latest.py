@@ -27,6 +27,12 @@ def upgrade():
         parts = re.split(r"(?=[-+])", row.version.removeprefix("v"), maxsplit=1)
         core = parts[0]
         value = Version.parse(core + ".0" * max(0, 3 - len(core.split("."))) + "".join(parts[1:]))
+        if value.prerelease is not None:
+            # Preserve any existing release pin, but stop advertising prereleases.
+            connection.execute(
+                sa.text("UPDATE chart_versions SET available=false WHERE id=:id"), {"id": row.id}
+            )
+            continue
         rank = (value, row.version, row.digest)
         previous = latest.get(row.chart_id)
         if previous is None or rank > previous[0]:

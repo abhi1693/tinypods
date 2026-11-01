@@ -121,7 +121,7 @@ uv run --no-sync pytest tests/test_repository_live.py -m live_repository -s --no
 
 ### Initial version window
 
-Newly synced charts import only their latest three distinct semantic versions by
+Newly synced charts import only their latest three distinct stable semantic versions by
 default, independently for each chart. Override with
 `tinypods repositories sync --initial-versions 5` or
 `POST /api/v1/chart-repositories/{id}/sync?initial_versions=5` (1–10000).
@@ -137,7 +137,7 @@ The public-network demo is deselected from the default suite. Select its
 ### Latest version pointer
 
 Chart-version responses expose the read-only boolean `is_latest`. A successful
-sync marks exactly one highest available semantic version per chart, including
+sync marks exactly one highest available semantic version per chart, excluding
 prereleases. Equal-precedence labels and digests use deterministic tie-breaks.
 Charts absent from the snapshot have no latest version. Failed syncs preserve
 the previous pointer, and application release pins do not change.
@@ -145,3 +145,9 @@ Use `GET /api/v1/chart-versions?chart_id=...&is_latest=true` to find it.
 Migration 0006 backfills the pointer for already available versions; unverified
 imported pins stay unmarked until sync. A database constraint allows at most one
 latest row per chart and requires that row to be available.
+
+Sync imports stable semantic versions only. Alpha, beta, release-candidate and
+other prerelease identifiers are skipped before applying the initial N-version
+limit. Build metadata (for example `1.2.3+build.1`) remains supported. Previously
+pinned prerelease records are retained but become unavailable and cannot be
+latest after sync; they do not determine the stable import window.

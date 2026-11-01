@@ -34,13 +34,19 @@ def select_versions(
 ) -> tuple[Observation, ...]:
     """Limit first observations per chart, then retain its imported semantic-version floor."""
     grouped: dict[str, list[Observation]] = {}
-    for observation in observations:
-        grouped.setdefault(observation.chart, []).append(observation)
     selected: list[Observation] = []
     try:
+        # Exclude alpha/beta/RC versions before counting the initial window, so
+        # prereleases neither consume an N slot nor become a chart's latest row.
+        for observation in observations:
+            if chart_version(observation.version).prerelease is None:
+                grouped.setdefault(observation.chart, []).append(observation)
         for name, items in grouped.items():
             ordered = sorted({chart_version(item.version) for item in items}, reverse=True)
-            saved = existing.get(name, ())
+            # Legacy prerelease pins must not set the stable-version import floor.
+            saved = tuple(
+                value for value in existing.get(name, ()) if chart_version(value).prerelease is None
+            )
             # A registered chart with no versions has not been synced yet. Once
             # imported, its oldest retained version prevents historical backfill.
             floor = (
