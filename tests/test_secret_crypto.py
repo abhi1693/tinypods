@@ -262,3 +262,16 @@ def test_confidential_dto_validation_hides_utf8_and_length_inputs() -> None:
             ClusterSecretWrite(cluster_id=uuid4(), name="Pi", kubeconfig=SecretStr(payload))
         assert TOKEN not in str(error.value)
         assert message in str(error.value)
+
+
+def test_key_configuration_errors_identify_the_secret_field(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Operator key failures must not be mislabeled as authentication configuration."""
+    from tinypods_core.settings import ConfigurationError, load_settings
+
+    monkeypatch.setenv("TINYPODS_SECRET_KEYS", json.dumps({"old": "fixture-invalid-key"}))
+    monkeypatch.setenv("TINYPODS_SECRET_ACTIVE_KEY_ID", "old")
+    with pytest.raises(ConfigurationError, match="Invalid settings: secret_keys") as error:
+        load_settings()
+    assert "fixture-invalid-key" not in str(error.value)

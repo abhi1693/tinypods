@@ -77,17 +77,11 @@ class Settings(BaseSettings):
         """Allow an unset Compose variable to keep secret writes disabled."""
         return None if value == "" else value
 
-    @model_validator(mode="after")
-    def validate_secret_keys(self) -> "Settings":
-        """Reject incomplete keyrings before a process accepts confidential writes."""
-        if bool(self.secret_keys) != (self.secret_active_key_id is not None):
-            raise ValueError("Secret keys and active key identifier must be configured together")
-        if (
-            self.secret_active_key_id is not None
-            and self.secret_active_key_id not in self.secret_keys
-        ):
-            raise ValueError("Active secret key is missing")
-        for name, value in self.secret_keys.items():
+    @field_validator("secret_keys")
+    @classmethod
+    def validate_secret_keys(cls, keys: dict[str, SecretStr]) -> dict[str, SecretStr]:
+        """Keep key-format failures attached to their configuration field."""
+        for name, value in keys.items():
             if (
                 not name
                 or len(name) > 64
@@ -104,7 +98,20 @@ class Settings(BaseSettings):
                 raise ValueError("Secret keys must encode 32 bytes") from None
             if len(decoded) != 32:
                 raise ValueError("Secret keys must encode 32 bytes")
-        return self
+        return keys
+
+    @field_validator("secret_active_key_id")
+    @classmethod
+    def validate_active_secret_key(cls, value: str | None, info: ValidationInfo) -> str | None:
+        """Validate pairing after the preceding key field without mislabeling auth errors."""
+        if "secret_keys" not in info.data:
+            return value
+        keys = info.data["secret_keys"]
+        if bool(keys) != (value is not None):
+            raise ValueError("Secret keys and active key identifier must be configured together")
+        if value is not None and value not in keys:
+            raise ValueError("Active secret key is missing")
+        return value
 
     environment: Literal["production", "development"] = "production"
     service_name: str = Field(default="TinyPods", min_length=1, max_length=80)
