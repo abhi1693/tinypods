@@ -142,3 +142,5 @@ semantics for eligible public data; rate limiting fails closed.
 See [repository management and sync](../../docs/chart-repositories.md) for metadata
 resources, the admin sync action, CLI command, normalized release references and
 operator network/credential configuration.
+
+Read relationships use [nested public representations](../../docs/nested-api-representations.md); write inputs and filters retain UUID foreign keys.

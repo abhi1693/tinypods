@@ -1,6 +1,7 @@
 """Core-owned persistence models; plugin metadata belongs to each plugin."""
 
 from datetime import UTC, datetime
+from typing import ClassVar
 from uuid import UUID, uuid4
 
 from sqlalchemy import CheckConstraint, Column, DateTime, Index, UniqueConstraint, func
@@ -27,6 +28,8 @@ class Installation(CoreModel, table=True):
 
 class User(AuditTrailMixin, table=True):
     """Store provider-independent core identities; no plaintext passwords or default credentials."""
+
+    brief_fields: ClassVar[tuple[str, ...] | None] = ("id", "username", "is_owner")
 
     __tablename__ = "auth_user"
     id: UUID = Field(default_factory=uuid4, primary_key=True)

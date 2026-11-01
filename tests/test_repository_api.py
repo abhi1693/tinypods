@@ -366,7 +366,7 @@ def test_repository_api_cli_and_cascade_rules(
         assert latest["total"] == 1 and latest["items"][0]["digest"] == "sha256:" + "b" * 64
         assert all(not row["is_latest"] for row in versions if not row["available"])
         assert (
-            client.get(BASE + "/releases/" + release.json()["id"]).json()["chart_version_id"]
+            client.get(BASE + "/releases/" + release.json()["id"]).json()["chart_version"]["id"]
             == version["id"]
         )
         assert (
@@ -554,7 +554,15 @@ def test_repository_service_and_dto_boundaries(auth_settings: Settings) -> None:
 
     from fastapi import HTTPException
     from starlette.requests import Request
-    from tinypods_api.repositories.contracts import ChartQuery, RepositoryQuery, VersionQuery
+    from tinypods_api.http.presentation import ResourceService
+    from tinypods_api.repositories.contracts import (
+        ChartQuery,
+        ChartRead,
+        RepositoryQuery,
+        RepositoryRead,
+        VersionQuery,
+        VersionRead,
+    )
     from tinypods_api.repositories.dependencies import sync
     from tinypods_api.repositories.routes import list_chart, list_repository, list_version
 
@@ -608,7 +616,16 @@ def test_repository_service_and_dto_boundaries(auth_settings: Settings) -> None:
             ):
                 async with database.session() as session:
                     result = await handler(
-                        query, DefinitionService(model, session, authorization), principal
+                        query,
+                        ResourceService(
+                            DefinitionService(model, session, authorization),
+                            {
+                                ChartRepository: RepositoryRead,
+                                Chart: ChartRead,
+                                ChartVersion: VersionRead,
+                            }[model],
+                        ),
+                        principal,
                     )
                     assert result.total == 1 and len(result.items) == 1
             async with database.session() as session:

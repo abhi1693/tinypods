@@ -27,9 +27,7 @@ router = APIRouter(route_class=RateLimitedRoute)
 )
 async def session_identity(principal: PrincipalDependency) -> IdentityResponse:
     """Show the account currently signed in to this browser."""
-    return IdentityResponse(
-        user_id=principal.user_id, username=principal.username, is_owner=principal.is_owner
-    )
+    return IdentityResponse.from_principal(principal)
 
 
 @router.post(

@@ -1,11 +1,14 @@
 """Region hierarchy and Kubernetes cluster identities; credentials are stored separately."""
 
+from __future__ import annotations
+
+from typing import ClassVar
 from uuid import UUID, uuid4
 
 from sqlalchemy import CheckConstraint, Column, Index, UniqueConstraint, Uuid, text
 from sqlalchemy.dialects.postgresql import ARRAY
-from sqlalchemy.orm import deferred
-from sqlmodel import Field
+from sqlalchemy.orm import deferred, relationship
+from sqlmodel import Field, Relationship
 from tinypods_core.audit import AuditTrailMixin
 from tinypods_core.audit import capture as _capture  # noqa: F401
 from tinypods_core.audit.registry import ModelRegistration, register
@@ -18,6 +21,11 @@ _region_path: Column[list[UUID]] = Column(
 
 class Region(AuditTrailMixin, table=True):
     """Group clusters in an acyclic tree with optional inherited visual metadata."""
+
+    brief_fields: ClassVar[tuple[str, ...] | None] = ("id", "name", "slug", "flag")
+    parent: Region | None = Relationship(
+        sa_relationship=relationship("Region", lazy="raise", remote_side="Region.id")
+    )
 
     __tablename__ = "regions"
     __table_args__ = (
@@ -44,6 +52,9 @@ class Region(AuditTrailMixin, table=True):
 
 class Cluster(AuditTrailMixin, table=True):
     """Register one Kubernetes target within a region, without storing kubeconfig here."""
+
+    brief_fields: ClassVar[tuple[str, ...] | None] = ("id", "name", "slug", "region")
+    region: Region = Relationship(sa_relationship=relationship("Region", lazy="raise"))
 
     __tablename__ = "clusters"
     __table_args__ = (

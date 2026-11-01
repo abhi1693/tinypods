@@ -1,11 +1,13 @@
 """Version-one external source management and synchronized metadata browsing."""
 
+from dataclasses import asdict
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from tinypods_api.auth import PrincipalDependency
 from tinypods_api.http import Page, ResourceAction, ResourceRouter
+from tinypods_api.http.presentation import ResourceService
 from tinypods_api.repositories import dependencies
 from tinypods_api.repositories.contracts import (
     ChartPatch,
@@ -20,8 +22,7 @@ from tinypods_api.repositories.contracts import (
     VersionQuery,
     VersionRead,
 )
-from tinypods_api.repositories.dependencies import SyncDependency
-from tinypods_core.applications.service import DefinitionService
+from tinypods_api.repositories.dependencies import PresenterDependency, SyncDependency
 from tinypods_core.repositories import Chart, ChartRepository, ChartVersion
 
 router = APIRouter()
@@ -31,7 +32,7 @@ repository_router = ResourceRouter(
     domain="repositories", resource="repository", prefix="/chart-repositories"
 )
 RepositoryService = Annotated[
-    DefinitionService[ChartRepository], Depends(dependencies.repositories)
+    ResourceService[ChartRepository, RepositoryRead], Depends(dependencies.repositories)
 ]
 
 
@@ -112,17 +113,20 @@ async def sync_repository(
     id: UUID,
     service: SyncDependency,
     principal: PrincipalDependency,
+    presenter: PresenterDependency,
     initial_versions: Annotated[int, Query(ge=1, le=10000)] = 3,
 ) -> SyncRead:
     """Fetch external metadata and commit a complete, still-current snapshot atomically."""
-    return SyncRead.model_validate(await service.run(principal, id, initial_versions))
+    return await presenter.values(
+        principal, SyncRead, asdict(await service.run(principal, id, initial_versions))
+    )
 
 
 router.include_router(repository_router)
 
 
 chart_router = ResourceRouter(domain="repositories", resource="chart", prefix="/charts")
-ChartService = Annotated[DefinitionService[Chart], Depends(dependencies.charts)]
+ChartService = Annotated[ResourceService[Chart, ChartRead], Depends(dependencies.charts)]
 
 
 @chart_router.action(ResourceAction.LIST, response_model=Page[ChartRead])
@@ -197,7 +201,9 @@ router.include_router(chart_router)
 
 
 version_router = ResourceRouter(domain="repositories", resource="version", prefix="/chart-versions")
-VersionService = Annotated[DefinitionService[ChartVersion], Depends(dependencies.versions)]
+VersionService = Annotated[
+    ResourceService[ChartVersion, VersionRead], Depends(dependencies.versions)
+]
 
 
 @version_router.action(ResourceAction.LIST, response_model=Page[VersionRead])

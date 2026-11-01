@@ -5,9 +5,11 @@ from typing import Literal
 from uuid import UUID
 
 from pydantic import Field, model_validator
-from tinypods_api.applications.contracts import DefinitionPatch, DefinitionRead
 from tinypods_api.http import PageParams, RequestDTO
+from tinypods_api.http.model_contracts import DefinitionPatch, DefinitionRead
+from tinypods_api.http.representations import Related
 from tinypods_core.applications import SourceType
+from tinypods_core.repositories.models import Chart, ChartRepository, ChartVersion
 from tinypods_core.repositories.sources import CHART_NAME, repository_url
 
 
@@ -38,6 +40,7 @@ class RepositoryPatch(DefinitionPatch):
 class RepositoryRead(DefinitionRead):
     """Public source configuration and last successful metadata refresh."""
 
+    resource_model = ChartRepository
     name: str
     source_type: SourceType
     url: str
@@ -71,7 +74,8 @@ class ChartPatch(DefinitionPatch):
 class ChartRead(DefinitionRead):
     """Chart identity and availability reported by the last successful source sync."""
 
-    repository_id: UUID
+    resource_model = Chart
+    repository: Related[RepositoryRead]
     name: str
     available: bool
 
@@ -88,7 +92,8 @@ class ChartQuery(PageParams):
 class VersionRead(DefinitionRead):
     """Immutable upstream chart/version/digest identity; files remain external."""
 
-    chart_id: UUID
+    resource_model = ChartVersion
+    chart: Related[ChartRead]
     version: str
     digest: str
     description: str
@@ -111,7 +116,7 @@ class SyncRead(RequestDTO):
     """A complete committed metadata refresh, not a chart content/signature attestation."""
 
     model_config = {"from_attributes": True, "extra": "forbid"}
-    repository_id: UUID
+    repository: Related[RepositoryRead]
     charts: int
     versions: int
     discovery_supported: bool

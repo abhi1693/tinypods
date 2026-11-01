@@ -575,7 +575,7 @@ def test_oidc_http_cross_site_callback_multitab_csrf_and_logout(
         assert client.cookies[binding_cookie] == binding
         assert "access_token" not in callback.text and "id_token" not in callback.text
         identity = client.get("/api/v1/auth/session").json()
-        assert identity["user_id"] != owner_id and identity["is_owner"] is False
+        assert identity["user"]["id"] != owner_id and identity["user"]["is_owner"] is False
         # Callback state is single use, while a different outstanding tab still completes.
         assert (
             client.get(

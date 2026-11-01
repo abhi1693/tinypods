@@ -3,8 +3,10 @@
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request
-from tinypods_api.applications.dependencies import Session
 from tinypods_api.auth import SessionDependency
+from tinypods_api.http.dependencies import Session
+from tinypods_api.http.presentation import Presenter, ResourceService
+from tinypods_api.repositories.contracts import ChartRead, RepositoryRead, VersionRead
 from tinypods_core.applications.service import DefinitionService
 from tinypods_core.auth.authorization import AuthorizationService
 from tinypods_core.db import Database
@@ -14,19 +16,27 @@ from tinypods_core.repositories.service import RepositorySync
 from tinypods_core.repositories.transport import MetadataHTTP
 
 
-def repositories(session: Session, auth: SessionDependency) -> DefinitionService[ChartRepository]:
+def repositories(
+    session: Session, auth: SessionDependency
+) -> ResourceService[ChartRepository, RepositoryRead]:
     """Inject the source CRUD service without network I/O."""
-    return DefinitionService(ChartRepository, session, AuthorizationService(auth))
+    return ResourceService(
+        DefinitionService(ChartRepository, session, AuthorizationService(auth)), RepositoryRead
+    )
 
 
-def charts(session: Session, auth: SessionDependency) -> DefinitionService[Chart]:
+def charts(session: Session, auth: SessionDependency) -> ResourceService[Chart, ChartRead]:
     """Inject chart registration and browsing."""
-    return DefinitionService(Chart, session, AuthorizationService(auth))
+    return ResourceService(DefinitionService(Chart, session, AuthorizationService(auth)), ChartRead)
 
 
-def versions(session: Session, auth: SessionDependency) -> DefinitionService[ChartVersion]:
+def versions(
+    session: Session, auth: SessionDependency
+) -> ResourceService[ChartVersion, VersionRead]:
     """Inject read-only synchronized version browsing."""
-    return DefinitionService(ChartVersion, session, AuthorizationService(auth))
+    return ResourceService(
+        DefinitionService(ChartVersion, session, AuthorizationService(auth)), VersionRead
+    )
 
 
 def sync(request: Request, auth: SessionDependency) -> RepositorySync:
@@ -42,3 +52,11 @@ def sync(request: Request, auth: SessionDependency) -> RepositorySync:
 
 
 SyncDependency = Annotated[RepositorySync, Depends(sync)]
+
+
+def presenter(session: Session, auth: SessionDependency) -> Presenter:
+    """Compose action-result projection with the same access and loading rules."""
+    return Presenter(session, AuthorizationService(auth))
+
+
+PresenterDependency = Annotated[Presenter, Depends(presenter)]

@@ -1,9 +1,13 @@
 """Four core-owned tables for Helm application definitions."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, ClassVar
 from uuid import UUID, uuid4
 
 from sqlalchemy import CheckConstraint, Column, UniqueConstraint
-from sqlmodel import Field
+from sqlalchemy.orm import relationship
+from sqlmodel import Field, Relationship
 from tinypods_core.applications.definitions import (
     ApplicationStatus,
     ConfigurationFields,
@@ -14,9 +18,14 @@ from tinypods_core.audit.registry import ModelRegistration, register
 from tinypods_core.json_types import JsonRecord
 from tinypods_core.persistence import CoreModel
 
+if TYPE_CHECKING:
+    from tinypods_core.repositories.models import ChartVersion
+
 
 class Application(AuditTrailMixin, table=True):
     """Mutable application information and a single operator-selected status."""
+
+    brief_fields: ClassVar[tuple[str, ...] | None] = ("id", "name", "slug", "icon", "status")
 
     __tablename__ = "applications"
     __table_args__ = (
@@ -38,6 +47,8 @@ class Application(AuditTrailMixin, table=True):
 class Category(AuditTrailMixin, table=True):
     """Reusable application grouping and its display icon."""
 
+    brief_fields: ClassVar[tuple[str, ...] | None] = ("id", "name", "slug", "icon")
+
     __tablename__ = "categories"
     __table_args__ = (
         CheckConstraint("slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'", name="slug"),
@@ -57,6 +68,12 @@ class ApplicationCategory(CoreModel, table=True):
     application, category and release entities, not direct membership writes.
     """
 
+    brief_fields: ClassVar[tuple[str, ...] | None] = ("application", "category")
+    application: Application = Relationship(
+        sa_relationship=relationship("Application", lazy="raise")
+    )
+    category: Category = Relationship(sa_relationship=relationship("Category", lazy="raise"))
+
     __tablename__ = "application_categories"
     application_id: UUID = Field(
         primary_key=True, foreign_key="applications.id", ondelete="RESTRICT"
@@ -68,6 +85,14 @@ class ApplicationCategory(CoreModel, table=True):
 
 class Release(AuditTrailMixin, table=True):
     """Pin a Helm chart and retain shared configuration field definitions."""
+
+    brief_fields: ClassVar[tuple[str, ...] | None] = ("id", "application", "chart_version")
+    application: Application = Relationship(
+        sa_relationship=relationship("Application", lazy="raise")
+    )
+    chart_version: ChartVersion = Relationship(
+        sa_relationship=relationship("ChartVersion", lazy="raise")
+    )
 
     __tablename__ = "releases"
     __table_args__ = (

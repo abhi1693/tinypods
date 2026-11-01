@@ -81,9 +81,7 @@ async def login(
         previous_refresh_digest=digest(previous_refresh) if previous_refresh is not None else None,
     )
     set_session_cookies(response, result, policy)
-    return LoginResponse(
-        user_id=result.principal.user_id,
-        username=result.principal.username,
-        is_owner=result.principal.is_owner,
+    return LoginResponse.from_principal(
+        result.principal,
         expires_at=result.expires_at,
     )
