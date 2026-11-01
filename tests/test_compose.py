@@ -382,3 +382,47 @@ def test_watch_rebuilds_api_worker_and_runs_new_migrations(
             capture_output=True,
             timeout=30,
         )
+
+
+@pytest.mark.parametrize("custom", [False, True])
+def test_repository_sync_configuration_reaches_all_services(custom: bool) -> None:
+    """Forward repository sync limits and credentials without starting containers."""
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith(("TINYPODS_", "COMPOSE_", "POSTGRES_", "VALKEY_"))
+    }
+    environment.update(
+        {
+            "POSTGRES_PASSWORD": "test-only-unused",
+            "VALKEY_PASSWORD": "test-only-unused",
+            "TINYPODS_DATABASE_URL": "postgresql://user:unused@postgres:5432/test",
+            "TINYPODS_VALKEY_URL": "redis://:unused@valkey:6379/0",
+        }
+    )
+    expected = {
+        "TINYPODS_REPOSITORY_ALLOWED_HOSTS": "[]",
+        "TINYPODS_REPOSITORY_MAX_BYTES": "8000000",
+        "TINYPODS_REPOSITORY_MAX_ITEMS": "10000",
+        "TINYPODS_REPOSITORY_TIMEOUT_SECONDS": "60",
+    }
+    if custom:
+        expected.update(
+            {
+                "TINYPODS_REPOSITORY_ALLOWED_HOSTS": '["charts.bitnami.com"]',
+                "TINYPODS_REPOSITORY_MAX_BYTES": "32000000",
+                "TINYPODS_REPOSITORY_MAX_ITEMS": "25000",
+                "TINYPODS_REPOSITORY_TIMEOUT_SECONDS": "180",
+                "TINYPODS_REPOSITORY_CREDENTIALS": json.dumps(
+                    {"registry.example": {"username": "test", "password": "unused"}}
+                ),
+            }
+        )
+        environment.update(expected)
+    stack = ComposeStack("tinypods-config-test", environment)
+    services = json.loads(stack.run("config", "--format", "json"))["services"]
+    for name in ("api", "worker", "migrate"):
+        configured = services[name]["environment"]
+        assert all(configured[key] == value for key, value in expected.items())
+        if not custom:
+            assert configured.get("TINYPODS_REPOSITORY_CREDENTIALS") is None
