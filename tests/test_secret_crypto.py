@@ -252,7 +252,13 @@ def test_confidential_dto_validation_hides_utf8_and_length_inputs() -> None:
     """Write validation never needs to print the original confidential document."""
     from tinypods_api.secrets.contracts import ClusterSecretWrite
 
-    for payload in (TOKEN + chr(0xD800), TOKEN + "\u2603" * 100000, TOKEN + "x" * 262144):
+    cases = (
+        (TOKEN + chr(0xD800), "UTF-8"),
+        (TOKEN + chr(0x2603) * 100000, "byte limit"),
+        (TOKEN + "x" * 262144, "262144"),
+    )
+    for payload, message in cases:
         with pytest.raises(ValidationError) as error:
             ClusterSecretWrite(cluster_id=uuid4(), name="Pi", kubeconfig=SecretStr(payload))
         assert TOKEN not in str(error.value)
+        assert message in str(error.value)
