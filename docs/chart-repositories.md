@@ -132,3 +132,16 @@ N does not trim existing history. Digest changes remain separate immutable pins.
 
 The public-network demo is deselected from the default suite. Select its
 `live_repository` marker explicitly; the regular CI suite requires zero skips.
+
+
+### Latest version pointer
+
+Chart-version responses expose the read-only boolean `is_latest`. A successful
+sync marks exactly one highest available semantic version per chart, including
+prereleases. Equal-precedence labels and digests use deterministic tie-breaks.
+Charts absent from the snapshot have no latest version. Failed syncs preserve
+the previous pointer, and application release pins do not change.
+Use `GET /api/v1/chart-versions?chart_id=...&is_latest=true` to find it.
+Migration 0006 backfills the pointer for already available versions; unverified
+imported pins stay unmarked until sync. A database constraint allows at most one
+latest row per chart and requires that row to be available.

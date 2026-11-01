@@ -145,6 +145,7 @@ class RepositorySync:
                 chart.available = False
             for previous in versions:
                 previous.available = False
+                previous.is_latest = False
             for observation in observations:
                 if observation.chart not in charts:
                     chart = Chart(repository_id=identity, name=observation.chart)
@@ -167,6 +168,19 @@ class RepositorySync:
                     by_key[key] = version
                 version.available = True
                 observed.add(key)
+            # Old flags were flushed above before choosing replacements, keeping
+            # the unique per-chart latest pointer valid throughout the transaction.
+            candidates: dict[UUID, list[ChartVersion]] = {}
+            for key in observed:
+                version = by_key[key]
+                candidates.setdefault(version.chart_id, []).append(version)
+            for items in candidates.values():
+                # Digest breaks ties deterministically if a source reports multiple
+                # payloads at the same semantic version. Only one row is latest.
+                latest = max(
+                    items, key=lambda item: (chart_version(item.version), item.version, item.digest)
+                )
+                latest.is_latest = True
             repository.last_synced_at = datetime.now(UTC)
             session.add(repository)
             synced_at = repository.last_synced_at

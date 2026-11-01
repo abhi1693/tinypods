@@ -207,7 +207,7 @@ async def list_version(
     """Browse version metadata with bounded, explicitly declared query fields."""
     filters = {
         key: value
-        for key, value in query.model_dump(include={"available", "chart_id"}).items()
+        for key, value in query.model_dump(include={"available", "chart_id", "is_latest"}).items()
         if value is not None
     }
     rows, total = await service.list(

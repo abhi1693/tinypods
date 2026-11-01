@@ -111,7 +111,7 @@ class DefinitionService[Record: AuditTrailMixin]:
             Release: {"application_id", "source_type", "chart_version_id"},
             ChartRepository: {"source_type", "enabled"},
             Chart: {"repository_id", "available"},
-            ChartVersion: {"chart_id", "available"},
+            ChartVersion: {"chart_id", "available", "is_latest"},
         }[self.model]
         for name, value in (filters or {}).items():
             if name not in allowed_filters:

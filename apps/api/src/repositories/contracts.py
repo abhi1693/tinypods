@@ -91,6 +91,7 @@ class VersionRead(DefinitionRead):
     chart_id: UUID
     version: str
     digest: str
+    is_latest: bool
     available: bool
 
 
@@ -101,6 +102,7 @@ class VersionQuery(PageParams):
     ordering: Literal["version", "-version", "created", "-created"] = "version"
     chart_id: UUID | None = None
     available: bool | None = None
+    is_latest: bool | None = None
 
 
 class SyncRead(RequestDTO):

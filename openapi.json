@@ -1701,6 +1701,10 @@
             "title": "Id",
             "type": "string"
           },
+          "is_latest": {
+            "title": "Is Latest",
+            "type": "boolean"
+          },
           "last_updated": {
             "format": "date-time",
             "title": "Last Updated",
@@ -1718,6 +1722,7 @@
           "chart_id",
           "version",
           "digest",
+          "is_latest",
           "available"
         ],
         "title": "VersionRead",
@@ -7145,6 +7150,22 @@
                 }
               ],
               "title": "Available"
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_latest",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Latest"
             }
           }
         ],

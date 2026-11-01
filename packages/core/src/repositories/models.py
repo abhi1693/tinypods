@@ -3,7 +3,16 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Enum, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    Enum,
+    Index,
+    UniqueConstraint,
+    text,
+)
 from sqlmodel import Field
 from tinypods_core.applications.definitions import SourceType
 from tinypods_core.audit import AuditTrailMixin
@@ -59,6 +68,10 @@ class ChartVersion(AuditTrailMixin, table=True):
     __tablename__ = "chart_versions"
     __table_args__ = (
         UniqueConstraint("chart_id", "version", "digest", name="uq_chart_versions_identity"),
+        Index(
+            "uq_chart_versions_latest", "chart_id", unique=True, postgresql_where=text("is_latest")
+        ),
+        CheckConstraint("NOT is_latest OR available", name="latest_available"),
         CheckConstraint("length(trim(version)) > 0", name="version"),
         CheckConstraint("digest ~ '^sha256:[0-9a-f]{64}$'", name="digest"),
     )
@@ -67,11 +80,18 @@ class ChartVersion(AuditTrailMixin, table=True):
     version: str = Field(max_length=128)
     digest: str
     available: bool = False
+    is_latest: bool = Field(
+        default=False, sa_column=Column(Boolean, nullable=False, server_default="false")
+    )
 
 
 for _model, _fields, _related in (
     (ChartRepository, ("id", "name", "source_type", "url", "enabled", "last_synced_at"), None),
     (Chart, ("id", "repository_id", "name", "available"), ("repository_id", ChartRepository)),
-    (ChartVersion, ("id", "chart_id", "version", "digest", "available"), ("chart_id", Chart)),
+    (
+        ChartVersion,
+        ("id", "chart_id", "version", "digest", "available", "is_latest"),
+        ("chart_id", Chart),
+    ),
 ):
     register(ModelRegistration(_model, "repositories", _model.__name__, _fields, related=_related))

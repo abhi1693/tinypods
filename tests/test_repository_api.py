@@ -83,6 +83,30 @@ def test_populated_repository_migration_and_database_protection(
             assert repository.source_type is SourceType.HELM_REPOSITORY
             assert repository.last_synced_at is None
             assert not session.exec(select(Chart)).one().available
+        # Re-upgrade populated pre-flag rows and verify numeric, not lexical, ranking.
+        command.downgrade(manager.config(), "0005_chart_repositories")
+        with engine.begin() as connection:
+            connection.execute(text("UPDATE chart_versions SET available=true"))
+            connection.execute(
+                text("""
+                INSERT INTO chart_versions
+                    (id,created,last_updated,chart_id,version,digest,available)
+                SELECT gen_random_uuid(),now(),now(),id,value,:digest,true FROM charts
+                CROSS JOIN (VALUES ('1.9.0'),('1.10.0')) AS versions(value)
+            """),
+                {"digest": DIGEST},
+            )
+        manager.upgrade()
+        manager.check()
+        with Session(engine) as session:
+            latest = session.exec(select(ChartVersion).where(ChartVersion.is_latest)).one()
+            assert latest.version == "1.10.0" and latest.available
+        for sql in (
+            "UPDATE chart_versions SET is_latest=true",
+            "UPDATE chart_versions SET available=false WHERE is_latest",
+        ):
+            with engine.begin() as connection, pytest.raises(IntegrityError):
+                connection.execute(text(sql))
         assert "source_location" not in {
             column["name"] for column in inspect(engine).get_columns("releases")
         }
@@ -183,6 +207,7 @@ def test_repository_api_cli_and_cascade_rules(
             + "&available=true&q=1.0&ordering=-version"
         ).json()["items"][0]
         assert version["digest"] == DIGEST
+        assert version["is_latest"] is True
         for path in (
             "/chart-repositories/" + identity,
             "/charts/" + chart["id"],
@@ -289,6 +314,9 @@ def test_repository_api_cli_and_cascade_rules(
         assert client.post(sync, headers=headers).json()["versions"] == 1
         versions = client.get(BASE + "/chart-versions?chart_id=" + chart["id"]).json()["items"]
         assert len(versions) == 2 and sum(v["available"] for v in versions) == 1
+        latest = client.get(BASE + "/chart-versions?is_latest=true&chart_id=" + chart["id"]).json()
+        assert latest["total"] == 1 and latest["items"][0]["digest"] == "sha256:" + "b" * 64
+        assert all(not row["is_latest"] for row in versions if not row["available"])
         assert (
             client.get(BASE + "/releases/" + release.json()["id"]).json()["chart_version_id"]
             == version["id"]
@@ -303,6 +331,7 @@ def test_repository_api_cli_and_cascade_rules(
         error = client.post(sync, headers=headers)
         assert error.status_code == 502 and error.json()["code"] == "source_unavailable"
         assert client.get(BASE + "/chart-versions?available=true").json()["total"] == 1
+        assert client.get(BASE + "/chart-versions?is_latest=true").json()["total"] == 1
         failed = False
         throttled = True
         limited = client.post(sync, headers=headers)
@@ -436,6 +465,7 @@ def test_sync_generation_rollback_and_operator_audit(auth_settings: Settings) ->
             assert (await service.run(owner, repository.id)).versions == 0
             async with database.session() as session:
                 assert not (await session.get(ChartVersion, versions[0].id)).available
+                assert not (await session.get(ChartVersion, versions[0].id)).is_latest
                 await session.rollback()
             async with database.session() as session:
                 await DefinitionService(Release, session, authorization).delete(owner, release.id)
@@ -575,6 +605,7 @@ def test_initial_version_window_and_incremental_sync(auth_settings: Settings) ->
             assert (await service.run(principal, repository.id)).versions == 6
             async with database.session() as session:
                 rows = (await session.exec(select(ChartVersion))).all()
+                assert [row.version for row in rows if row.is_latest] == ["1.11.0", "1.11.0"]
                 assert sorted(row.version for row in rows) == [
                     "1.10.0",
                     "1.10.0",
@@ -597,9 +628,30 @@ def test_initial_version_window_and_incremental_sync(auth_settings: Settings) ->
             async with database.session() as session:
                 rows = (await session.exec(select(ChartVersion))).all()
                 assert len(rows) == 10
+                assert sorted(row.version for row in rows if row.is_latest) == [
+                    "1.11.0",
+                    "1.12.0",
+                    "2.4.0",
+                ]
                 assert {row.version for row in rows}.isdisjoint(
                     {"1.0.0", "1.2.0", "2.0.0", "2.1.0", "2.2.0"}
                 )
+            # Withdrawing the highest releases moves the pointer to the next
+            # available version, while retained historical identities stay intact.
+            observations[:] = [
+                item
+                for item in observations
+                if item.chart != "first" or item.version not in ("1.11.0", "1.12.0")
+            ]
+            assert (await service.run(principal, repository.id)).versions == 7
+            async with database.session() as session:
+                rows = (await session.exec(select(ChartVersion))).all()
+                assert len(rows) == 10
+                assert sorted(row.version for row in rows if row.is_latest) == [
+                    "1.10.0",
+                    "1.11.0",
+                    "2.4.0",
+                ]
             for invalid in (0, 10001):
                 with pytest.raises(DefinitionError) as caught:
                     await service.run(principal, repository.id, invalid)
