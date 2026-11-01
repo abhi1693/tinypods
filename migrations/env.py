@@ -2,6 +2,7 @@
 
 from alembic import context
 from sqlalchemy import text
+from tinypods_core.audit import sync_object_types
 from tinypods_core.db import database_url, migration_engine
 from tinypods_core.db.migrations import MIGRATION_LOCK
 from tinypods_core.db.models import core_metadata
@@ -52,6 +53,8 @@ else:
                 )
                 with context.begin_transaction():
                     context.run_migrations()
+                    if connection.scalar(text("SELECT to_regclass('object_types')")) is not None:
+                        sync_object_types(connection)
             finally:
                 connection.rollback()
                 connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": MIGRATION_LOCK})

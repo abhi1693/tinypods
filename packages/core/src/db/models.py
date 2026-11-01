@@ -1,27 +1,13 @@
 """Core-owned persistence models; plugin metadata belongs to each plugin."""
 
 from datetime import UTC, datetime
-from typing import ClassVar
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Index, MetaData, UniqueConstraint, func
-from sqlmodel import Field, SQLModel
-
-core_metadata = MetaData(
-    naming_convention={
-        "ix": "ix_%(table_name)s_%(column_0_name)s",
-        "uq": "uq_%(table_name)s_%(column_0_name)s",
-        "ck": "ck_%(table_name)s_%(constraint_name)s",
-        "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
-        "pk": "pk_%(table_name)s",
-    }
-)
-
-
-class CoreModel(SQLModel):
-    """Place core persistence tables in their dedicated SQLModel metadata registry."""
-
-    metadata: ClassVar[MetaData] = core_metadata
+from sqlalchemy import CheckConstraint, Column, DateTime, Index, UniqueConstraint, func
+from sqlmodel import Field
+from tinypods_core.audit.mixin import AuditTrailMixin
+from tinypods_core.persistence import CoreModel as CoreModel  # noqa: F401
+from tinypods_core.persistence import core_metadata as core_metadata
 
 
 class Installation(CoreModel, table=True):
@@ -39,7 +25,7 @@ class Installation(CoreModel, table=True):
     )
 
 
-class User(CoreModel, table=True):
+class User(AuditTrailMixin, table=True):
     """Store provider-independent core identities; no plaintext passwords or default credentials."""
 
     __tablename__ = "auth_user"
@@ -48,10 +34,11 @@ class User(CoreModel, table=True):
     is_owner: bool = False
 
 
-class AuthSession(CoreModel, table=True):
+class AuthSession(AuditTrailMixin, table=True):
     """Store only digests of random session/CSRF secrets and absolute expiry."""
 
     __tablename__ = "auth_session"
+    id: UUID = Field(default_factory=uuid4, unique=True, nullable=False)
     __table_args__ = (
         Index("ix_auth_session_client_sid", "external_client_id", "external_session_id"),
         Index("ix_auth_session_client_subject", "external_client_id", "external_subject"),
@@ -76,7 +63,7 @@ class AuthSession(CoreModel, table=True):
     )
 
 
-class LocalCredential(CoreModel, table=True):
+class LocalCredential(AuditTrailMixin, table=True):
     """Attach a local password to an identity; external identities need no such row."""
 
     __tablename__ = "auth_local_credential"
@@ -84,7 +71,7 @@ class LocalCredential(CoreModel, table=True):
     password_hash: str = Field(repr=False)
 
 
-class ExternalIdentity(CoreModel, table=True):
+class ExternalIdentity(AuditTrailMixin, table=True):
     """Map only verified issuer/subject pairs; email and provider roles never link accounts."""
 
     __tablename__ = "auth_external_identity"
@@ -95,10 +82,11 @@ class ExternalIdentity(CoreModel, table=True):
     user_id: UUID = Field(foreign_key="auth_user.id")
 
 
-class LoginTransaction(CoreModel, table=True):
+class LoginTransaction(AuditTrailMixin, table=True):
     """Keep browser-bound OIDC challenges server-side until atomic single-use consumption."""
 
     __tablename__ = "auth_login_transaction"
+    id: UUID = Field(default_factory=uuid4, unique=True, nullable=False)
     state_digest: str = Field(primary_key=True, max_length=64, repr=False)
     browser_digest: str = Field(max_length=64, repr=False)
     nonce: str = Field(repr=False)
@@ -110,7 +98,7 @@ class LoginTransaction(CoreModel, table=True):
     expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
 
 
-class ProviderGrant(CoreModel, table=True):
+class ProviderGrant(AuditTrailMixin, table=True):
     """Own one browser's bounded, encrypted provider refresh-token family."""
 
     __tablename__ = "auth_provider_grant"
@@ -134,10 +122,11 @@ class ProviderGrant(CoreModel, table=True):
     expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
 
 
-class RefreshCredential(CoreModel, table=True):
+class RefreshCredential(AuditTrailMixin, table=True):
     """Keep refresh/CSRF digests and consumed credentials for reuse detection."""
 
     __tablename__ = "auth_refresh_credential"
+    id: UUID = Field(default_factory=uuid4, unique=True, nullable=False)
     token_digest: str = Field(primary_key=True, max_length=64, repr=False)
     csrf_digest: str = Field(max_length=64, repr=False)
     grant_id: UUID = Field(foreign_key="auth_provider_grant.id", index=True)
@@ -146,10 +135,11 @@ class RefreshCredential(CoreModel, table=True):
     )
 
 
-class ProviderLogoutEvent(CoreModel, table=True):
+class ProviderLogoutEvent(AuditTrailMixin, table=True):
     """Fence in-flight login and deduplicate verified logout events without storing JWTs."""
 
     __tablename__ = "auth_provider_logout_event"
+    id: UUID = Field(default_factory=uuid4, unique=True, nullable=False)
     __table_args__ = (
         Index("ix_auth_provider_logout_event_client_sid", "client_id", "session_id"),
         Index("ix_auth_provider_logout_event_client_subject", "client_id", "subject"),
@@ -162,3 +152,40 @@ class ProviderLogoutEvent(CoreModel, table=True):
     session_id: str | None = Field(default=None, max_length=255)
     issued_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
     expires_at: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+from tinypods_core.audit import capture as _capture  # noqa: E402, F401
+from tinypods_core.audit.registry import ModelRegistration, register  # noqa: E402
+
+CORE_AUDIT_MODELS = (
+    (User, ("id", "username", "is_owner"), "id"),
+    (
+        AuthSession,
+        ("id", "user_id", "source_provider", "expires_at", "revoked_at", "external_grant_id"),
+        "id",
+    ),
+    (LocalCredential, ("user_id",), "user_id"),
+    (ExternalIdentity, ("id", "user_id"), "id"),
+    (LoginTransaction, ("id", "expires_at"), "id"),
+    (
+        ProviderGrant,
+        ("id", "user_id", "status", "generation", "authenticated_at", "expires_at"),
+        "id",
+    ),
+    (RefreshCredential, ("id", "grant_id", "consumed_at"), "id"),
+    (ProviderLogoutEvent, ("id", "issued_at", "expires_at"), "id"),
+)
+
+for _model, _fields, _identity in CORE_AUDIT_MODELS:
+    register(
+        ModelRegistration(
+            _model,
+            "auth",
+            _model.__name__,
+            _fields,
+            identity=_identity,
+            related=("user_id", User)
+            if _model in (AuthSession, LocalCredential, ExternalIdentity, ProviderGrant)
+            else None,
+        )
+    )
