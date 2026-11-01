@@ -1,5 +1,6 @@
 """Indexed region inheritance with database-maintained ancestry."""
 
+from collections.abc import Mapping
 from uuid import UUID
 
 from sqlalchemy import func, true
@@ -7,6 +8,7 @@ from sqlalchemy.orm import aliased
 from sqlmodel import col, select
 from sqlmodel.sql.expression import Select
 from tinypods_core.applications.service import DefinitionService
+from tinypods_core.clusters.constants import TREE_LOCK
 from tinypods_core.clusters.models import Region
 
 
@@ -42,6 +44,17 @@ def flag_query(identities: list[UUID]) -> Select[UUID, str]:
 
 class RegionService(DefinitionService[Region]):
     """Resolve flags for a bounded page without mutating stored region overrides."""
+
+    async def _before_write(
+        self, values: Mapping[str, object] | None, *, creating: bool = False
+    ) -> None:
+        """Take the structural lock before the shared CRUD service locks an object.
+
+        Metadata-only writes do not take the tree lock. Database statement triggers
+        enforce the same order for ordinary direct SQL inserts, moves and deletes.
+        """
+        if values is None or creating or "parent_id" in values:
+            await self.session.exec(select(func.pg_advisory_xact_lock(TREE_LOCK)))
 
     async def resolve_flags(self, records: list[Region]) -> list[Region]:
         """Return presentation copies with the nearest ancestor's visual flag.

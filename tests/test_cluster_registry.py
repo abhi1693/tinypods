@@ -13,14 +13,18 @@ import pytest
 from alembic import command
 from conftest import PostgresEndpoints
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 from sqlmodel import select
 from test_auth import PASSWORD, credentials
 from test_auth import auth_settings as auth_settings
 from tinypods_api.main import create_app
+from tinypods_core.applications.service import DefinitionError
 from tinypods_core.audit import AuditRecord
 from tinypods_core.auth import SessionService
+from tinypods_core.auth.authorization import AuthorizationService
 from tinypods_core.auth.providers import LocalPasswordProvider
 from tinypods_core.clusters import Region
+from tinypods_core.clusters.service import RegionService
 from tinypods_core.db import Database, MigrationManager
 from tinypods_core.db.models import User
 from tinypods_core.settings import Settings
@@ -446,3 +450,152 @@ def test_trigger_restore_and_private_paths(auth_settings: Settings) -> None:
             pytest.raises(psycopg.errors.CheckViolation),
         ):
             connection.execute(update, (identity,))
+
+
+@pytest.mark.parametrize("pooled", [False, True])
+def test_api_service_reparent_lock_order(
+    auth_settings: Settings, postgres_endpoints: PostgresEndpoints, pooled: bool
+) -> None:
+    """API object locking cannot invert the tree lock during crossing reparent requests."""
+
+    async def scenario() -> None:
+        settings = (
+            auth_settings.model_copy(
+                update={
+                    "database_url": SecretStr(postgres_endpoints.pooled),
+                    "database_mode": "pgbouncer",
+                }
+            )
+            if pooled
+            else auth_settings
+        )
+        database = Database(settings)
+        try:
+            owner = await LocalPasswordProvider(database).bootstrap(credentials())
+            sessions = SessionService(database)
+            issued = await sessions.issue(owner)
+            async with database.transaction() as session:
+                first, second = Region(name="A", slug="a"), Region(name="B", slug="b")
+                session.add(first)
+                session.add(second)
+
+            async def move(identity: UUID, parent: UUID) -> Region:
+                """Run the same domain service, principal validation and transaction as HTTP."""
+                async with database.session() as session:
+                    service = RegionService(Region, session, AuthorizationService(sessions))
+                    return await service.save(
+                        issued.principal, {"parent_id": parent}, identity=identity
+                    )
+
+            results = await asyncio.wait_for(
+                asyncio.gather(
+                    move(first.id, second.id), move(second.id, first.id), return_exceptions=True
+                ),
+                timeout=15,
+            )
+            assert sum(isinstance(result, Region) for result in results) == 1
+            conflicts = [result for result in results if isinstance(result, DefinitionError)]
+            assert len(conflicts) == 1 and conflicts[0].status == 409
+        finally:
+            await database.close()
+
+    asyncio.run(scenario())
+
+
+def test_async_registry_projection_preserves_stored_overrides(auth_settings: Settings) -> None:
+    """Await real typed handlers to verify projection after writes and inherited flag reads.
+
+    This additionally exercises the async continuation outside the browser transport
+    thread: returned DTOs must preserve identity/audit fields without persisting a
+    copied ancestor flag or leaking the private ancestry column.
+    """
+
+    async def scenario() -> None:
+        from tinypods_api.clusters import routes
+        from tinypods_api.clusters.contracts import (
+            ClusterPatch,
+            ClusterQuery,
+            ClusterWrite,
+            RegionPatch,
+            RegionQuery,
+            RegionWrite,
+        )
+        from tinypods_core.applications.service import DefinitionService
+        from tinypods_core.clusters import Cluster
+
+        database = Database(auth_settings)
+        try:
+            owner = await LocalPasswordProvider(database).bootstrap(credentials())
+            sessions = SessionService(database)
+            principal = (await sessions.issue(owner)).principal
+            authorization = AuthorizationService(sessions)
+            async with database.session() as session:
+                root = await routes.create_region(
+                    RegionWrite(name="India", slug="india", flag=FLAG),
+                    RegionService(Region, session, authorization),
+                    principal,
+                )
+            async with database.session() as session:
+                child = await routes.create_region(
+                    RegionWrite(name="Gurugram", slug="gurugram", parent_id=root.id),
+                    RegionService(Region, session, authorization),
+                    principal,
+                )
+            async with database.session() as session:
+                service = RegionService(Region, session, authorization)
+                record = await service.get(principal, child.id)
+                projected = await service.resolve_flags([record])
+                assert record.flag is None and projected[0].flag == FLAG
+                assert record is not projected[0]
+            async with database.session() as session:
+                page = await routes.list_region(
+                    RegionQuery(), RegionService(Region, session, authorization), principal
+                )
+                assert page.total == 2 and {item.flag for item in page.items} == {FLAG}
+            async with database.session() as session:
+                changed = await routes.update_region(
+                    child.id,
+                    RegionPatch(flag=None),
+                    RegionService(Region, session, authorization),
+                    principal,
+                )
+                assert changed.flag == FLAG and "path" not in changed.model_dump()
+            async with database.session() as session:
+                cluster = await routes.create_cluster(
+                    ClusterWrite(name="Cluster 1", slug="cluster-1", region_id=child.id),
+                    DefinitionService(Cluster, session, authorization),
+                    principal,
+                )
+                assert cluster.created and cluster.last_updated and cluster.region_id == child.id
+            async with database.session() as session:
+                actual = await routes.retrieve_cluster(
+                    cluster.id, DefinitionService(Cluster, session, authorization), principal
+                )
+                assert actual == cluster and "path" not in actual.model_dump()
+            async with database.session() as session:
+                changed_cluster = await routes.replace_cluster(
+                    cluster.id,
+                    ClusterWrite(name="Cluster 2", slug="cluster-2", region_id=child.id),
+                    DefinitionService(Cluster, session, authorization),
+                    principal,
+                )
+                assert changed_cluster.id == cluster.id and changed_cluster.name == "Cluster 2"
+            async with database.session() as session:
+                changed_cluster = await routes.update_cluster(
+                    cluster.id,
+                    ClusterPatch(description="Raspberry Pi"),
+                    DefinitionService(Cluster, session, authorization),
+                    principal,
+                )
+                assert changed_cluster.description == "Raspberry Pi"
+            async with database.session() as session:
+                page_clusters = await routes.list_cluster(
+                    ClusterQuery(region_id=child.id),
+                    DefinitionService(Cluster, session, authorization),
+                    principal,
+                )
+                assert page_clusters.total == 1 and page_clusters.items[0].id == cluster.id
+        finally:
+            await database.close()
+
+    asyncio.run(scenario())

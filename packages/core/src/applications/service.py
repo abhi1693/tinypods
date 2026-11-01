@@ -157,6 +157,17 @@ class DefinitionService[Record: AuditTrailMixin]:
             raise DefinitionError(404)
         return record
 
+    async def _before_write(
+        self, values: Mapping[str, object] | None, *, creating: bool = False
+    ) -> None:
+        """Allow domain services to lock shared invariants before any object row.
+
+        Args:
+            values: Fields to save, or None for deletion.
+            creating: Whether this transaction will insert a new record.
+        """
+        return None
+
     async def save(
         self, principal: Principal, values: Mapping[str, object], *, identity: UUID | None = None
     ) -> Record:
@@ -178,6 +189,7 @@ class DefinitionService[Record: AuditTrailMixin]:
             raise ValueError("Unknown definition write field")
         try:
             async with self.session.begin():
+                await self._before_write(values, creating=identity is None)
                 record = (
                     self.model.model_validate(values)
                     if identity is None
@@ -224,6 +236,7 @@ class DefinitionService[Record: AuditTrailMixin]:
         await self.authorization.require_access(principal, Scope.CATALOG_ADMIN)
         try:
             async with self.session.begin():
+                await self._before_write(None)
                 record = await self._get(identity, lock=True)
                 if isinstance(record, (ChartRepository, Chart)):
                     # Lock children before checking pins, preventing concurrent additions
