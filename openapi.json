@@ -66,6 +66,9 @@
             "title": "Slug",
             "type": "string"
           },
+          "state": {
+            "$ref": "#/components/schemas/ApplicationState"
+          },
           "status": {
             "$ref": "#/components/schemas/ApplicationStatus"
           }
@@ -75,7 +78,8 @@
           "name",
           "slug",
           "icon",
-          "status"
+          "status",
+          "state"
         ],
         "title": "ApplicationBrief",
         "type": "object"
@@ -132,6 +136,16 @@
               }
             ],
             "title": "Slug"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationState"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "anyOf": [
@@ -195,6 +209,10 @@
             "title": "Slug",
             "type": "string"
           },
+          "state": {
+            "$ref": "#/components/schemas/ApplicationState",
+            "default": "draft"
+          },
           "status": {
             "$ref": "#/components/schemas/ApplicationStatus",
             "default": "experimental"
@@ -209,6 +227,16 @@
         ],
         "title": "ApplicationRead",
         "type": "object"
+      },
+      "ApplicationState": {
+        "description": "Application visibility lifecycle, independent of maturity and release states.",
+        "enum": [
+          "draft",
+          "in_review",
+          "published"
+        ],
+        "title": "ApplicationState",
+        "type": "string"
       },
       "ApplicationStatus": {
         "description": "One operator-selected application classification, without policy enforcement.",
@@ -252,6 +280,10 @@
             "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
             "title": "Slug",
             "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ApplicationState",
+            "default": "draft"
           },
           "status": {
             "$ref": "#/components/schemas/ApplicationStatus",
@@ -2663,6 +2695,29 @@
         "title": "RegionWrite",
         "type": "object"
       },
+      "ReleaseDeprecation": {
+        "additionalProperties": false,
+        "description": "Change discoverability metadata while preserving the published release.",
+        "properties": {
+          "deprecated": {
+            "default": true,
+            "title": "Deprecated",
+            "type": "boolean"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "ReleaseDeprecation",
+        "type": "object"
+      },
       "ReleasePatch": {
         "additionalProperties": false,
         "description": "Only supplied shared Helm definition fields are changed.",
@@ -2678,6 +2733,29 @@
               }
             ],
             "title": "Application Id"
+          },
+          "architectures": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "amd64",
+                    "arm64",
+                    "arm",
+                    "ppc64le",
+                    "s390x",
+                    "riscv64"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 6,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Architectures"
           },
           "chart_version_id": {
             "anyOf": [
@@ -2704,6 +2782,93 @@
               }
             ],
             "title": "Configuration Fields"
+          },
+          "core_version_max": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Core Version Max"
+          },
+          "core_version_min": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Core Version Min"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 10000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "renderer": {
+            "anyOf": [
+              {
+                "const": "helm",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Renderer"
+          },
+          "renderer_contract": {
+            "anyOf": [
+              {
+                "const": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Renderer Contract"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "draft",
+                  "in_review"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
           }
         },
         "title": "ReleasePatch",
@@ -2716,6 +2881,13 @@
           "application": {
             "$ref": "#/components/schemas/ApplicationBrief"
           },
+          "architectures": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Architectures",
+            "type": "array"
+          },
           "chart_version": {
             "$ref": "#/components/schemas/VersionBrief"
           },
@@ -2726,10 +2898,36 @@
             "title": "Configuration Fields",
             "type": "array"
           },
+          "core_version_max": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Core Version Max"
+          },
+          "core_version_min": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Core Version Min"
+          },
           "created": {
             "format": "date-time",
             "title": "Created",
             "type": "string"
+          },
+          "deprecated": {
+            "title": "Deprecated",
+            "type": "boolean"
           },
           "id": {
             "format": "uuid",
@@ -2740,6 +2938,53 @@
             "format": "date-time",
             "title": "Last Updated",
             "type": "string"
+          },
+          "lifecycle_reason": {
+            "title": "Lifecycle Reason",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "renderer": {
+            "title": "Renderer",
+            "type": "string"
+          },
+          "renderer_contract": {
+            "title": "Renderer Contract",
+            "type": "integer"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ReleaseState"
           }
         },
         "required": [
@@ -2748,9 +2993,100 @@
           "last_updated",
           "application",
           "chart_version",
-          "configuration_fields"
+          "configuration_fields",
+          "revision",
+          "state",
+          "notes",
+          "architectures",
+          "renderer",
+          "renderer_contract",
+          "core_version_min",
+          "core_version_max",
+          "deprecated",
+          "revoked_at",
+          "lifecycle_reason",
+          "published_at"
         ],
         "title": "ReleaseRead",
+        "type": "object"
+      },
+      "ReleaseRevocation": {
+        "additionalProperties": false,
+        "description": "Record permanent revocation without removing historic desired-state pins.",
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "ReleaseRevocation",
+        "type": "object"
+      },
+      "ReleaseState": {
+        "description": "Release availability lifecycle, free to evolve independently of applications.",
+        "enum": [
+          "draft",
+          "in_review",
+          "published"
+        ],
+        "title": "ReleaseState",
+        "type": "string"
+      },
+      "ReleaseValidationIssue": {
+        "description": "A safe failure code and field path, never rejected input values.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "path": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Path",
+            "type": "array"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "ReleaseValidationIssue",
+        "type": "object"
+      },
+      "ReleaseValidationRead": {
+        "additionalProperties": false,
+        "description": "Safe validation results without duplicating release definition data.",
+        "properties": {
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/ReleaseValidationIssue"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "valid",
+          "issues"
+        ],
+        "title": "ReleaseValidationRead",
         "type": "object"
       },
       "ReleaseWrite": {
@@ -2761,6 +3097,22 @@
             "format": "uuid",
             "title": "Application Id",
             "type": "string"
+          },
+          "architectures": {
+            "items": {
+              "enum": [
+                "amd64",
+                "arm64",
+                "arm",
+                "ppc64le",
+                "s390x",
+                "riscv64"
+              ],
+              "type": "string"
+            },
+            "maxItems": 6,
+            "title": "Architectures",
+            "type": "array"
           },
           "chart_version_id": {
             "format": "uuid",
@@ -2773,6 +3125,63 @@
             },
             "title": "Configuration Fields",
             "type": "array"
+          },
+          "core_version_max": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Core Version Max"
+          },
+          "core_version_min": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Core Version Min"
+          },
+          "notes": {
+            "default": "",
+            "maxLength": 10000,
+            "title": "Notes",
+            "type": "string"
+          },
+          "renderer": {
+            "const": "helm",
+            "default": "helm",
+            "title": "Renderer",
+            "type": "string"
+          },
+          "renderer_contract": {
+            "const": 1,
+            "default": 1,
+            "title": "Renderer Contract",
+            "type": "integer"
+          },
+          "revision": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "state": {
+            "default": "draft",
+            "enum": [
+              "draft",
+              "in_review"
+            ],
+            "title": "State",
+            "type": "string"
           }
         },
         "required": [
@@ -3434,6 +3843,22 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ApplicationState"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
             }
           }
         ],
@@ -14102,6 +14527,38 @@
               ],
               "title": "Chart Version Id"
             }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ReleaseState"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "deprecated",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Deprecated"
+            }
           }
         ],
         "responses": {
@@ -15079,6 +15536,866 @@
         "x-tinypods-rate-limit": {
           "limit": 30,
           "name": "applicationsReleaseReplace",
+          "window_ms": 60000
+        }
+      }
+    },
+    "/api/v1/releases/{id}/clone": {
+      "post": {
+        "description": "Clone a release into a new editable revision, preserving existing published pins.",
+        "operationId": "applicationsReleaseClone",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Copy the current CSRF cookie value into this header.",
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "Clone Release",
+        "tags": [
+          "applications"
+        ],
+        "x-tinypods-rate-limit": {
+          "limit": 5,
+          "name": "applicationsReleaseClone",
+          "window_ms": 60000
+        }
+      }
+    },
+    "/api/v1/releases/{id}/deprecation": {
+      "post": {
+        "description": "Audit a publication's deprecation metadata without changing deployment data.",
+        "operationId": "applicationsReleaseDeprecation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Copy the current CSRF cookie value into this header.",
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReleaseDeprecation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "Deprecate Release",
+        "tags": [
+          "applications"
+        ],
+        "x-tinypods-rate-limit": {
+          "limit": 5,
+          "name": "applicationsReleaseDeprecation",
+          "window_ms": 60000
+        }
+      }
+    },
+    "/api/v1/releases/{id}/publication": {
+      "post": {
+        "description": "Validate and publish this release independently of its parent application.\n\nPublished deployment fields remain frozen even when the release is later\nunpublished. Clone a new draft revision to change deployment inputs.",
+        "operationId": "applicationsReleasePublication",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Copy the current CSRF cookie value into this header.",
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "Publish Release",
+        "tags": [
+          "applications"
+        ],
+        "x-tinypods-rate-limit": {
+          "limit": 5,
+          "name": "applicationsReleasePublication",
+          "window_ms": 60000
+        }
+      }
+    },
+    "/api/v1/releases/{id}/revocation": {
+      "post": {
+        "description": "Permanently revoke a release while retaining its immutable document and references.",
+        "operationId": "applicationsReleaseRevocation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Copy the current CSRF cookie value into this header.",
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReleaseRevocation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "Revoke Release",
+        "tags": [
+          "applications"
+        ],
+        "x-tinypods-rate-limit": {
+          "limit": 5,
+          "name": "applicationsReleaseRevocation",
+          "window_ms": 60000
+        }
+      }
+    },
+    "/api/v1/releases/{id}/validation": {
+      "post": {
+        "description": "Validate exact contained Helm artifacts, defaults and compatibility without publishing.",
+        "operationId": "applicationsReleaseValidation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Copy the current CSRF cookie value into this header.",
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseValidationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "Validate Release",
+        "tags": [
+          "applications"
+        ],
+        "x-tinypods-rate-limit": {
+          "limit": 5,
+          "name": "applicationsReleaseValidation",
           "window_ms": 60000
         }
       }

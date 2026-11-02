@@ -4,6 +4,7 @@ import asyncio
 
 import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from tinypods_core.json_types import JsonValue
 from tinypods_core.repositories.sources import Observation, SourceError, SourceSnapshot
 from tinypods_core.repositories.transport import MetadataHTTP
 
@@ -17,6 +18,7 @@ class IndexVersion(BaseModel):
     digest: str
     description: str = Field(default="", max_length=10000)
     icon: str | None = Field(default=None, max_length=2048)
+    urls: JsonValue = None
 
     @field_validator("digest")
     @classmethod
@@ -33,7 +35,12 @@ class Index(BaseModel):
 
 
 def parse_index(body: bytes, maximum: int) -> list[Observation]:
-    """Parse bounded YAML off the event loop, rejecting aliases, deep nesting and excess entries."""
+    """Read synchronized observations from the same validated index used for archive lookup."""
+    return [observation for observation, _ in parse_index_entries(body, maximum)]
+
+
+def parse_index_entries(body: bytes, maximum: int) -> list[tuple[Observation, JsonValue]]:
+    """Parse bounded YAML once, retaining URLs alongside normalized observations."""
     try:
         # Reject aliases and excessive nesting before constructing Python objects.
         # SafeLoader blocks executable tags but alone does not bound document graphs.
@@ -54,12 +61,15 @@ def parse_index(body: bytes, maximum: int) -> list[Observation]:
                 if version.name != name or version.version.lower() == "latest":
                     raise SourceError(422, "invalid_source_metadata")
                 result.append(
-                    Observation(
-                        chart=name,
-                        version=version.version,
-                        digest=version.digest,
-                        description=version.description,
-                        icon=version.icon,
+                    (
+                        Observation(
+                            chart=name,
+                            version=version.version,
+                            digest=version.digest,
+                            description=version.description,
+                            icon=version.icon,
+                        ),
+                        version.urls,
                     )
                 )
                 if len(result) > maximum:

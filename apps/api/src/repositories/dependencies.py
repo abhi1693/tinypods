@@ -11,9 +11,7 @@ from tinypods_core.applications.service import DefinitionService
 from tinypods_core.auth.authorization import AuthorizationService
 from tinypods_core.db import Database
 from tinypods_core.repositories import Chart, ChartRepository, ChartVersion
-from tinypods_core.repositories.client import RepositoryClient
 from tinypods_core.repositories.service import RepositorySync
-from tinypods_core.repositories.transport import MetadataHTTP
 from tinypods_core.repositories.verification import ChartVerification
 
 
@@ -41,14 +39,14 @@ def versions(
 
 
 def sync(request: Request, auth: SessionDependency) -> RepositorySync:
-    """Own no client pool; the bounded reader closes every request's transport."""
+    """Borrow the application-owned reader; identical in-flight reads can share transport work."""
     database: Database | None = request.app.state.database
     if database is None:
         raise HTTPException(503)
     return RepositorySync(
         database,
         AuthorizationService(auth),
-        RepositoryClient(MetadataHTTP(request.app.state.settings)),
+        request.app.state.repository_client,
     )
 
 
@@ -71,7 +69,7 @@ def verification(request: Request, auth: SessionDependency) -> ChartVerification
     return ChartVerification(
         database,
         AuthorizationService(auth),
-        RepositoryClient(MetadataHTTP(request.app.state.settings)),
+        request.app.state.repository_client,
     )
 
 

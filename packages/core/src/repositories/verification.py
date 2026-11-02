@@ -5,15 +5,15 @@ from dataclasses import dataclass
 from urllib.parse import urljoin, urlsplit
 from uuid import UUID
 
-import yaml  # type: ignore[import-untyped]
 from sqlmodel import col, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 from tinypods_core.applications.service import DefinitionError
 from tinypods_core.auth import Principal, Scope
 from tinypods_core.auth.authorization import AuthorizationService
 from tinypods_core.db import Database
 from tinypods_core.repositories.archive import MAX_ARCHIVE_BYTES, ChartFacts, inspect_chart
 from tinypods_core.repositories.client import RepositoryClient
-from tinypods_core.repositories.helm import parse_index
+from tinypods_core.repositories.helm import parse_index_entries
 from tinypods_core.repositories.models import Chart, ChartRepository, ChartVersion
 from tinypods_core.repositories.sources import SourceError
 from tinypods_core.repositories.transport import Document
@@ -32,24 +32,21 @@ class ChartPin:
 
 def archive_url(body: bytes, name: str, version: str, digest: str, base: str, maximum: int) -> str:
     """Choose only the exact index entry matching the stored version and digest."""
-    observations = parse_index(body, maximum)
-    if not any(
-        item.chart == name and item.version == version and item.digest == digest
-        for item in observations
-    ):
-        raise SourceError(409, "pinned_chart_unavailable")
-    # parse_index has already bounded YAML events and rejected aliases/deep trees.
-    index = yaml.safe_load(body)
+    entries = parse_index_entries(body, maximum)
     candidates = []
-    for item in index["entries"][name]:
-        reported = item["digest"]
-        if not reported.startswith("sha256:"):
-            reported = "sha256:" + reported
-        if item["version"] == version and reported == digest:
-            urls = item.get("urls")
+    found = False
+    for observation, urls in entries:
+        if (
+            observation.chart == name
+            and observation.version == version
+            and observation.digest == digest
+        ):
+            found = True
             if not isinstance(urls, list) or not urls or not isinstance(urls[0], str):
                 raise SourceError(422, "invalid_source_metadata")
             candidates.append(urljoin(base + "/", urls[0]))
+    if not found:
+        raise SourceError(409, "pinned_chart_unavailable")
     if len(set(candidates)) != 1:
         raise SourceError(422, "ambiguous_chart_archive")
     return candidates[0]
@@ -83,6 +80,36 @@ class ChartVerification:
             return ChartPin(
                 repository.source_type, repository.url, chart.name, version.version, version.digest
             )
+
+    async def lock_pin(self, session: AsyncSession, identity: UUID) -> ChartPin:
+        """Recheck and lock a source within the caller's final publication transaction.
+
+        A shared repository lock serializes source policy edits through commit.
+        Existing database triggers protect the chart/version identity graph.
+        """
+        query = (
+            select(ChartVersion, Chart, ChartRepository)
+            .join(Chart, col(ChartVersion.chart_id) == col(Chart.id))
+            .join(ChartRepository, col(Chart.repository_id) == col(ChartRepository.id))
+            .where(ChartVersion.id == identity)
+        )
+        # Chart/version identity is already immutable in PostgreSQL. Only the
+        # mutable repository policy needs a lock; release FKs retain the graph.
+        row = (
+            await session.exec(
+                query.with_for_update(read=True, of=ChartRepository).execution_options(
+                    populate_existing=True
+                )
+            )
+        ).one_or_none()
+        if row is None:
+            raise DefinitionError(404)
+        version, chart, repository = row
+        if not repository.enabled:
+            raise DefinitionError(409)
+        return ChartPin(
+            repository.source_type, repository.url, chart.name, version.version, version.digest
+        )
 
     async def helm_archive(self, pin: ChartPin) -> Document:
         """Resolve the exact Helm index entry and download its bounded archive."""

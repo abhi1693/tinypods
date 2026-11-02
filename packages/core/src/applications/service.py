@@ -16,9 +16,23 @@ from tinypods_core.repositories.models import Chart, ChartRepository, ChartVersi
 from tinypods_core.repositories.sources import repository_url
 
 DEFINITION_FIELDS: dict[type[AuditTrailMixin], frozenset[str]] = {
-    Application: frozenset({"name", "slug", "description", "icon", "status"}),
+    Application: frozenset({"name", "slug", "description", "icon", "status", "state"}),
     Category: frozenset({"name", "slug", "description", "icon"}),
-    Release: frozenset({"application_id", "chart_version_id", "configuration_fields"}),
+    Release: frozenset(
+        {
+            "application_id",
+            "chart_version_id",
+            "configuration_fields",
+            "revision",
+            "state",
+            "notes",
+            "architectures",
+            "renderer",
+            "renderer_contract",
+            "core_version_min",
+            "core_version_max",
+        }
+    ),
     ChartRepository: frozenset({"name", "source_type", "url", "enabled"}),
     Chart: frozenset({"repository_id", "name"}),
     ChartVersion: frozenset(),
@@ -95,6 +109,17 @@ class DefinitionService[Record: AuditTrailMixin]:
         if key not in allowed_order:
             raise ValueError("Invalid definition page or ordering")
         query = select(self.model)
+        if not principal.is_owner:
+            if self.model is Application:
+                query = query.where(col(Application.state) == "published")
+            elif self.model is Release:
+                query = query.where(
+                    col(Release.state) == "published",
+                    col(Release.revoked_at).is_(None),
+                    col(Release.application_id).in_(
+                        select(Application.id).where(Application.state == "published")
+                    ),
+                )
         if self.model is Release:
             query = (
                 query.join(ChartVersion, self.columns["chart_version_id"] == ChartVersion.id)
@@ -109,9 +134,9 @@ class DefinitionService[Record: AuditTrailMixin]:
             )
             query = query.where(search.icontains(q, autoescape=True))
         allowed_filters = {
-            Application: {"status", "slug"},
+            Application: {"status", "slug", "state"},
             Category: {"slug"},
-            Release: {"application_id", "source_type", "chart_version_id"},
+            Release: {"application_id", "source_type", "chart_version_id", "state", "deprecated"},
             ChartRepository: {"source_type", "enabled"},
             Chart: {"repository_id", "available"},
             ChartVersion: {"chart_id", "available", "is_latest"},
@@ -145,7 +170,20 @@ class DefinitionService[Record: AuditTrailMixin]:
     async def get(self, principal: Principal, identity: UUID) -> Record:
         """Read one definition only after revalidating the supplied credential."""
         await self.authorization.validator.validate_principal(principal)
-        return await self._get(identity)
+        record = await self._get(identity)
+        if not principal.is_owner:
+            if isinstance(record, Application) and record.state != "published":
+                raise DefinitionError(404)
+            if isinstance(record, Release):
+                application = await self.session.get(Application, record.application_id)
+                if (
+                    record.state != "published"
+                    or record.revoked_at is not None
+                    or application is None
+                    or application.state != "published"
+                ):
+                    raise DefinitionError(404)
+        return record
 
     async def _get(self, identity: UUID, *, lock: bool = False) -> Record:
         """Resolve one definition and optionally lock it inside the write transaction."""
@@ -187,6 +225,10 @@ class DefinitionService[Record: AuditTrailMixin]:
         await self.authorization.require_access(principal, Scope.CATALOG_ADMIN)
         if set(values) - self.writable:
             raise ValueError("Unknown definition write field")
+        if self.model is Release and values.get("state") == "published":
+            # Publishing must pass artifact and definition validation, even for
+            # internal service callers that do not use the HTTP request DTO.
+            raise DefinitionError(422)
         try:
             async with self.session.begin():
                 await self._before_write(values, creating=identity is None)
@@ -306,7 +348,8 @@ class MembershipService:
         """List a bounded page of memberships for an existing application."""
         await self.authorization.validator.validate_principal(principal)
         validate_page(limit, offset)
-        if await self.session.get(Application, application_id) is None:
+        application = await self.session.get(Application, application_id)
+        if application is None or (not principal.is_owner and application.state != "published"):
             raise DefinitionError(404)
         query = select(ApplicationCategory).where(
             ApplicationCategory.application_id == application_id

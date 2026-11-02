@@ -18,6 +18,22 @@ class ApplicationStatus(StrEnum):
     PREMIUM = "premium"
 
 
+class ApplicationState(StrEnum):
+    """Application visibility lifecycle, independent of maturity and release states."""
+
+    DRAFT = "draft"
+    IN_REVIEW = "in_review"
+    PUBLISHED = "published"
+
+
+class ReleaseState(StrEnum):
+    """Release availability lifecycle, free to evolve independently of applications."""
+
+    DRAFT = "draft"
+    IN_REVIEW = "in_review"
+    PUBLISHED = "published"
+
+
 class SourceType(StrEnum):
     """Supported Helm chart sources."""
 

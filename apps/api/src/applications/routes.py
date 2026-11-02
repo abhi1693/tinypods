@@ -16,11 +16,15 @@ from tinypods_api.applications.contracts import (
     CategoryWrite,
     MembershipRead,
     MembershipWrite,
+    ReleaseDeprecation,
     ReleasePatch,
     ReleaseQuery,
     ReleaseRead,
+    ReleaseRevocation,
+    ReleaseValidationRead,
     ReleaseWrite,
 )
+from tinypods_api.applications.dependencies import PublicationDependency
 from tinypods_api.auth import PrincipalDependency
 from tinypods_api.http import Page, PageParams, ResourceAction, ResourceRouter
 from tinypods_api.http.presentation import MembershipResource, ResourceService
@@ -46,7 +50,7 @@ async def list_applications(
     """List accessible applications using bounded, explicitly declared query fields."""
     filters = {
         key: value
-        for key, value in query.model_dump(include={"status", "slug"}).items()
+        for key, value in query.model_dump(include={"status", "slug", "state"}).items()
         if value is not None
     }
     items, total = await service.list(
@@ -203,7 +207,7 @@ async def list_releases(
     filters = {
         key: value
         for key, value in query.model_dump(
-            include={"application_id", "source_type", "chart_version_id"}
+            include={"application_id", "source_type", "chart_version_id", "state", "deprecated"}
         ).items()
         if value is not None
     }
@@ -263,6 +267,69 @@ async def update_release(
 async def delete_release(id: UUID, service: ReleaseService, principal: PrincipalDependency) -> None:
     """Delete an unreferenced release; preserve protected references and audit history."""
     await service.delete(principal, id)
+
+
+@release_router.detail_action("clone", response_model=ReleaseRead)
+async def clone_release(
+    id: UUID,
+    publications: PublicationDependency,
+    releases: ReleaseService,
+    principal: PrincipalDependency,
+) -> ReleaseRead:
+    """Clone a release into a new editable revision, preserving existing published pins."""
+    identity = await publications.clone(principal, id)
+    return await releases.get(principal, identity)
+
+
+@release_router.detail_action("validation", response_model=ReleaseValidationRead)
+async def validate_release(
+    id: UUID, service: PublicationDependency, principal: PrincipalDependency
+) -> ReleaseValidationRead:
+    """Validate exact contained Helm artifacts, defaults and compatibility without publishing."""
+    result = await service.validate(principal, id)
+    return ReleaseValidationRead(valid=not result.issues, issues=list(result.issues))
+
+
+@release_router.detail_action("publication", response_model=ReleaseRead)
+async def publish_release(
+    id: UUID,
+    publications: PublicationDependency,
+    releases: ReleaseService,
+    principal: PrincipalDependency,
+) -> ReleaseRead:
+    """Validate and publish this release independently of its parent application.
+
+    Published deployment fields remain frozen even when the release is later
+    unpublished. Clone a new draft revision to change deployment inputs.
+    """
+    await publications.publish(principal, id)
+    return await releases.get(principal, id)
+
+
+@release_router.detail_action("deprecation", response_model=ReleaseRead)
+async def deprecate_release(
+    id: UUID,
+    payload: ReleaseDeprecation,
+    publications: PublicationDependency,
+    releases: ReleaseService,
+    principal: PrincipalDependency,
+) -> ReleaseRead:
+    """Audit a publication's deprecation metadata without changing deployment data."""
+    await publications.lifecycle(principal, id, payload.reason, deprecated=payload.deprecated)
+    return await releases.get(principal, id)
+
+
+@release_router.detail_action("revocation", response_model=ReleaseRead)
+async def revoke_release(
+    id: UUID,
+    payload: ReleaseRevocation,
+    publications: PublicationDependency,
+    releases: ReleaseService,
+    principal: PrincipalDependency,
+) -> ReleaseRead:
+    """Permanently revoke a release while retaining its immutable document and references."""
+    await publications.lifecycle(principal, id, payload.reason, revoke=True)
+    return await releases.get(principal, id)
 
 
 router.include_router(release_router)
