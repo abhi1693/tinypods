@@ -1,4 +1,4 @@
-"""Owner-only nested capability reads and explicit live discovery."""
+"""Owner-only cached capability reads with automatic live discovery."""
 
 from typing import Annotated
 from uuid import UUID

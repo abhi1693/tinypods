@@ -32,7 +32,7 @@ class TaintCapability(CapabilityModel):
 
 
 class NodeCapability(CapabilityModel):
-    """Describe a candidate node without addresses, arbitrary labels or annotations."""
+    """Describe named node metadata, runtime details and resource budgets."""
 
     name: str = Field(max_length=253)
     architecture: str = Field(max_length=128)

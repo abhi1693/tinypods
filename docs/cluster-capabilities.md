@@ -63,7 +63,8 @@ and advertised group/version discovery URLs), plus list access for nodes,
 storageclasses.storage.k8s.io, ingressclasses.networking.k8s.io and
 runtimeclasses.node.k8s.io. Forbidden sections are reported independently.
 Raw responses, node addresses and credentials are excluded from snapshots. Requested
-node labels and annotations are owner-visible; they are not logged. Runtime scheduling constraints are selected data,
+node labels and annotations are owner-visible; they are not logged. Runtime
+scheduling constraints are selected data,
 not arbitrary object metadata.
 
 No migration, durable history, scheduler, worker, queue, installation or active

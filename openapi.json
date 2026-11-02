@@ -1811,7 +1811,7 @@
       },
       "NodeCapability": {
         "additionalProperties": false,
-        "description": "Describe a candidate node without addresses, arbitrary labels or annotations.",
+        "description": "Describe named node metadata, runtime details and resource budgets.",
         "properties": {
           "allocatable": {
             "additionalProperties": {
