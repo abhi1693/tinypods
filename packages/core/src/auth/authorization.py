@@ -3,6 +3,7 @@
 from typing import Protocol
 from uuid import UUID
 
+from sqlmodel.ext.asyncio.session import AsyncSession
 from tinypods_core.auth.contracts import AuthError, Principal, Scope
 
 
@@ -20,6 +21,18 @@ class AuthorizationService:
     def __init__(self, validator: PrincipalValidator) -> None:
         """Retain a trusted validator; session validation is today's supported implementation."""
         self.validator = validator
+
+    def in_session(self, session: AsyncSession) -> "AuthorizationService":
+        """Use an existing transaction for the built-in session credential validator.
+
+        Other authenticators retain their own explicit validation boundary.
+        The borrowed session is never committed or closed by authorization.
+        """
+        from tinypods_core.auth.sessions import SessionPrincipalValidator, SessionService
+
+        if isinstance(self.validator, SessionService):
+            return AuthorizationService(SessionPrincipalValidator(self.validator, session))
+        return self
 
     async def require_access(
         self, principal: Principal | None, scope: Scope, *, owner_id: UUID | None = None

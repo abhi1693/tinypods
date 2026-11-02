@@ -138,6 +138,7 @@ def test_export_is_valid_deterministic_and_has_explicit_responses() -> None:
     )
     schema = json.loads(first)
     validate(schema)
+    assert "Installation" not in schema["components"]["schemas"]
     assert schema["paths"]["/readyz"]["get"]["responses"]["503"]["content"]["application/json"][
         "schema"
     ]["$ref"].endswith("/ReadinessResponse")
@@ -150,7 +151,6 @@ def test_export_is_valid_deterministic_and_has_explicit_responses() -> None:
             "database_url",
             "migration_database_url",
             "password_hash",
-            "Installation",
             "plugin",
         )
     )

@@ -20,10 +20,12 @@ from tinypods_api.http.errors import ERROR_RESPONSES, install_error_handlers
 from tinypods_api.http.middleware import RequestLoggingMiddleware
 from tinypods_api.http.operations import build_operation_id
 from tinypods_api.http.versioning import API_V1_PREFIX
+from tinypods_api.installations import router as installations_router
 from tinypods_api.rate_limit import GlobalRateLimitMiddleware, RateLimitedRoute
 from tinypods_api.repositories import router as repositories_router
 from tinypods_api.secrets import router as secrets_router
 from tinypods_core import __version__
+from tinypods_core.applications.installation_validation import InstallationValidator
 from tinypods_core.applications.validation import PublicationValidator
 from tinypods_core.auth import AuthService, Credentials, LocalPasswordProvider, SessionService
 from tinypods_core.auth.federation import BrowserLogin
@@ -149,6 +151,7 @@ def create_app(
     app.state.rate_limiter = limiter
     app.state.settings = config
     app.state.publication_validator = PublicationValidator()
+    app.state.installation_validator = InstallationValidator()
     app.state.repository_client = RepositoryClient(MetadataHTTP(config))
     app.state.response_cache = response_cache
     app.state.discovery_coordinator = DiscoveryCoordinator()
@@ -185,6 +188,7 @@ def create_app(
     )
 
     app.include_router(applications_router, prefix=API_V1_PREFIX)
+    app.include_router(installations_router, prefix=API_V1_PREFIX)
     app.include_router(repositories_router, prefix=API_V1_PREFIX)
     app.include_router(clusters_router, prefix=API_V1_PREFIX)
     app.include_router(capabilities_router, prefix=API_V1_PREFIX)

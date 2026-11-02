@@ -12,6 +12,7 @@ from sqlalchemy.orm import QueryableAttribute, undefer
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.sql.expression import SelectOfScalar
+from tinypods_core.applications.installations import ApplicationInstallation, ApplicationSecret
 from tinypods_core.audit import AuditTrailMixin
 from tinypods_core.auth import Principal, Scope
 from tinypods_core.auth.authorization import AuthorizationService
@@ -299,8 +300,18 @@ class SecretService:
             raise ValueError("Invalid rotation batch")
         rows = (
             await self.session.exec(
-                select(SecretVersion, ClusterSecret.cluster_id)
-                .join(ClusterSecret, col(ClusterSecret.secret_id) == col(SecretVersion.secret_id))
+                select(SecretVersion, ClusterSecret.cluster_id, ApplicationInstallation)
+                .outerjoin(
+                    ClusterSecret, col(ClusterSecret.secret_id) == col(SecretVersion.secret_id)
+                )
+                .outerjoin(
+                    ApplicationSecret,
+                    col(ApplicationSecret.secret_id) == col(SecretVersion.secret_id),
+                )
+                .outerjoin(
+                    ApplicationInstallation,
+                    col(ApplicationInstallation.id) == col(ApplicationSecret.installation_id),
+                )
                 .where(col(SecretVersion.encryption_key_id) != active)
                 .order_by(col(SecretVersion.id))
                 .limit(batch_size)
@@ -312,8 +323,22 @@ class SecretService:
             )
         ).all()
         try:
-            for version, cluster_id in rows:
-                context = SecretContext(version.secret_id, version.id, version.version, cluster_id)
+            for version, cluster_id, installation in rows:
+                if installation is not None:
+                    context = SecretContext(
+                        version.secret_id,
+                        version.id,
+                        version.version,
+                        installation.cluster_id,
+                        installation.id,
+                        installation.namespace,
+                    )
+                elif cluster_id is not None:
+                    context = SecretContext(
+                        version.secret_id, version.id, version.version, cluster_id
+                    )
+                else:
+                    raise SecretError("secret_scope_missing", 409)
                 original = await self.provider.decrypt(
                     Ciphertext(version.encryption_key_id, version.nonce, version.encrypted_payload),
                     context,
