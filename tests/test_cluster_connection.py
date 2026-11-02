@@ -180,7 +180,7 @@ class TLSFixture:
             body = await reader.readexactly(length) if length else b""
             self.requests.append((method, path))
             assert path.startswith(self.prefix)
-            path = path[len(self.prefix) :]
+            path = path[len(self.prefix) :].split("?", 1)[0]
             self.started.set()
             assert headers.get("accept-encoding") == "identity"
             if self.gate is not None:
