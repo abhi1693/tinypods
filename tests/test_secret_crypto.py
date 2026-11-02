@@ -155,7 +155,6 @@ def test_kubeconfig_top_level_validation(kind: str, value: object) -> None:
         "https://user:password@example.test",
         "https://example.test?token=private",
         "https://example.test/#fragment",
-        "https://example.test/path",
         "https://[invalid",
         "https://example.test:99999",
         "https://example.test:0",
@@ -297,3 +296,11 @@ def test_kubeconfig_transport_is_explicit_and_preserves_original_bytes() -> None
             KubeconfigWrite(kubeconfig=SecretStr(text))
     with pytest.raises(ValidationError):
         KubeconfigWrite.model_validate({"encoding": "unknown", "kubeconfig": "fixture"})
+
+
+@pytest.mark.parametrize(
+    "server", ["https://example.test/k8s/clusters/local", "https://example.test/prefix/"]
+)
+def test_kubeconfig_preserves_https_proxy_base_path(server: str) -> None:
+    """Selected Kubernetes proxy prefixes remain part of the SDK host."""
+    assert Kubeconfig.parse(kubeconfig(server)).server == server.rstrip("/")

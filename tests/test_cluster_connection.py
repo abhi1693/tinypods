@@ -147,6 +147,7 @@ class TLSFixture:
         mutual: bool = False,
         override: Mapping[str, Reply] | None = None,
         gate: asyncio.Event | None = None,
+        prefix: str = "",
     ) -> None:
         """Configure verified fixture certificates and optional deterministic response control."""
         self.context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -157,6 +158,7 @@ class TLSFixture:
         self.mutual = mutual
         self.override = override or {}
         self.gate = gate
+        self.prefix = prefix
         self.started = asyncio.Event()
         self.tasks: set[asyncio.Task[None]] = set()
         self.requests: list[tuple[str, str]] = []
@@ -177,6 +179,8 @@ class TLSFixture:
             length = int(headers.get("content-length", "0"))
             body = await reader.readexactly(length) if length else b""
             self.requests.append((method, path))
+            assert path.startswith(self.prefix)
+            path = path[len(self.prefix) :]
             self.started.set()
             assert headers.get("accept-encoding") == "identity"
             if self.gate is not None:
@@ -236,7 +240,7 @@ class TLSFixture:
     async def running(self) -> AsyncIterator[TLSFixture]:
         """Use an ephemeral loopback port and close only fixture-owned resources."""
         server = await asyncio.start_server(self.handle, "127.0.0.1", 0, ssl=self.context)
-        self.url = "https://127.0.0.1:" + str(server.sockets[0].getsockname()[1])
+        self.url = "https://127.0.0.1:" + str(server.sockets[0].getsockname()[1]) + self.prefix
         try:
             yield self
         finally:
@@ -442,5 +446,22 @@ def test_deep_response_json_is_a_fixed_diagnostic(certificates: Certificates) ->
         ).running() as peer:
             result = await KubernetesClient().test(config_for(peer, certificates))
             assert result.reason == "invalid_response"
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("mutual", [False, True])
+def test_sdk_preserves_cluster_proxy_prefix(certificates: Certificates, mutual: bool) -> None:
+    """Identity and version calls stay beneath the selected proxy cluster path."""
+
+    async def scenario() -> None:
+        prefix = "/k8s/clusters/local"
+        async with TLSFixture(certificates, mutual=mutual, prefix=prefix).running() as peer:
+            result = await KubernetesClient().test(config_for(peer, certificates, mutual))
+            assert result.connected
+            assert peer.requests == [
+                ("POST", prefix + "/apis/authentication.k8s.io/v1/selfsubjectreviews"),
+                ("GET", prefix + "/version/"),
+            ]
 
     asyncio.run(scenario())

@@ -45,7 +45,8 @@ client (`kubernetes.aio`) and verified TLS. Network requests are awaitable; boun
 filesystem and TLS setup run outside the event loop. Embedded
 certificate authority/client certificate/key data and bearer tokens are supported.
 External files, executable authentication plugins, proxies, redirects and insecure
-TLS are rejected. The current context chooses the endpoint; private LAN endpoints
+TLS are rejected. HTTPS base paths are preserved for Kubernetes proxies such as Rancher.
+The current context chooses the endpoint; private LAN endpoints
 are intentional for self-hosted clusters. Only instance owners may set or test it.
 An authenticated SelfSubjectReview precedes version discovery, so a publicly
 readable version endpoint cannot create a false authentication success.

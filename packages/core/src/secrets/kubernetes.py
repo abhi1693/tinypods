@@ -104,6 +104,8 @@ class Kubeconfig:
             raise SecretError("invalid_kubeconfig")
         try:
             url = urlsplit(server)
+            # Kubernetes proxies may publish a cluster beneath an HTTPS base path.
+            # Preserve that prefix; the SDK appends its API routes to the host.
             valid = (
                 url.scheme == "https"
                 and bool(url.hostname)
@@ -111,7 +113,6 @@ class Kubeconfig:
                 and url.password is None
                 and not url.query
                 and not url.fragment
-                and not url.path.strip("/")
                 and (url.port is None or 1 <= url.port <= 65535)
             )
         except ValueError:
