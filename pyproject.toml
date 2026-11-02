@@ -47,6 +47,8 @@ files = ["packages/core/src", "apps/api/src", "apps/worker/src", "apps/cli/src",
 explicit_package_bases = true
 
 [tool.coverage.run]
+# SQLAlchemy async calls switch greenlets as well as OS threads.
+concurrency = ["thread", "greenlet"]
 patch = ["subprocess"]
 
 [tool.coverage.report]

@@ -376,7 +376,7 @@ def test_definition_services_are_atomic_without_http(auth_settings: Settings) ->
         try:
             async with database.session() as session:
                 application = await DefinitionService(Application, session, authorization).save(
-                    owner, {"name": "Direct", "slug": "direct"}
+                    owner, {"name": "Direct", "slug": "direct", "state": "published"}
                 )
             async with database.session() as session:
                 category = await DefinitionService(Category, session, authorization).save(
@@ -404,7 +404,16 @@ def test_definition_services_are_atomic_without_http(auth_settings: Settings) ->
             ):
                 async with database.session() as session:
                     service = DefinitionService(model, session, authorization)
-                    assert (await service.get(reader, identity)).id == identity
+                    visible_principal = owner if model is Release else reader
+                    if model is Release:
+                        with pytest.raises(DefinitionError) as hidden:
+                            await service.get(reader, identity)
+                        assert hidden.value.status == 404
+                        hidden_page = await service.list(
+                            reader, limit=25, offset=0, ordering="created"
+                        )
+                        assert hidden_page[1] == 0
+                    assert (await service.get(visible_principal, identity)).id == identity
                     with pytest.raises(DefinitionError) as absent:
                         await service.get(reader, uuid4())
                     assert absent.value.status == 404
@@ -420,7 +429,7 @@ def test_definition_services_are_atomic_without_http(auth_settings: Settings) ->
                         Category: CategoryRead,
                         Release: ReleaseRead,
                     }[model]
-                    page = await handler(query, ResourceService(service, schema), reader)
+                    page = await handler(query, ResourceService(service, schema), visible_principal)
                     assert page.total == 1 and page.items[0].id == identity
                 async with database.session() as session:
                     with pytest.raises(AuthError) as denied:

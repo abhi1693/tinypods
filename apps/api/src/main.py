@@ -24,6 +24,7 @@ from tinypods_api.rate_limit import GlobalRateLimitMiddleware, RateLimitedRoute
 from tinypods_api.repositories import router as repositories_router
 from tinypods_api.secrets import router as secrets_router
 from tinypods_core import __version__
+from tinypods_core.applications.validation import PublicationValidator
 from tinypods_core.auth import AuthService, Credentials, LocalPasswordProvider, SessionService
 from tinypods_core.auth.federation import BrowserLogin
 from tinypods_core.auth.providers.zitadel.oidc import ZitadelOIDC
@@ -33,6 +34,8 @@ from tinypods_core.clusters.discovery import DiscoveryCoordinator
 from tinypods_core.db import Database
 from tinypods_core.logging import configure_logging, shutdown_logging
 from tinypods_core.rate_limit import RateLimiter
+from tinypods_core.repositories.client import RepositoryClient
+from tinypods_core.repositories.transport import MetadataHTTP
 from tinypods_core.settings import ConfigurationError, Settings, load_settings
 
 ReadinessCheck = Callable[[], Awaitable[bool]]
@@ -145,6 +148,8 @@ def create_app(
     )
     app.state.rate_limiter = limiter
     app.state.settings = config
+    app.state.publication_validator = PublicationValidator()
+    app.state.repository_client = RepositoryClient(MetadataHTTP(config))
     app.state.response_cache = response_cache
     app.state.discovery_coordinator = DiscoveryCoordinator()
     install_error_handlers(app)

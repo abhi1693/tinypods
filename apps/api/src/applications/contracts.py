@@ -1,6 +1,7 @@
 """Explicit version-one public DTOs for application definitions."""
 
-from typing import Literal
+from datetime import datetime
+from typing import ClassVar, Literal
 from uuid import UUID
 
 from pydantic import ConfigDict, Field
@@ -9,7 +10,14 @@ from tinypods_api.http.model_contracts import DefinitionPatch, DefinitionRead
 from tinypods_api.http.representations import Related, ResourceRead
 from tinypods_api.repositories.contracts import VersionRead
 from tinypods_core.applications import ApplicationStatus, ConfigurationField, SourceType
-from tinypods_core.applications.models import Application, ApplicationCategory, Category, Release
+from tinypods_core.applications.contracts import ReleaseOptions, ReleaseValidationIssue
+from tinypods_core.applications.definitions import ApplicationState, ReleaseState
+from tinypods_core.applications.models import (
+    Application,
+    ApplicationCategory,
+    Category,
+    Release,
+)
 
 
 class CategoryWrite(RequestDTO):
@@ -31,6 +39,7 @@ class ApplicationWrite(CategoryWrite):
     """Complete application state; status does not enforce billing/access."""
 
     status: ApplicationStatus = ApplicationStatus.EXPERIMENTAL
+    state: ApplicationState = ApplicationState.DRAFT
 
 
 class ApplicationRead(DefinitionRead, ApplicationWrite):
@@ -39,11 +48,14 @@ class ApplicationRead(DefinitionRead, ApplicationWrite):
     resource_model = Application
 
 
-class ReleaseWrite(RequestDTO):
+class ReleaseWrite(ReleaseOptions, RequestDTO):
     """Complete shared Helm definition; no installed values or generated secrets."""
 
-    application_id: UUID
-    chart_version_id: UUID
+    application_id: UUID = Field(strict=False)
+    chart_version_id: UUID = Field(strict=False)
+    state: Literal[ReleaseState.DRAFT, ReleaseState.IN_REVIEW] = ReleaseState.DRAFT
+    revision: int = Field(default=1, ge=1)
+    notes: str = Field(default="", max_length=10000)
     configuration_fields: list[ConfigurationField] = Field(default_factory=list)
 
 
@@ -54,6 +66,18 @@ class ReleaseRead(DefinitionRead):
     application: Related[ApplicationRead]
     chart_version: Related[VersionRead]
     configuration_fields: list[ConfigurationField]
+    revision: int
+    state: ReleaseState
+    notes: str
+    architectures: list[str]
+    renderer: str
+    renderer_contract: int
+    core_version_min: str | None
+    core_version_max: str | None
+    deprecated: bool
+    revoked_at: datetime | None
+    lifecycle_reason: str
+    published_at: datetime | None
 
 
 class CategoryPatch(DefinitionPatch):
@@ -69,13 +93,25 @@ class ApplicationPatch(CategoryPatch):
     """Only supplied application fields are changed."""
 
     status: ApplicationStatus | None = None
+    state: ApplicationState | None = None
 
 
 class ReleasePatch(DefinitionPatch):
     """Only supplied shared Helm definition fields are changed."""
 
+    nullable_fields: ClassVar[frozenset[str]] = frozenset({"core_version_min", "core_version_max"})
     application_id: UUID | None = None
     chart_version_id: UUID | None = None
+    state: Literal[ReleaseState.DRAFT, ReleaseState.IN_REVIEW] | None = None
+    revision: int | None = Field(default=None, ge=1)
+    notes: str | None = Field(default=None, max_length=10000)
+    architectures: list[Literal["amd64", "arm64", "arm", "ppc64le", "s390x", "riscv64"]] | None = (
+        Field(default=None, max_length=6)
+    )
+    renderer: Literal["helm"] | None = None
+    renderer_contract: Literal[1] | None = None
+    core_version_min: str | None = Field(default=None, max_length=128)
+    core_version_max: str | None = Field(default=None, max_length=128)
     configuration_fields: list[ConfigurationField] | None = None
 
 
@@ -91,6 +127,7 @@ class ApplicationQuery(CategoryQuery):
     """Application queries additionally support the single status classification."""
 
     status: ApplicationStatus | None = None
+    state: ApplicationState | None = None
 
 
 class ReleaseQuery(PageParams):
@@ -101,6 +138,8 @@ class ReleaseQuery(PageParams):
     application_id: UUID | None = None
     source_type: SourceType | None = None
     chart_version_id: UUID | None = None
+    state: ReleaseState | None = None
+    deprecated: bool | None = None
 
 
 class MembershipWrite(RequestDTO):
@@ -116,3 +155,23 @@ class MembershipRead(ResourceRead):
     resource_model = ApplicationCategory
     application: Related[ApplicationRead]
     category: Related[CategoryRead]
+
+
+class ReleaseValidationRead(RequestDTO):
+    """Safe validation results without duplicating release definition data."""
+
+    valid: bool
+    issues: list[ReleaseValidationIssue]
+
+
+class ReleaseDeprecation(RequestDTO):
+    """Change discoverability metadata while preserving the published release."""
+
+    deprecated: bool = True
+    reason: str = Field(min_length=1, max_length=1000, pattern=r"\S")
+
+
+class ReleaseRevocation(RequestDTO):
+    """Record permanent revocation without removing historic desired-state pins."""
+
+    reason: str = Field(min_length=1, max_length=1000, pattern=r"\S")

@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException
 from tinypods_api.http.contracts import ErrorResponse, ValidationIssue
+from tinypods_core.applications.publication import PublicationFailure
 from tinypods_core.applications.service import DefinitionError
 from tinypods_core.auth import AuthError
 from tinypods_core.rate_limit import RateLimitUnavailable
@@ -142,6 +143,18 @@ async def secret_error(request: Request, exc: Exception) -> JSONResponse:
     return error_response(request, exc.status, exc.code, "Cluster credential request failed")
 
 
+async def publication_error(request: Request, exc: Exception) -> JSONResponse:
+    """Expose publication validation codes without raw values or upstream exception text."""
+    assert isinstance(exc, PublicationFailure)
+    return error_response(
+        request,
+        exc.status,
+        exc.code,
+        "Release publication request failed",
+        issues=[ValidationIssue(location=item.path, code=item.code) for item in exc.issues],
+    )
+
+
 def install_error_handlers(app: FastAPI) -> None:
     """Register deliberate HTTP, validation and unexpected-error translations.
 
@@ -153,6 +166,7 @@ def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(Exception, unexpected_error)
     app.add_exception_handler(AuthError, authentication_error)
     app.add_exception_handler(DefinitionError, definition_error)
+    app.add_exception_handler(PublicationFailure, publication_error)
     app.add_exception_handler(SourceError, source_error)
     app.add_exception_handler(SecretError, secret_error)
     app.add_exception_handler(RateLimitUnavailable, storage_unavailable)

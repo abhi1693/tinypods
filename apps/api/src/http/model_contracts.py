@@ -1,6 +1,7 @@
 """Shared identity/audit DTOs and partial-update null semantics."""
 
 from datetime import datetime
+from typing import ClassVar
 from uuid import UUID
 
 from pydantic import ConfigDict, model_validator
@@ -20,9 +21,13 @@ class DefinitionRead(ResourceRead):
 class DefinitionPatch(RequestDTO):
     """Reject explicit nulls except for a nullable icon; preserve omitted fields."""
 
+    nullable_fields: ClassVar[frozenset[str]] = frozenset({"icon"})
+
     @model_validator(mode="after")
     def validate_nulls(self) -> "DefinitionPatch":
         """Distinguish absence from clearing nullable data on partial updates."""
-        if any(getattr(self, name) is None for name in self.model_fields_set - {"icon"}):
-            raise ValueError("Only icon may be explicitly null")
+        if any(
+            getattr(self, name) is None for name in self.model_fields_set - self.nullable_fields
+        ):
+            raise ValueError("Only declared nullable fields may be explicitly null")
         return self

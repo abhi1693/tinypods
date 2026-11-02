@@ -144,3 +144,12 @@ resources, the admin sync action, CLI command, normalized release references and
 operator network/credential configuration.
 
 Read relationships use [nested public representations](../../docs/nested-api-representations.md); write inputs and filters retain UUID foreign keys.
+
+
+## Release publication
+
+Release definitions have an editable draft phase and a separately tracked publication
+phase. Owners can validate contained chart dependencies and configuration, clone
+new revisions, publish an exact digest, and record deprecation or revocation.
+See [release validation and publication](../../docs/release-publication.md) for
+routes, transaction guarantees, validation limits and the no-deployment boundary.

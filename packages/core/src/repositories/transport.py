@@ -5,6 +5,7 @@ import base64
 import ipaddress
 import socket
 from collections.abc import Awaitable, Callable, Mapping
+from contextlib import suppress
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlsplit
 
@@ -34,6 +35,14 @@ class Document:
     url: str
 
 
+@dataclass
+class SharedRead:
+    """One live read with counted callers; completed bytes are never cached."""
+
+    task: asyncio.Task[Document]
+    callers: int = 0
+
+
 class MetadataHTTP:
     """Pin public DNS answers and preserve the original TLS/Host identity per request.
 
@@ -50,8 +59,56 @@ class MetadataHTTP:
     ) -> None:
         """Retain operator bounds; transport/resolver injection is for trusted tests."""
         self.settings, self.resolver, self.transport = settings, resolver, transport
+        self._reads: dict[
+            tuple[str, tuple[tuple[str, str], ...], bool, int | None], SharedRead
+        ] = {}
+        self.maximum_reads = 32
 
     async def get(
+        self,
+        url: str,
+        *,
+        headers: Mapping[str, str] | None = None,
+        authenticate: bool = True,
+        maximum_bytes: int | None = None,
+    ) -> Document:
+        """Share identical in-flight reads within this settings/credential owner.
+
+        All request headers and limits participate in identity. Every leader still
+        enforces DNS, redirects and credentials. Cancelling one caller leaves other
+        callers running; the last caller cancels and joins unfinished work. No
+        task or completed document survives its last caller, including failures.
+        """
+        outbound = dict(headers or {})
+        key = (url, tuple(sorted(outbound.items())), authenticate, maximum_bytes)
+        shared = self._reads.get(key)
+        if shared is None:
+            if len(self._reads) >= self.maximum_reads:
+                raise SourceError(503, "source_busy")
+            shared = SharedRead(
+                asyncio.create_task(
+                    self._get(
+                        url,
+                        headers=outbound,
+                        authenticate=authenticate,
+                        maximum_bytes=maximum_bytes,
+                    )
+                )
+            )
+            self._reads[key] = shared
+        shared.callers += 1
+        try:
+            return await asyncio.shield(shared.task)
+        finally:
+            shared.callers -= 1
+            if shared.callers == 0:
+                del self._reads[key]
+                if not shared.task.done():
+                    shared.task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await shared.task
+
+    async def _get(
         self,
         url: str,
         *,
