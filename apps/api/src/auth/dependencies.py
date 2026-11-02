@@ -6,6 +6,7 @@ from fastapi import Depends, HTTPException, Request
 from tinypods_api.auth.cookies import request_cookie_policy
 from tinypods_core.audit import bind_user
 from tinypods_core.auth import AuthService, Credentials, Principal, SessionService
+from tinypods_core.auth.authorization import AuthorizationService
 from tinypods_core.json_types import JsonRecord
 
 SESSION_COOKIE = "__Host-tinypods-session"
@@ -35,6 +36,18 @@ def get_sessions(request: Request) -> SessionService:
 
 
 SessionDependency = Annotated[SessionService, Depends(get_sessions)]
+
+
+def get_authorization(sessions: SessionDependency) -> AuthorizationService:
+    """Compose request-scoped policy around the shared credential validator.
+
+    FastAPI reuses this dependency within one request. Services still revalidate
+    credentials and enforce their own scopes at every protected operation.
+    """
+    return AuthorizationService(sessions)
+
+
+AuthorizationDependency = Annotated[AuthorizationService, Depends(get_authorization)]
 
 
 def check_origin(request: Request) -> None:

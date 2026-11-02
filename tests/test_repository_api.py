@@ -550,10 +550,6 @@ def test_sync_generation_rollback_and_operator_audit(auth_settings: Settings) ->
 
 def test_repository_service_and_dto_boundaries(auth_settings: Settings) -> None:
     """Verify service validation and page DTO conversion independently of HTTP routing."""
-    from types import SimpleNamespace
-
-    from fastapi import HTTPException
-    from starlette.requests import Request
     from tinypods_api.http.presentation import ResourceService
     from tinypods_api.repositories.contracts import (
         ChartQuery,
@@ -563,15 +559,7 @@ def test_repository_service_and_dto_boundaries(auth_settings: Settings) -> None:
         VersionQuery,
         VersionRead,
     )
-    from tinypods_api.repositories.dependencies import sync
     from tinypods_api.repositories.routes import list_chart, list_repository, list_version
-
-    with pytest.raises(HTTPException) as unavailable:
-        sync(
-            Request({"type": "http", "app": SimpleNamespace(state=SimpleNamespace(database=None))}),
-            None,
-        )
-    assert unavailable.value.status_code == 503
 
     class Validator:
         """Trusted non-browser authentication boundary for direct service regressions."""

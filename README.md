@@ -52,6 +52,11 @@ success and rolls back on failure; `Database.session()` rolls back uncommitted
 changes on exit. Services must explicitly commit writes made in request sessions.
 Do not share a session across concurrent tasks. Persistence models and response
 schemas stay separate. Database queries, cleanup and readiness checks are awaited.
+
+Short-lived CLI operations use `async with Database(settings) as database` to
+dispose their owned engine on success, failure or cancellation. Request dependencies
+borrow the application-owned database and must not close it; the API lifespan
+owns that cleanup.
 Alembic uses synchronous connections only in the explicit administration command.
 
 Direct connections use a bounded application pool. For PgBouncer transaction

@@ -7,8 +7,10 @@ import socket
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
+from functools import partial
 from urllib.parse import urljoin, urlsplit
 
+import anyio
 import httpx2 as httpx
 from tinypods_core.repositories.sources import SourceError
 from tinypods_core.settings import Settings
@@ -165,12 +167,16 @@ class MetadataHTTP:
                         raw.encode()
                     ).decode("ascii")
                 async with (
-                    httpx.AsyncClient(
-                        transport=self.transport,
-                        verify=True,
-                        trust_env=False,
-                        timeout=5.0,
-                        follow_redirects=False,
+                    # Client construction loads TLS trust files synchronously.
+                    await anyio.to_thread.run_sync(
+                        partial(
+                            httpx.AsyncClient,
+                            transport=self.transport,
+                            verify=True,
+                            trust_env=False,
+                            timeout=5.0,
+                            follow_redirects=False,
+                        )
                     ) as client,
                     client.stream(
                         "GET",

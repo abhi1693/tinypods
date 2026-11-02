@@ -8,7 +8,7 @@ from uuid import UUID
 
 import typer
 from sqlmodel import col, select
-from tinypods_cli.runtime import command_settings
+from tinypods_cli.runtime import OperatorValidator, command_settings
 from tinypods_core.applications.service import DefinitionError
 from tinypods_core.audit import audit_context
 from tinypods_core.auth import Principal
@@ -21,18 +21,6 @@ from tinypods_core.repositories.sources import SourceError
 from tinypods_core.repositories.transport import MetadataHTTP
 
 repositories_app = typer.Typer(help="Manage external chart repositories.", add_completion=False)
-
-
-class OperatorValidator:
-    """Explicit local operator trust boundary, never installed into HTTP authentication.
-
-    This command already holds operator database credentials, like migrations and
-    owner bootstrap. Its system actor does not impersonate a persisted user.
-    """
-
-    async def validate_principal(self, principal: Principal) -> Principal:
-        """Return the command-owned principal; no user-supplied identity is accepted."""
-        return principal
 
 
 @repositories_app.command("sync")
@@ -53,22 +41,21 @@ def sync(
 
     async def synchronize() -> tuple[list[dict[str, object]], bool]:
         """Own and close all database resources, including on errors or cancellation."""
-        database = Database(settings)
-        outcomes: list[dict[str, object]] = []
-        failed = False
-        principal = Principal(
-            UUID(int=0),
-            "system:repository-sync",
-            True,
-            "local-operator",
-            credential_kind="operator",
-        )
-        service = RepositorySync(
-            database,
-            AuthorizationService(OperatorValidator()),
-            RepositoryClient(MetadataHTTP(settings)),
-        )
-        try:
+        async with Database(settings) as database:
+            outcomes: list[dict[str, object]] = []
+            failed = False
+            principal = Principal(
+                UUID(int=0),
+                "system:repository-sync",
+                True,
+                "local-operator",
+                credential_kind="operator",
+            )
+            service = RepositorySync(
+                database,
+                AuthorizationService(OperatorValidator()),
+                RepositoryClient(MetadataHTTP(settings)),
+            )
             if repository_id is None:
                 async with database.session() as session:
                     identities = list(
@@ -98,8 +85,6 @@ def sync(
                         }
                     )
             return outcomes, failed
-        finally:
-            await database.close()
 
     with audit_context("system:repository-sync"):
         outcomes, failed = asyncio.run(synchronize())

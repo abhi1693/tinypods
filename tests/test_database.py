@@ -441,3 +441,41 @@ def test_cancelled_transaction_releases_connection(
             await database.close()
 
     asyncio.run(scenario())
+
+
+def test_owned_database_context_closes_without_suppressing_errors(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Owned engines close on success, programming failure and task cancellation."""
+    closed = []
+    original = Database.close
+
+    async def close(database: Database) -> None:
+        await original(database)
+        closed.append(database)
+
+    monkeypatch.setattr(Database, "close", close)
+
+    async def scenario() -> None:
+        async with Database(settings) as normal:
+            assert normal not in closed
+        assert closed == [normal]
+        with pytest.raises(ValueError, match="intentional"):
+            async with Database(settings) as failed:
+                raise ValueError("intentional")
+        assert closed[-1] is failed
+        entered = asyncio.Event()
+
+        async def cancelled() -> None:
+            async with Database(settings):
+                entered.set()
+                await asyncio.Event().wait()
+
+        task = asyncio.create_task(cancelled())
+        await entered.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert len(closed) == 3
+
+    asyncio.run(scenario())
