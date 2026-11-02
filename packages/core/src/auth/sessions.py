@@ -231,6 +231,7 @@ class SessionService:
                     AuthSession.expires_at > func.clock_timestamp(),
                     col(AuthSession.revoked_at).is_(None),
                 )
+                .execution_options(populate_existing=True)
             )
         ).one_or_none()
         if result is None:
@@ -277,16 +278,24 @@ class SessionService:
             record.revoked_at = now
             session.add(record)
 
-    async def validate_principal(self, principal: Principal) -> Principal:
-        """Reject unsupported credential kinds and revalidate session-backed identity context."""
+    async def validate_in_session(
+        self,
+        principal: Principal,
+        session: AsyncSession,
+    ) -> Principal:
+        """Revalidate using a caller-owned transaction without a second pool checkout."""
         if principal.credential_kind != "session":
             raise AuthError(401)
+        user, record = await self._identity(session, principal.credential_id)
+        current = self._principal(user, record)
+        if current != principal:
+            raise AuthError(403)
+        return current
+
+    async def validate_principal(self, principal: Principal) -> Principal:
+        """Reject unsupported credentials and revalidate using one owned session."""
         async with self.database.session() as session:
-            user, record = await self._identity(session, principal.credential_id)
-            current = self._principal(user, record)
-            if current != principal:
-                raise AuthError(403)
-            return current
+            return await self.validate_in_session(principal, session)
 
     async def require_access(
         self, principal: Principal | None, scope: Scope, *, owner_id: UUID | None = None
@@ -295,3 +304,15 @@ class SessionService:
         from tinypods_core.auth.authorization import AuthorizationService
 
         return await AuthorizationService(self).require_access(principal, scope, owner_id=owner_id)
+
+
+class SessionPrincipalValidator:
+    """Borrow an operation's session solely for credential revalidation."""
+
+    def __init__(self, service: SessionService, session: AsyncSession) -> None:
+        """Retain the session without taking ownership or committing caller work."""
+        self.service, self.session = service, session
+
+    async def validate_principal(self, principal: Principal) -> Principal:
+        """Check current credentials in the same transaction as protected resource reads."""
+        return await self.service.validate_in_session(principal, self.session)

@@ -37,8 +37,28 @@ class SecretContext:
     version: int
     cluster_id: UUID
 
+    installation_id: UUID | None = None
+    namespace: str | None = None
+
     def associated_data(self) -> bytes:
         """Use a stable, domain-separated encoding; none of these values are secret."""
+        if self.installation_id is not None:
+            if not self.namespace:
+                raise SecretError("secret_scope_missing", 409)
+            return json.dumps(
+                [
+                    "tinypods:application-secret:v1",
+                    str(self.secret_id),
+                    str(self.version_id),
+                    self.version,
+                    str(self.cluster_id),
+                    str(self.installation_id),
+                    self.namespace,
+                ],
+                separators=(",", ":"),
+            ).encode()
+        if self.namespace is not None:
+            raise SecretError("secret_scope_mismatch", 409)
         return json.dumps(
             [
                 "tinypods:cluster-secret:v1",

@@ -27,7 +27,7 @@ class Secret(AuditTrailMixin, table=True):
     """Store safe metadata only; every secret must have its matching cluster scope."""
 
     __tablename__ = "secrets"
-    __table_args__ = (CheckConstraint("kind = 'cluster'", name="kind"),)
+    __table_args__ = (CheckConstraint("kind IN ('cluster', 'application')", name="kind"),)
     brief_fields: ClassVar[tuple[str, ...] | None] = ("id", "name", "description", "kind")
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     name: str = Field(min_length=1, max_length=255)

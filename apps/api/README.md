@@ -165,3 +165,6 @@ HTTP/OAuth client construction can synchronously load TLS trust files. Repositor
 and Zitadel adapters construct clients in workers, then await network operations
 and close clients in their async caller. Kubernetes TLS setup, secret-key file
 reads and password hashing retain their existing worker/async boundaries.
+
+Intended targets and immutable configuration history are described in the
+[application installation guide](../../docs/application-installations.md).

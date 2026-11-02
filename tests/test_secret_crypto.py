@@ -304,3 +304,20 @@ def test_kubeconfig_transport_is_explicit_and_preserves_original_bytes() -> None
 def test_kubeconfig_preserves_https_proxy_base_path(server: str) -> None:
     """Selected Kubernetes proxy prefixes remain part of the SDK host."""
     assert Kubeconfig.parse(kubeconfig(server)).server == server.rstrip("/")
+
+
+def test_application_context_domain_and_required_namespace() -> None:
+    """Application context is distinct and fails closed on partial scope."""
+    from uuid import UUID
+
+    from tinypods_core.secrets.crypto import SecretContext, SecretError
+
+    cluster = SecretContext(UUID(int=1), UUID(int=2), 1, UUID(int=3))
+    application = SecretContext(UUID(int=1), UUID(int=2), 1, UUID(int=3), UUID(int=4), "test")
+    assert application.associated_data() != cluster.associated_data()
+    for context in (
+        SecretContext(UUID(int=1), UUID(int=2), 1, UUID(int=3), UUID(int=4)),
+        SecretContext(UUID(int=1), UUID(int=2), 1, UUID(int=3), namespace="test"),
+    ):
+        with pytest.raises(SecretError):
+            context.associated_data()

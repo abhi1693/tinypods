@@ -295,3 +295,6 @@ See [change logging](docs/audit-trail.md) for registry, execution context,
 redaction, transaction behavior and supported write boundaries.
 
 Region hierarchy and Kubernetes cluster registration are described in the [region and cluster guide](docs/regions-clusters.md).
+
+See [application installations](docs/application-installations.md) for intended
+targets, immutable configuration history and scoped application-secret APIs.
