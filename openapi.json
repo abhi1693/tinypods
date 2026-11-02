@@ -1,6 +1,39 @@
 {
   "components": {
     "schemas": {
+      "ApiCapability": {
+        "additionalProperties": false,
+        "description": "Describe an advertised API resource.",
+        "properties": {
+          "group_version": {
+            "maxLength": 253,
+            "title": "Group Version",
+            "type": "string"
+          },
+          "kind": {
+            "maxLength": 253,
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 253,
+            "title": "Name",
+            "type": "string"
+          },
+          "namespaced": {
+            "title": "Namespaced",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "group_version",
+          "name",
+          "kind",
+          "namespaced"
+        ],
+        "title": "ApiCapability",
+        "type": "object"
+      },
       "ApplicationBrief": {
         "additionalProperties": false,
         "properties": {
@@ -243,6 +276,390 @@
           }
         },
         "title": "BackchannelErrorResponse",
+        "type": "object"
+      },
+      "CapabilityRead": {
+        "additionalProperties": false,
+        "description": "Describe result provenance independently of the collected snapshot.",
+        "properties": {
+          "cached": {
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/CapabilitySnapshot"
+          },
+          "source": {
+            "enum": [
+              "cache",
+              "live"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "cached",
+          "snapshot"
+        ],
+        "title": "CapabilityRead",
+        "type": "object"
+      },
+      "CapabilitySection_ApiCapability_": {
+        "additionalProperties": false,
+        "properties": {
+          "complete": {
+            "default": true,
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ApiCapability"
+            },
+            "maxItems": 2000,
+            "title": "Items",
+            "type": "array"
+          },
+          "reason": {
+            "default": "collected",
+            "enum": [
+              "collected",
+              "unsupported",
+              "forbidden",
+              "unauthorized",
+              "timeout",
+              "unreachable",
+              "invalid-response",
+              "limit"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "available",
+              "unsupported",
+              "forbidden",
+              "unavailable",
+              "not-collected"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "CapabilitySection[ApiCapability]",
+        "type": "object"
+      },
+      "CapabilitySection_IngressCapability_": {
+        "additionalProperties": false,
+        "properties": {
+          "complete": {
+            "default": true,
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IngressCapability"
+            },
+            "maxItems": 2000,
+            "title": "Items",
+            "type": "array"
+          },
+          "reason": {
+            "default": "collected",
+            "enum": [
+              "collected",
+              "unsupported",
+              "forbidden",
+              "unauthorized",
+              "timeout",
+              "unreachable",
+              "invalid-response",
+              "limit"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "available",
+              "unsupported",
+              "forbidden",
+              "unavailable",
+              "not-collected"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "CapabilitySection[IngressCapability]",
+        "type": "object"
+      },
+      "CapabilitySection_NodeCapability_": {
+        "additionalProperties": false,
+        "properties": {
+          "complete": {
+            "default": true,
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NodeCapability"
+            },
+            "maxItems": 2000,
+            "title": "Items",
+            "type": "array"
+          },
+          "reason": {
+            "default": "collected",
+            "enum": [
+              "collected",
+              "unsupported",
+              "forbidden",
+              "unauthorized",
+              "timeout",
+              "unreachable",
+              "invalid-response",
+              "limit"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "available",
+              "unsupported",
+              "forbidden",
+              "unavailable",
+              "not-collected"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "CapabilitySection[NodeCapability]",
+        "type": "object"
+      },
+      "CapabilitySection_RuntimeCapability_": {
+        "additionalProperties": false,
+        "properties": {
+          "complete": {
+            "default": true,
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RuntimeCapability"
+            },
+            "maxItems": 2000,
+            "title": "Items",
+            "type": "array"
+          },
+          "reason": {
+            "default": "collected",
+            "enum": [
+              "collected",
+              "unsupported",
+              "forbidden",
+              "unauthorized",
+              "timeout",
+              "unreachable",
+              "invalid-response",
+              "limit"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "available",
+              "unsupported",
+              "forbidden",
+              "unavailable",
+              "not-collected"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "CapabilitySection[RuntimeCapability]",
+        "type": "object"
+      },
+      "CapabilitySection_StorageCapability_": {
+        "additionalProperties": false,
+        "properties": {
+          "complete": {
+            "default": true,
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StorageCapability"
+            },
+            "maxItems": 2000,
+            "title": "Items",
+            "type": "array"
+          },
+          "reason": {
+            "default": "collected",
+            "enum": [
+              "collected",
+              "unsupported",
+              "forbidden",
+              "unauthorized",
+              "timeout",
+              "unreachable",
+              "invalid-response",
+              "limit"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "available",
+              "unsupported",
+              "forbidden",
+              "unavailable",
+              "not-collected"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "CapabilitySection[StorageCapability]",
+        "type": "object"
+      },
+      "CapabilitySection_str_": {
+        "additionalProperties": false,
+        "properties": {
+          "complete": {
+            "default": true,
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 2000,
+            "title": "Items",
+            "type": "array"
+          },
+          "reason": {
+            "default": "collected",
+            "enum": [
+              "collected",
+              "unsupported",
+              "forbidden",
+              "unauthorized",
+              "timeout",
+              "unreachable",
+              "invalid-response",
+              "limit"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "available",
+              "unsupported",
+              "forbidden",
+              "unavailable",
+              "not-collected"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "CapabilitySection[str]",
+        "type": "object"
+      },
+      "CapabilitySnapshot": {
+        "additionalProperties": false,
+        "description": "Store only rebuildable selected facts for a specific cluster credential.",
+        "properties": {
+          "apis": {
+            "$ref": "#/components/schemas/CapabilitySection_ApiCapability_"
+          },
+          "cluster_id": {
+            "format": "uuid",
+            "title": "Cluster Id",
+            "type": "string"
+          },
+          "collected_at": {
+            "title": "Collected At",
+            "type": "string"
+          },
+          "credential_version_id": {
+            "format": "uuid",
+            "title": "Credential Version Id",
+            "type": "string"
+          },
+          "ingress": {
+            "$ref": "#/components/schemas/CapabilitySection_IngressCapability_"
+          },
+          "kubernetes": {
+            "$ref": "#/components/schemas/CapabilitySection_str_"
+          },
+          "nodes": {
+            "$ref": "#/components/schemas/CapabilitySection_NodeCapability_"
+          },
+          "runtimes": {
+            "$ref": "#/components/schemas/CapabilitySection_RuntimeCapability_"
+          },
+          "schema_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "storage": {
+            "$ref": "#/components/schemas/CapabilitySection_StorageCapability_"
+          }
+        },
+        "required": [
+          "cluster_id",
+          "credential_version_id",
+          "started_at",
+          "collected_at",
+          "kubernetes",
+          "apis",
+          "nodes",
+          "storage",
+          "ingress",
+          "runtimes"
+        ],
+        "title": "CapabilitySnapshot",
         "type": "object"
       },
       "CategoryBrief": {
@@ -989,6 +1406,33 @@
         "title": "IdentityResponse",
         "type": "object"
       },
+      "IngressCapability": {
+        "additionalProperties": false,
+        "description": "Describe a configured ingress class, not verified external routing.",
+        "properties": {
+          "controller": {
+            "maxLength": 253,
+            "title": "Controller",
+            "type": "string"
+          },
+          "default": {
+            "title": "Default",
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 253,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "controller",
+          "default"
+        ],
+        "title": "IngressCapability",
+        "type": "object"
+      },
       "JsonValue-Input": {
         "anyOf": [
           {
@@ -1363,6 +1807,108 @@
           "category_id"
         ],
         "title": "MembershipWrite",
+        "type": "object"
+      },
+      "NodeCapability": {
+        "additionalProperties": false,
+        "description": "Describe named node metadata, runtime details and resource budgets.",
+        "properties": {
+          "allocatable": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 100,
+            "title": "Allocatable",
+            "type": "object"
+          },
+          "annotations": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 1024,
+            "title": "Annotations",
+            "type": "object"
+          },
+          "architecture": {
+            "maxLength": 128,
+            "title": "Architecture",
+            "type": "string"
+          },
+          "capacity": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 100,
+            "title": "Capacity",
+            "type": "object"
+          },
+          "kernel_version": {
+            "anyOf": [
+              {
+                "maxLength": 253,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kernel Version"
+          },
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 1024,
+            "title": "Labels",
+            "type": "object"
+          },
+          "name": {
+            "maxLength": 253,
+            "title": "Name",
+            "type": "string"
+          },
+          "operating_system": {
+            "maxLength": 128,
+            "title": "Operating System",
+            "type": "string"
+          },
+          "os_image": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Os Image"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "schedulable": {
+            "title": "Schedulable",
+            "type": "boolean"
+          },
+          "taints": {
+            "items": {
+              "$ref": "#/components/schemas/TaintCapability"
+            },
+            "maxItems": 100,
+            "title": "Taints",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "architecture",
+          "operating_system",
+          "ready",
+          "schedulable"
+        ],
+        "title": "NodeCapability",
         "type": "object"
       },
       "Page_ApplicationRead_": {
@@ -2404,6 +2950,47 @@
         "title": "RepositoryWrite",
         "type": "object"
       },
+      "RuntimeCapability": {
+        "additionalProperties": false,
+        "description": "Describe runtime selection and scheduling constraints, not verified isolation.",
+        "properties": {
+          "handler": {
+            "maxLength": 253,
+            "title": "Handler",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 253,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_selector": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Node Selector",
+            "type": "object"
+          },
+          "tolerations": {
+            "items": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/JsonValue-Output"
+              },
+              "type": "object"
+            },
+            "title": "Tolerations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "handler",
+          "node_selector",
+          "tolerations"
+        ],
+        "title": "RuntimeCapability",
+        "type": "object"
+      },
       "SourceType": {
         "description": "Supported Helm chart sources.",
         "enum": [
@@ -2412,6 +2999,50 @@
         ],
         "title": "SourceType",
         "type": "string"
+      },
+      "StorageCapability": {
+        "additionalProperties": false,
+        "description": "Describe advertised storage behavior without claiming provisioning succeeds.",
+        "properties": {
+          "allow_expansion": {
+            "title": "Allow Expansion",
+            "type": "boolean"
+          },
+          "binding_mode": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Mode"
+          },
+          "default": {
+            "title": "Default",
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 253,
+            "title": "Name",
+            "type": "string"
+          },
+          "provisioner": {
+            "maxLength": 253,
+            "title": "Provisioner",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "provisioner",
+          "default",
+          "allow_expansion"
+        ],
+        "title": "StorageCapability",
+        "type": "object"
       },
       "SyncRead": {
         "additionalProperties": false,
@@ -2446,6 +3077,50 @@
           "synced_at"
         ],
         "title": "SyncRead",
+        "type": "object"
+      },
+      "TaintCapability": {
+        "additionalProperties": false,
+        "description": "Describe a scheduling taint without flattening key, value and effect.",
+        "properties": {
+          "effect": {
+            "enum": [
+              "NoSchedule",
+              "PreferNoSchedule",
+              "NoExecute"
+            ],
+            "title": "Effect",
+            "type": "string"
+          },
+          "key": {
+            "maxLength": 253,
+            "title": "Key",
+            "type": "string"
+          },
+          "time_added": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Added"
+          },
+          "value": {
+            "default": "",
+            "maxLength": 253,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "effect"
+        ],
+        "title": "TaintCapability",
         "type": "object"
       },
       "UserBrief": {
@@ -11530,6 +12205,165 @@
         "x-tinypods-rate-limit": {
           "limit": 30,
           "name": "clustersClusterReplace",
+          "window_ms": 60000
+        }
+      }
+    },
+    "/api/v1/clusters/{id}/capabilities": {
+      "get": {
+        "description": "Read cached cluster facts or discover live on a miss or cache failure.\n\nRequires instance-owner access. Live fallback is bounded and read-only;\ncache failures do not prevent returning fresh partial results.",
+        "operationId": "clustersCapabilitiesRetrieve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "Get Capabilities",
+        "tags": [
+          "clusters"
+        ],
+        "x-tinypods-rate-limit": {
+          "limit": 30,
+          "name": "clustersCapabilitiesRead",
           "window_ms": 60000
         }
       }

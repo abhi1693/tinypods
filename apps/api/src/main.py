@@ -13,6 +13,7 @@ from tinypods_api.applications import router as applications_router
 from tinypods_api.auth import build_router
 from tinypods_api.cache import CachePolicy
 from tinypods_api.clusters import router as clusters_router
+from tinypods_api.clusters.capabilities import router as capabilities_router
 from tinypods_api.http.constants import LIVENESS_PATH, READINESS_PATH
 from tinypods_api.http.contracts import LivenessResponse, PlatformInfoResponse, ReadinessResponse
 from tinypods_api.http.errors import ERROR_RESPONSES, install_error_handlers
@@ -28,6 +29,7 @@ from tinypods_core.auth.federation import BrowserLogin
 from tinypods_core.auth.providers.zitadel.oidc import ZitadelOIDC
 from tinypods_core.auth.providers.zitadel.sessions import ZitadelSessions
 from tinypods_core.cache import ResponseCache
+from tinypods_core.clusters.discovery import DiscoveryCoordinator
 from tinypods_core.db import Database
 from tinypods_core.logging import configure_logging, shutdown_logging
 from tinypods_core.rate_limit import RateLimiter
@@ -144,6 +146,7 @@ def create_app(
     app.state.rate_limiter = limiter
     app.state.settings = config
     app.state.response_cache = response_cache
+    app.state.discovery_coordinator = DiscoveryCoordinator()
     install_error_handlers(app)
     app.state.database = database
     app.state.auth = (
@@ -179,6 +182,7 @@ def create_app(
     app.include_router(applications_router, prefix=API_V1_PREFIX)
     app.include_router(repositories_router, prefix=API_V1_PREFIX)
     app.include_router(clusters_router, prefix=API_V1_PREFIX)
+    app.include_router(capabilities_router, prefix=API_V1_PREFIX)
     app.include_router(secrets_router, prefix=API_V1_PREFIX)
 
     @app.get(
