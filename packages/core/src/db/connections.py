@@ -2,7 +2,8 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import TypedDict
+from types import TracebackType
+from typing import Self, TypedDict
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import URL, Engine, make_url
@@ -106,6 +107,19 @@ class Database:
             expire_on_commit=False,
             autoflush=False,
         )
+
+    async def __aenter__(self) -> Self:
+        """Enter an owned database lifetime without opening or probing a connection."""
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        """Dispose the owned engine on success, failure or cancellation; suppress no errors."""
+        await self.close()
 
     @asynccontextmanager
     async def session(self) -> AsyncIterator[AsyncSession]:

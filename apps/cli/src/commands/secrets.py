@@ -7,7 +7,7 @@ from typing import Annotated
 from uuid import UUID
 
 import typer
-from tinypods_cli.runtime import command_settings
+from tinypods_cli.runtime import OperatorValidator, command_settings
 from tinypods_core.audit import audit_context
 from tinypods_core.auth import Principal
 from tinypods_core.auth.authorization import AuthorizationService
@@ -17,14 +17,6 @@ from tinypods_core.secrets.providers import encryption_provider
 from tinypods_core.secrets.service import RotationResult, SecretService
 
 secrets_app = typer.Typer(help="Manage encrypted cluster credential keys.", add_completion=False)
-
-
-class OperatorValidator:
-    """Trust only the identity created internally by this local operator command."""
-
-    async def validate_principal(self, principal: Principal) -> Principal:
-        """Return the command-owned principal; no user identity is accepted as input."""
-        return principal
 
 
 @secrets_app.command("rotate-key")
@@ -42,15 +34,14 @@ def rotate_key(
 
     async def rotate() -> RotationResult:
         """Own and close the operator session, including after failure or cancellation."""
-        database = Database(settings)
-        principal = Principal(
-            UUID(int=0),
-            "system:secret-key-rotation",
-            True,
-            "local-operator",
-            credential_kind="operator",
-        )
-        try:
+        async with Database(settings) as database:
+            principal = Principal(
+                UUID(int=0),
+                "system:secret-key-rotation",
+                True,
+                "local-operator",
+                credential_kind="operator",
+            )
             async with database.session() as session:
                 service = SecretService(
                     session,
@@ -58,8 +49,6 @@ def rotate_key(
                     encryption_provider(settings),
                 )
                 return await service.rotate(principal, batch_size)
-        finally:
-            await database.close()
 
     try:
         with audit_context("system:secret-key-rotation"):

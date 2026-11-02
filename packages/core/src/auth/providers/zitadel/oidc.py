@@ -7,9 +7,11 @@ import re
 import time
 from dataclasses import replace
 from datetime import UTC, datetime
+from functools import partial
 from typing import Any, cast
 from urllib.parse import urlencode, urlsplit
 
+import anyio
 import httpx2 as httpx
 from authlib.integrations.base_client.errors import OAuthError  # type: ignore[import-untyped]
 from authlib.integrations.httpx_client import AsyncOAuth2Client  # type: ignore[import-untyped]
@@ -86,11 +88,15 @@ class ZitadelOIDC:
     async def _json(self, url: str) -> dict[str, Any]:
         """Fetch bounded-time JSON metadata without logging provider-controlled error data."""
         try:
-            async with httpx.AsyncClient(
-                timeout=2.0,
-                follow_redirects=False,
-                trust_env=False,
-                transport=self.transport,
+            # HTTP construction loads TLS trust files even for an async client.
+            async with await anyio.to_thread.run_sync(
+                partial(
+                    httpx.AsyncClient,
+                    timeout=2.0,
+                    follow_redirects=False,
+                    trust_env=False,
+                    transport=self.transport,
+                )
             ) as client:
                 response = await client.get(url)
                 response.raise_for_status()
@@ -145,20 +151,23 @@ class ZitadelOIDC:
             scopes.append("urn:zitadel:iam:org:idp:id:" + identity_provider_id)
         return " ".join(scopes)
 
-    def _client(self, identity_provider_id: str | None = None) -> AsyncOAuth2Client:
+    async def _client(self, identity_provider_id: str | None = None) -> AsyncOAuth2Client:
         """Create a request-owned OAuth client with mandatory PKCE S256 and no refresh behavior."""
         secret = self.settings.zitadel_client_secret
-        return AsyncOAuth2Client(
-            self.client_id,
-            secret.get_secret_value() if secret is not None else None,
-            token_endpoint_auth_method=self.settings.zitadel_token_auth_method,
-            scope=self._scope(identity_provider_id),
-            redirect_uri=self.redirect_uri,
-            code_challenge_method="S256",
-            timeout=2.0,
-            follow_redirects=False,
-            trust_env=False,
-            transport=self.transport,
+        return await anyio.to_thread.run_sync(
+            partial(
+                AsyncOAuth2Client,
+                self.client_id,
+                secret.get_secret_value() if secret is not None else None,
+                token_endpoint_auth_method=self.settings.zitadel_token_auth_method,
+                scope=self._scope(identity_provider_id),
+                redirect_uri=self.redirect_uri,
+                code_challenge_method="S256",
+                timeout=2.0,
+                follow_redirects=False,
+                trust_env=False,
+                transport=self.transport,
+            )
         )
 
     @staticmethod
@@ -179,7 +188,7 @@ class ZitadelOIDC:
         try:
             async with asyncio.timeout(10):
                 metadata = await self._discovery()
-                async with self._client(identity_provider_id) as client:
+                async with await self._client(identity_provider_id) as client:
                     url, _ = client.create_authorization_url(
                         metadata.authorization_endpoint,
                         state=state,
@@ -205,7 +214,7 @@ class ZitadelOIDC:
         try:
             async with asyncio.timeout(10):
                 metadata = await self._discovery()
-                async with self._client() as client:
+                async with await self._client() as client:
                     token = await client.fetch_token(
                         metadata.token_endpoint,
                         grant_type="authorization_code",
@@ -321,7 +330,7 @@ class ZitadelOIDC:
         try:
             async with asyncio.timeout(10):
                 metadata = await self._discovery()
-                async with self._client() as client:
+                async with await self._client() as client:
                     token = await client.fetch_token(
                         metadata.token_endpoint,
                         grant_type="refresh_token",

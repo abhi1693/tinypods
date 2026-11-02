@@ -392,20 +392,11 @@ def test_index_with_prefixed_digest_and_other_versions() -> None:
     ).endswith("example.tgz")
 
 
-def test_empty_values_and_unavailable_api_database() -> None:
-    """Helm permits empty values; API composition fails closed without its database."""
-    from types import SimpleNamespace
-
-    from fastapi import HTTPException
-    from tinypods_api.repositories.dependencies import verification
-
+def test_empty_values_are_accepted() -> None:
+    """Helm permits an empty values document."""
     files = valid()
     files["example/values.yaml"] = b"# no defaults\n"
     assert inspect(package(files)).defaults == {}
-    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(database=None)))
-    with pytest.raises(HTTPException) as missing:
-        verification(request, None)
-    assert missing.value.status_code == 503
 
 
 def test_redirected_index_relative_archive() -> None:

@@ -2,50 +2,47 @@
 
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Request
-from tinypods_api.auth import SessionDependency
-from tinypods_api.http.dependencies import Session
+from fastapi import Depends, Request
+from tinypods_api.auth import AuthorizationDependency
+from tinypods_api.http.dependencies import DatabaseDependency, Session
 from tinypods_api.http.presentation import Presenter, ResourceService
 from tinypods_api.repositories.contracts import ChartRead, RepositoryRead, VersionRead
 from tinypods_core.applications.service import DefinitionService
-from tinypods_core.auth.authorization import AuthorizationService
-from tinypods_core.db import Database
 from tinypods_core.repositories import Chart, ChartRepository, ChartVersion
 from tinypods_core.repositories.service import RepositorySync
 from tinypods_core.repositories.verification import ChartVerification
 
 
 def repositories(
-    session: Session, auth: SessionDependency
+    session: Session, authorization: AuthorizationDependency
 ) -> ResourceService[ChartRepository, RepositoryRead]:
     """Inject the source CRUD service without network I/O."""
     return ResourceService(
-        DefinitionService(ChartRepository, session, AuthorizationService(auth)), RepositoryRead
+        DefinitionService(ChartRepository, session, authorization), RepositoryRead
     )
 
 
-def charts(session: Session, auth: SessionDependency) -> ResourceService[Chart, ChartRead]:
+def charts(
+    session: Session, authorization: AuthorizationDependency
+) -> ResourceService[Chart, ChartRead]:
     """Inject chart registration and browsing."""
-    return ResourceService(DefinitionService(Chart, session, AuthorizationService(auth)), ChartRead)
+    return ResourceService(DefinitionService(Chart, session, authorization), ChartRead)
 
 
 def versions(
-    session: Session, auth: SessionDependency
+    session: Session, authorization: AuthorizationDependency
 ) -> ResourceService[ChartVersion, VersionRead]:
     """Inject read-only synchronized version browsing."""
-    return ResourceService(
-        DefinitionService(ChartVersion, session, AuthorizationService(auth)), VersionRead
-    )
+    return ResourceService(DefinitionService(ChartVersion, session, authorization), VersionRead)
 
 
-def sync(request: Request, auth: SessionDependency) -> RepositorySync:
+def sync(
+    request: Request, database: DatabaseDependency, authorization: AuthorizationDependency
+) -> RepositorySync:
     """Borrow the application-owned reader; identical in-flight reads can share transport work."""
-    database: Database | None = request.app.state.database
-    if database is None:
-        raise HTTPException(503)
     return RepositorySync(
         database,
-        AuthorizationService(auth),
+        authorization,
         request.app.state.repository_client,
     )
 
@@ -53,22 +50,21 @@ def sync(request: Request, auth: SessionDependency) -> RepositorySync:
 SyncDependency = Annotated[RepositorySync, Depends(sync)]
 
 
-def presenter(session: Session, auth: SessionDependency) -> Presenter:
+def presenter(session: Session, authorization: AuthorizationDependency) -> Presenter:
     """Compose action-result projection with the same access and loading rules."""
-    return Presenter(session, AuthorizationService(auth))
+    return Presenter(session, authorization)
 
 
 PresenterDependency = Annotated[Presenter, Depends(presenter)]
 
 
-def verification(request: Request, auth: SessionDependency) -> ChartVerification:
+def verification(
+    request: Request, database: DatabaseDependency, authorization: AuthorizationDependency
+) -> ChartVerification:
     """Compose bounded chart verification independently of metadata synchronization."""
-    database: Database | None = request.app.state.database
-    if database is None:
-        raise HTTPException(503)
     return ChartVerification(
         database,
-        AuthorizationService(auth),
+        authorization,
         request.app.state.repository_client,
     )
 

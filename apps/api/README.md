@@ -153,3 +153,15 @@ phase. Owners can validate contained chart dependencies and configuration, clone
 new revisions, publish an exact digest, and record deprecation or revocation.
 See [release validation and publication](../../docs/release-publication.md) for
 routes, transaction guarantees, validation limits and the no-deployment boundary.
+
+Shared API resource composition uses `DatabaseDependency` from
+`tinypods_api.http.dependencies` and `AuthorizationDependency` from
+`tinypods_api.auth`. The database provider checks configuration only; readiness
+remains responsible for health probes. `Session` yields one request-owned session,
+and the authorization provider is reused within that request. Domain services
+still revalidate credentials, enforce scopes and own transactions.
+
+HTTP/OAuth client construction can synchronously load TLS trust files. Repository
+and Zitadel adapters construct clients in workers, then await network operations
+and close clients in their async caller. Kubernetes TLS setup, secret-key file
+reads and password hashing retain their existing worker/async boundaries.

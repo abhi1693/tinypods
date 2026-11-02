@@ -19,11 +19,8 @@ async def check_database(settings: Settings) -> str:
     Returns:
         JSON containing the instance identifier and creation time.
     """
-    database = Database(settings)
-    try:
+    async with Database(settings) as database:
         return (await database.installation()).model_dump_json()
-    finally:
-        await database.close()
 
 
 def doctor(

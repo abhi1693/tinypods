@@ -30,11 +30,8 @@ def bootstrap() -> None:
 
     async def initialize() -> None:
         """Own the database lifecycle even if bootstrap is rejected or cancelled."""
-        database = Database(settings)
-        try:
+        async with Database(settings) as database:
             await LocalPasswordProvider(database).bootstrap(credentials)
-        finally:
-            await database.close()
 
     try:
         asyncio.run(initialize())
@@ -54,11 +51,8 @@ def link(provider: str, subject: str, user_id: UUID) -> None:
 
     async def connect() -> None:
         """Own the database lifecycle around the explicit operator mapping."""
-        database = Database(settings)
-        try:
+        async with Database(settings) as database:
             await IdentityMappings(database, settings, provider=provider).link(subject, user_id)
-        finally:
-            await database.close()
 
     try:
         asyncio.run(connect())
@@ -78,11 +72,8 @@ def owner(user_id: UUID, revoke: bool = typer.Option(False, "--revoke")) -> None
 
     async def update() -> None:
         """Dispose the temporary database even if access management is rejected."""
-        database = Database(settings)
-        try:
+        async with Database(settings) as database:
             await OwnerAccess(database).set_owner(user_id, enabled=not revoke)
-        finally:
-            await database.close()
 
     try:
         asyncio.run(update())

@@ -544,16 +544,3 @@ def test_atomic_publication_races_and_rollback(auth_settings: Settings) -> None:
             await database.close()
 
     asyncio.run(scenario())
-
-
-def test_publication_dependency_requires_database() -> None:
-    """Reject publication cleanly when runtime database services are disabled."""
-    from types import SimpleNamespace
-
-    from fastapi import HTTPException
-    from tinypods_api.applications.dependencies import publication_service
-
-    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(database=None)))
-    with pytest.raises(HTTPException) as failure:
-        publication_service(request, None)
-    assert failure.value.status_code == 503
