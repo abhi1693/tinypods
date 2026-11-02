@@ -250,16 +250,20 @@ def test_excessive_yaml_parser_nesting_and_unsafe_tags() -> None:
 
 def test_confidential_dto_validation_hides_utf8_and_length_inputs() -> None:
     """Write validation never needs to print the original confidential document."""
-    from tinypods_api.secrets.contracts import ClusterSecretWrite
+    from tinypods_api.secrets.contracts import KubeconfigWrite
 
     cases = (
-        (TOKEN + chr(0xD800), "UTF-8"),
-        (TOKEN + chr(0x2603) * 100000, "byte limit"),
-        (TOKEN + "x" * 262144, "262144"),
+        (TOKEN + chr(0xD800), "Base64"),
+        (base64.b64encode(bytes([255])).decode(), "UTF-8"),
+        (base64.b64encode(b"x" * 262145).decode(), "byte limit"),
+        (TOKEN + "x" * 349529, "349528"),
+        ("YQ=", "Base64"),
+        ("YR==", "Base64"),
+        ("YQ==" + chr(10), "Base64"),
     )
     for payload, message in cases:
         with pytest.raises(ValidationError) as error:
-            ClusterSecretWrite(cluster_id=uuid4(), name="Pi", kubeconfig=SecretStr(payload))
+            KubeconfigWrite(encoding="base64", kubeconfig=SecretStr(payload))
         assert TOKEN not in str(error.value)
         assert message in str(error.value)
 
@@ -275,3 +279,21 @@ def test_key_configuration_errors_identify_the_secret_field(
     with pytest.raises(ConfigurationError, match="Invalid settings: secret_keys") as error:
         load_settings()
     assert "fixture-invalid-key" not in str(error.value)
+
+
+def test_kubeconfig_transport_is_explicit_and_preserves_original_bytes() -> None:
+    """Plain YAML and Base64 yield identical documents without heuristic decoding."""
+    from tinypods_api.secrets.contracts import KubeconfigWrite
+
+    original = kubeconfig()
+    plain = KubeconfigWrite(kubeconfig=SecretStr(original.decode()))
+    encoded = KubeconfigWrite(
+        encoding="base64", kubeconfig=SecretStr(base64.b64encode(original).decode())
+    )
+    assert plain.decoded_payload() == encoded.decoded_payload() == original
+    assert KubeconfigWrite(kubeconfig=SecretStr("YQ==")).decoded_payload() == b"YQ=="
+    for text in (chr(0xD800), "x" * 262145):
+        with pytest.raises(ValidationError):
+            KubeconfigWrite(kubeconfig=SecretStr(text))
+    with pytest.raises(ValidationError):
+        KubeconfigWrite.model_validate({"encoding": "unknown", "kubeconfig": "fixture"})

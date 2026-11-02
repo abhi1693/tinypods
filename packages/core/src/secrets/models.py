@@ -76,7 +76,7 @@ class ClusterSecret(AuditTrailMixin, table=True):
             ondelete="RESTRICT",
         ),
     )
-    brief_fields: ClassVar[tuple[str, ...] | None] = ("id", "secret", "cluster")
+    brief_fields: ClassVar[tuple[str, ...] | None] = ("cluster", "active_version")
     secret: Secret = Relationship(
         sa_relationship=relationship(
             "Secret", lazy="raise", foreign_keys="[ClusterSecret.secret_id]"

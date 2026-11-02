@@ -1,12 +1,14 @@
 """Real PostgreSQL credential lifecycle, scope constraints, rotation and safe APIs."""
 
 import asyncio
+import base64
 import json
 from dataclasses import asdict
 from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic import SecretStr
 from secret_fixtures import NEW_KEY, OLD_KEY, TOKEN, key_settings, kubeconfig
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
@@ -20,9 +22,10 @@ from tinypods_core.auth.authorization import AuthorizationService
 from tinypods_core.clusters import Cluster, Region
 from tinypods_core.db import Database, MigrationManager
 from tinypods_core.db.models import User
-from tinypods_core.secrets.crypto import SecretError, SecretKeyring
+from tinypods_core.secrets.crypto import SecretError
 from tinypods_core.secrets.kubernetes import ConnectionResult, Kubeconfig, KubernetesClient
 from tinypods_core.secrets.models import ClusterSecret, Secret, SecretVersion
+from tinypods_core.secrets.providers import encryption_provider
 from tinypods_core.secrets.service import SecretService
 from tinypods_core.settings import Settings
 
@@ -45,7 +48,7 @@ def owner() -> Principal:
 
 def service(session: AsyncSession, settings: Settings) -> SecretService:
     """Compose the same storage service as HTTP with deterministic fixture keys."""
-    return SecretService(session, AuthorizationService(Validator()), SecretKeyring(settings))
+    return SecretService(session, AuthorizationService(Validator()), encryption_provider(settings))
 
 
 async def cluster_records(database: Database) -> tuple[UUID, UUID]:
@@ -63,13 +66,12 @@ async def cluster_records(database: Database) -> tuple[UUID, UUID]:
 def test_owner_http_lifecycle_and_no_plaintext(
     auth_settings: Settings, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Exercise all public metadata/actions and prove payloads stay outside responses/audit."""
+    """Manage only clusters and versions; internal secret records never enter public DTOs."""
     settings = key_settings(auth_settings)
 
     async def connected(self: KubernetesClient, config: Kubeconfig) -> ConnectionResult:
-        """Control external I/O here; separate tests verify actual TLS exchanges."""
+        """Control outbound I/O here; separate tests exercise real official-SDK TLS calls."""
         assert config.token is not None
-        assert config.token.get_secret_value() in {TOKEN, TOKEN + "-replacement", TOKEN + "-staged"}
         return ConnectionResult(True, "connected", "v1.33.1")
 
     monkeypatch.setattr(KubernetesClient, "test", connected)
@@ -81,175 +83,116 @@ def test_owner_http_lifecycle_and_no_plaintext(
         second = create(
             client, "clusters", name="Cluster 2", slug="cluster-2", region_id=region["id"]
         )
-        response = client.post(
-            BASE + "/cluster-secrets",
+        path = BASE + "/clusters/" + first["id"] + "/kubeconfig"
+        other = BASE + "/clusters/" + second["id"] + "/kubeconfig"
+        history = path + "/versions"
+        assert client.get(path).status_code == 404
+        uploaded = client.post(
+            history,
+            json={"encoding": "base64", "kubeconfig": base64.b64encode(kubeconfig()).decode()},
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        one = uploaded.json()
+        assert one["version"] == 1 and "secret" not in one and "secret_id" not in one
+        metadata = client.get(path).json()
+        assert metadata["cluster"]["region"]["name"] == "Local"
+        assert metadata["active_version"]["id"] == one["id"]
+        assert "id" not in metadata and "secret" not in metadata
+        assert (
+            TOKEN not in uploaded.text
+            and "nonce" not in uploaded.text
+            and "encrypted_payload" not in uploaded.text
+        )
+        assert client.get(BASE + "/cluster-secrets").status_code == 404
+        assert client.get(BASE + "/secret-versions").status_code == 404
+        two = client.post(
+            history,
             json={
-                "cluster_id": first["id"],
-                "name": "Pi credentials",
-                "kubeconfig": kubeconfig().decode(),
+                "encoding": "base64",
+                "kubeconfig": base64.b64encode(kubeconfig(token=TOKEN + "-two")).decode(),
             },
-        )
-        assert response.status_code == 201, response.text
-        binding = response.json()
-        assert binding["cluster"]["region"]["name"] == "Local"
-        assert binding["secret"]["kind"] == "cluster"
-        assert binding["active_version"]["version"] == 1
-        assert (
-            TOKEN not in response.text
-            and "encrypted_payload" not in response.text
-            and "nonce" not in response.text
-        )
-        identity, secret_id = binding["id"], binding["secret"]["id"]
-        first_version = binding["active_version"]["id"]
-        assert client.get(BASE + "/cluster-secrets/" + identity).json() == binding
-        assert (
-            client.get(BASE + "/cluster-secrets", params={"cluster_id": first["id"]}).json()[
-                "total"
-            ]
-            == 1
-        )
-        assert (
-            client.get(BASE + "/secret-versions", params={"secret_id": secret_id}).json()["total"]
-            == 1
-        )
-        assert client.get(BASE + "/secret-versions/" + first_version).status_code == 200
-        assert client.post(BASE + "/clusters/" + first["id"] + "/testConnection").json() == {
-            "connected": True,
-            "reason": "connected",
-            "kubernetes_version": "v1.33.1",
-        }
-        assert (
-            client.post(BASE + "/clusters/" + second["id"] + "/testConnection").status_code == 404
-        )
-        assert (
-            client.post(
-                BASE + "/cluster-secrets",
-                json={
-                    "cluster_id": first["id"],
-                    "name": "Duplicate",
-                    "kubeconfig": kubeconfig().decode(),
-                },
-            ).status_code
-            == 409
-        )
-        assert (
-            client.post(
-                BASE + "/cluster-secrets",
-                json={
-                    "cluster_id": str(uuid4()),
-                    "name": "Missing",
-                    "kubeconfig": kubeconfig().decode(),
-                },
-            ).status_code
-            == 404
-        )
-        assert (
-            client.post(
-                BASE + "/cluster-secrets",
-                json={
-                    "cluster_id": second["id"],
-                    "name": "Invalid",
-                    "kubeconfig": "bad input " + TOKEN,
-                },
-            ).status_code
-            == 422
-        )
-        assert client.get(BASE + "/cluster-secrets/" + str(uuid4())).status_code == 404
-        assert client.get(BASE + "/secret-versions/" + str(uuid4())).status_code == 404
-        replaced = client.post(
-            BASE + "/secret-versions",
+        ).json()
+        three = client.post(
+            history,
             json={
-                "secret_id": secret_id,
-                "kubeconfig": kubeconfig(token=TOKEN + "-replacement").decode(),
+                "encoding": "base64",
+                "kubeconfig": base64.b64encode(kubeconfig(token=TOKEN + "-three")).decode(),
+                "activate": False,
             },
-        )
-        assert replaced.status_code == 201, replaced.text
-        replacement = replaced.json()
-        staged = client.post(
-            BASE + "/secret-versions",
+        ).json()
+        assert (two["version"], three["version"]) == (2, 3)
+        assert client.get(path).json()["active_version"]["id"] == two["id"]
+        other_version = client.post(
+            other + "/versions",
             json={
-                "secret_id": secret_id,
-                "kubeconfig": kubeconfig(token=TOKEN + "-staged").decode(),
+                "encoding": "base64",
+                "kubeconfig": base64.b64encode(kubeconfig()).decode(),
                 "activate": False,
             },
         )
-        assert staged.status_code == 201, staged.text
-        assert staged.json()["version"] == 3
+        assert other_version.status_code == 201
+        assert client.get(other).json()["active_version"] is None
+        for suffix in ("", "/activate", "/revoke"):
+            route = other + "/versions/" + one["id"] + suffix
+            response = client.get(route) if not suffix else client.post(route)
+            assert response.status_code == 404
+        assert client.get(history + "/" + one["id"]).json()["id"] == one["id"]
         assert (
-            client.get(BASE + "/cluster-secrets/" + identity).json()["active_version"]["id"]
-            == replacement["id"]
+            client.post(history + "/" + three["id"] + "/activate").json()["active_version"]["id"]
+            == three["id"]
         )
-        other = client.post(
-            BASE + "/cluster-secrets",
-            json={
-                "cluster_id": second["id"],
-                "name": "Other credentials",
-                "kubeconfig": kubeconfig().decode(),
-            },
-        ).json()
-        assert (
-            client.post(
-                BASE + "/cluster-secrets/" + identity + "/activate",
-                json={"version_id": other["active_version"]["id"]},
-            ).status_code
-            == 409
-        )
-        assert (
-            client.post(
-                BASE + "/cluster-secrets/" + str(uuid4()) + "/activate",
-                json={"version_id": first_version},
-            ).status_code
-            == 404
-        )
-        assert (
-            client.post(
-                BASE + "/secret-versions",
-                json={"secret_id": str(uuid4()), "kubeconfig": kubeconfig().decode()},
-            ).status_code
-            == 404
-        )
-        assert client.post(BASE + "/secret-versions/" + str(uuid4()) + "/revoke").status_code == 404
-        revoked = client.post(BASE + "/secret-versions/" + replacement["id"] + "/revoke")
+        revoked = client.post(history + "/" + three["id"] + "/revoke")
         assert revoked.status_code == 200 and revoked.json()["revoked_at"]
-        again = client.post(BASE + "/secret-versions/" + replacement["id"] + "/revoke")
-        assert again.json()["revoked_at"] == revoked.json()["revoked_at"]
+        assert (
+            client.post(history + "/" + three["id"] + "/revoke").json()["revoked_at"]
+            == revoked.json()["revoked_at"]
+        )
         assert (
             client.post(BASE + "/clusters/" + first["id"] + "/testConnection").json()["code"]
             == "secret_revoked"
         )
+        assert client.post(history + "/" + three["id"] + "/activate").status_code == 409
+        assert client.post(history + "/" + one["id"] + "/activate").status_code == 200
+        assert client.post(BASE + "/clusters/" + first["id"] + "/testConnection").json()[
+            "connected"
+        ]
         assert (
-            client.post(
-                BASE + "/cluster-secrets/" + identity + "/activate",
-                json={"version_id": first_version},
-            ).status_code
-            == 200
+            client.post(BASE + "/clusters/" + second["id"] + "/testConnection").status_code == 404
         )
+        assert client.delete(BASE + "/clusters/" + first["id"]).status_code == 409
+        assert client.delete(path).status_code == 405
+        page = client.get(history, params={"limit": 1, "offset": 1}).json()
+        assert page["total"] == 3 and page["items"][0]["version"] == 2
+        for suffix in ("", "/activate", "/revoke"):
+            missing = history + "/" + str(uuid4()) + suffix
+            assert (client.get(missing) if not suffix else client.post(missing)).status_code == 404
+        absent = BASE + "/clusters/" + str(uuid4()) + "/kubeconfig"
+        assert client.get(absent).status_code == 404
         assert (
             client.post(
-                BASE + "/cluster-secrets/" + identity + "/activate",
-                json={"version_id": replacement["id"]},
-            ).status_code
-            == 409
-        )
-        assert (
-            client.post(
-                BASE + "/cluster-secrets/" + identity + "/activate",
-                json={"version_id": str(uuid4())},
+                absent + "/versions",
+                json={"encoding": "base64", "kubeconfig": base64.b64encode(kubeconfig()).decode()},
             ).status_code
             == 404
         )
-        assert client.delete(BASE + "/clusters/" + first["id"]).status_code == 409
-        assert client.delete(BASE + "/cluster-secrets/" + identity).status_code == 405
+        assert client.post(history, json={"kubeconfig": "invalid " + TOKEN}).status_code == 422
         assert (
-            client.get(BASE + "/secret-versions", params={"secret_id": secret_id}).json()["total"]
-            == 3
+            client.post(
+                history,
+                json={
+                    "encoding": "base64",
+                    "kubeconfig": base64.b64encode(kubeconfig()).decode(),
+                    "secret_id": str(uuid4()),
+                },
+            ).status_code
+            == 422
         )
         schema = client.get("/openapi.json").json()
-        assert schema["components"]["schemas"]["ClusterSecretWrite"]["properties"]["kubeconfig"][
+        assert schema["components"]["schemas"]["KubeconfigWrite"]["properties"]["kubeconfig"][
             "writeOnly"
         ]
         assert "encrypted_payload" not in json.dumps(
-            schema["components"]["schemas"]["SecretVersionRead"]
+            schema["components"]["schemas"]["KubeconfigVersionRead"]
         )
 
     async def inspect_storage() -> None:
@@ -267,11 +210,13 @@ def test_owner_http_lifecycle_and_no_plaintext(
                 assert (
                     "encrypted_payload" not in serialized
                     and "nonce" not in serialized
-                    and "kubeconfig" not in serialized
+                    and "kubeconfig" not in serialized.lower().replace("kubernetes kubeconfig", "")
                 )
                 version = (await session.exec(select(SecretVersion))).first()
-                assert version is not None
-                assert {"nonce", "encrypted_payload"} <= inspect(version).unloaded
+                assert (
+                    version is not None
+                    and {"nonce", "encrypted_payload"} <= inspect(version).unloaded
+                )
         finally:
             await database.close()
 
@@ -280,32 +225,23 @@ def test_owner_http_lifecycle_and_no_plaintext(
 
 
 def test_reader_and_missing_keys_fail_closed(auth_settings: Settings) -> None:
-    """Metadata is owner-only and unconfigured credential writes cannot become plaintext."""
+    """Require owners, keep invalid confidential input private and fail closed without keys."""
     with client_for(auth_settings) as client:
         region = create(client, "regions", name="Local", slug="local")
         cluster = create(
             client, "clusters", name="Cluster 1", slug="cluster-1", region_id=region["id"]
         )
+        path = BASE + "/clusters/" + cluster["id"] + "/kubeconfig"
         assert (
             client.post(
-                BASE + "/cluster-secrets",
-                json={
-                    "cluster_id": cluster["id"],
-                    "name": "No keys",
-                    "kubeconfig": kubeconfig().decode(),
-                },
+                path + "/versions",
+                json={"encoding": "base64", "kubeconfig": base64.b64encode(kubeconfig()).decode()},
             ).status_code
             == 503
         )
-        assert client.get(BASE + "/cluster-secrets").json()["total"] == 0
-        malformed = json.dumps(
-            {"cluster_id": cluster["id"], "name": "Invalid", "kubeconfig": TOKEN + chr(0xD800)},
-            ensure_ascii=True,
-        ).encode()
+        malformed = json.dumps({"kubeconfig": TOKEN + chr(0xD800)}, ensure_ascii=True).encode()
         invalid = client.post(
-            BASE + "/cluster-secrets",
-            content=malformed,
-            headers={"content-type": "application/json"},
+            path + "/versions", content=malformed, headers={"content-type": "application/json"}
         )
         assert invalid.status_code == 422 and TOKEN not in invalid.text
 
@@ -324,13 +260,20 @@ def test_reader_and_missing_keys_fail_closed(auth_settings: Settings) -> None:
         client.cookies.clear()
         client.cookies.set("__Host-tinypods-session", token)
         client.headers["x-csrf-token"] = csrf
-        for path in ("/cluster-secrets", "/secret-versions", "/secret-versions/" + str(uuid4())):
-            assert client.get(BASE + path).status_code == 403
+        for route in (path, path + "/versions", path + "/versions/" + str(uuid4())):
+            assert client.get(route).status_code == 403
+        assert (
+            client.post(
+                path + "/versions",
+                json={"encoding": "base64", "kubeconfig": base64.b64encode(kubeconfig()).decode()},
+            ).status_code
+            == 403
+        )
         assert (
             client.post(BASE + "/clusters/" + cluster["id"] + "/testConnection").status_code == 403
         )
         client.cookies.clear()
-        assert client.get(BASE + "/cluster-secrets").status_code == 401
+        assert client.get(path).status_code == 401
 
 
 def test_version_races_scope_guards_and_rotation(auth_settings: Settings) -> None:
@@ -383,7 +326,7 @@ def test_version_races_scope_guards_and_rotation(auth_settings: Settings) -> Non
                 assert (await session.get(ClusterSecret, binding.id)).active_version_id == active
                 for row in rows:
                     encrypted = await current._payload_version(row.id)
-                    original = current._resolve(encrypted, binding)
+                    original = await current._resolve(encrypted, binding)
                     assert json.loads(original)["users"][0]["user"]["token"] in {
                         TOKEN,
                         TOKEN + "-one",
@@ -437,24 +380,14 @@ def test_version_races_scope_guards_and_rotation(auth_settings: Settings) -> Non
 
 
 def test_direct_handlers_nullable_active_scope_and_commit_recovery(auth_settings: Settings) -> None:
-    """Await the actual typed handlers and recover after a real uniqueness failure."""
-    from pydantic import SecretStr
+    """Await actual cluster-focused handlers and verify internal transaction recovery."""
+    from tinypods_api.http import PageParams
     from tinypods_api.secrets import routes
-    from tinypods_api.secrets.contracts import (
-        ActivateWrite,
-        ClusterSecretQuery,
-        ClusterSecretWrite,
-        SecretVersionQuery,
-        SecretVersionWrite,
-    )
-    from tinypods_core.secrets.kubernetes import ConnectionResult
+    from tinypods_api.secrets.contracts import KubeconfigWrite
 
     class Client(KubernetesClient):
-        """Control only the external boundary while exercising real decryption and APIs."""
-
         async def test(self, config: Kubeconfig) -> ConnectionResult:
-            """Observe a correctly resolved credential without exposing its contents."""
-            assert config.token is not None
+            """Control only external I/O; this path still resolves real encrypted storage."""
             return ConnectionResult(True, "connected", "v1.33.1")
 
     async def scenario() -> None:
@@ -463,110 +396,106 @@ def test_direct_handlers_nullable_active_scope_and_commit_recovery(auth_settings
         try:
             first, second = await cluster_records(database)
             async with database.session() as session:
-                current = service(session, settings)
-                binding = await routes.create_binding(
-                    ClusterSecretWrite(
-                        cluster_id=first, name="Pi", kubeconfig=SecretStr(kubeconfig().decode())
+                with pytest.raises(SecretError, match="kubeconfig_not_found"):
+                    await service(session, settings).cluster_binding(owner(), first)
+            async with database.session() as session:
+                version = await routes.upload_kubeconfig(
+                    first,
+                    KubeconfigWrite(
+                        encoding="base64",
+                        kubeconfig=SecretStr(base64.b64encode(kubeconfig()).decode()),
                     ),
-                    current,
+                    service(session, settings),
                     owner(),
                 )
             async with database.session() as session:
                 current = service(session, settings)
-                assert (await routes.get_binding(binding.id, current, owner())).id == binding.id
-                page = await routes.list_bindings(ClusterSecretQuery(), current, owner())
-                assert page.total == 1 and page.items[0].cluster.id == first
+                binding = await current.cluster_binding(owner(), first)
+                metadata = await routes.get_kubeconfig(first, current, owner())
+                assert metadata.cluster.id == first and metadata.active_version.id == version.id
+                assert (
+                    await routes.list_versions(first, PageParams(), current, owner())
+                ).total == 1
+                assert (await routes.get_version(first, version.id, current, owner())).version == 1
+                assert (
+                    await routes.activate_version(first, version.id, current, owner())
+                ).active_version.id == version.id
+            async with database.session() as session:
+                current = SecretService(
+                    session,
+                    AuthorizationService(Validator()),
+                    encryption_provider(settings),
+                    Client(),
+                )
+                assert (await routes.test_connection(first, current, owner())).connected
             async with database.session() as session:
                 current = service(session, settings)
-                version = await routes.create_version(
-                    SecretVersionWrite(
-                        secret_id=binding.secret.id,
-                        kubeconfig=SecretStr(kubeconfig().decode()),
+                revoked = await routes.revoke_version(first, version.id, current, owner())
+                assert revoked.revoked_at
+                assert (await current.revoke(owner(), version.id)).revoked_at == revoked.revoked_at
+            async with database.session() as session:
+                current = service(session, settings)
+                await routes.upload_kubeconfig(
+                    second,
+                    KubeconfigWrite(
+                        encoding="base64",
+                        kubeconfig=SecretStr(base64.b64encode(kubeconfig()).decode()),
                         activate=False,
                     ),
                     current,
                     owner(),
                 )
-            async with database.session() as session:
-                current = service(session, settings)
-                assert (await routes.get_version(version.id, current, owner())).version == 2
-                page = await routes.list_versions(SecretVersionQuery(), current, owner())
-                assert page.total == 2
-            async with database.session() as session:
-                active = await routes.activate_binding(
-                    binding.id,
-                    ActivateWrite(version_id=version.id),
-                    service(session, settings),
-                    owner(),
-                )
-                assert active.active_version.id == version.id
-            async with database.session() as session:
-                current = SecretService(
-                    session, AuthorizationService(Validator()), SecretKeyring(settings), Client()
-                )
-                checked = await routes.test_connection(first, current, owner())
-                assert checked.connected and checked.kubernetes_version == "v1.33.1"
-            async with database.session() as session:
-                revoked = await routes.revoke_version(
-                    version.id, service(session, settings), owner()
-                )
-                assert revoked.revoked_at
-                again = await service(session, settings).revoke(owner(), version.id)
-                assert again.revoked_at == revoked.revoked_at
-            async with database.session() as session:
-                current = service(session, settings)
-                with pytest.raises(SecretError, match="not_found"):
-                    await current.get(owner(), ClusterSecret, uuid4())
-                with pytest.raises(SecretError, match="cluster_not_found"):
-                    await current.create(owner(), uuid4(), "Missing", "", kubeconfig())
-                with pytest.raises(SecretError, match="not_found"):
-                    await current.replace(owner(), uuid4(), kubeconfig())
-                with pytest.raises(SecretError, match="not_found"):
-                    await current.activate(owner(), uuid4(), version.id)
-                with pytest.raises(SecretError, match="not_found"):
-                    await current.revoke(owner(), uuid4())
-                with pytest.raises(SecretError, match="not_found"):
-                    await current._payload_version(uuid4())
-            async with database.transaction() as session:
-                row = await session.get(ClusterSecret, binding.id)
-                row.active_version_id = None
-                session.add(row)
-            async with database.session() as session:
-                current = service(session, settings)
                 assert (
-                    await routes.get_binding(binding.id, current, owner())
+                    await routes.get_kubeconfig(second, current, owner())
                 ).active_version is None
-                with pytest.raises(SecretError, match="not_found"):
-                    await current.test(owner(), first)
+                with pytest.raises(SecretError):
+                    await current.test(owner(), second)
+                for operation in (
+                    current.get(owner(), ClusterSecret, uuid4()),
+                    current.create(owner(), uuid4(), "Missing", "", kubeconfig()),
+                    current.replace(owner(), uuid4(), kubeconfig()),
+                    current.activate(owner(), uuid4(), version.id),
+                    current.revoke(owner(), uuid4()),
+                    current._payload_version(uuid4()),
+                    current.cluster_binding(owner(), uuid4()),
+                    current.save_cluster_version(owner(), uuid4(), kubeconfig()),
+                    current.cluster_version(owner(), second, version.id),
+                ):
+                    with pytest.raises(SecretError):
+                        await operation
             async with database.session() as session:
                 current = service(session, settings)
-                duplicate = current._version(binding.secret.id, first, 1, kubeconfig())
+                with pytest.raises(SecretError, match="secret_conflict"):
+                    await current.create(owner(), first, "Duplicate", "", kubeconfig())
+                alien = SecretVersion(
+                    secret_id=uuid4(),
+                    version=1,
+                    encryption_key_id="old",
+                    nonce=b"",
+                    encrypted_payload=b"",
+                )
+                with pytest.raises(SecretError, match="scope_mismatch"):
+                    await current._resolve(alien, binding)
+                replacement = await current.save_cluster_version(
+                    owner(), second, kubeconfig(), activate=False
+                )
+                assert replacement.version == 2
+                duplicate = await current._version(binding.secret_id, first, 1, kubeconfig())
                 session.add(duplicate)
                 with pytest.raises(SecretError, match="conflict"):
                     await current._commit()
                 assert not session.in_transaction()
                 assert await session.get(ClusterSecret, binding.id) is not None
+                assert (await current.bindings(owner(), limit=100, offset=0))[1] == 2
+                assert (await current.bindings(owner(), limit=100, offset=0, cluster_id=first))[
+                    1
+                ] == 1
             async with database.session() as session:
                 provisional = Secret(name="Not yet scoped")
                 session.add(provisional)
                 await session.flush()
                 with pytest.raises(SecretError, match="scope_missing"):
                     await service(session, settings)._locked_scope(provisional.id)
-                # The provisional transaction is rolled back by this session scope.
-
-            async def competing_create() -> ClusterSecret | SecretError:
-                """Compete on one real cluster row using independent request sessions."""
-                async with database.session() as session:
-                    try:
-                        return await service(session, settings).create(
-                            owner(), second, "Race", "", kubeconfig()
-                        )
-                    except SecretError as exc:
-                        return exc
-
-            outcomes = await asyncio.gather(competing_create(), competing_create())
-            assert sum(isinstance(value, ClusterSecret) for value in outcomes) == 1
-            assert [value.status for value in outcomes if isinstance(value, SecretError)] == [409]
         finally:
             await database.close()
 

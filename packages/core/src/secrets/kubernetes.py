@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import binascii
-import json
 import os
 import re
 import ssl
@@ -12,15 +11,25 @@ import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
 from urllib.parse import urlsplit
 
+import aiohttp
 import anyio
-import httpx2
 import yaml  # type: ignore[import-untyped]
 from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
-from pydantic import SecretBytes, SecretStr
+from kubernetes.aio.client import (
+    ApiClient,
+    AuthenticationV1Api,
+    Configuration,
+    V1SelfSubjectReview,
+    VersionApi,
+    VersionInfo,
+)
+from kubernetes.aio.client.exceptions import ApiException
+from pydantic import BaseModel, SecretBytes, SecretStr
 from tinypods_core.secrets.crypto import MAX_SECRET_BYTES, SecretError
 
 
@@ -220,85 +229,108 @@ class ConnectionResult:
     kubernetes_version: str | None = None
 
 
+async def reject_redirect(
+    session: aiohttp.ClientSession,
+    context: SimpleNamespace,
+    params: aiohttp.TraceRequestRedirectParams,
+) -> None:
+    """Stop redirects before a second request can receive a cluster credential."""
+    raise SecretError("invalid_response")
+
+
+def build_sdk_client(config: Kubeconfig) -> ApiClient:
+    """Build TLS in the filesystem worker; SDK network sessions are created lazily.
+
+    No SDK kubeconfig loader is used: untrusted documents cannot run plugins or
+    load arbitrary host files. The existing validated embedded TLS material owns
+    its private temporary-file lifecycle and is removed before any network I/O.
+    """
+    context = config.tls_context()
+    configuration = Configuration(
+        host=config.server,
+        verify_ssl=True,
+        proxy=None,
+        api_key={"BearerToken": config.token.get_secret_value()}
+        if config.token is not None
+        else {},
+        api_key_prefix={"BearerToken": "Bearer"},
+        client_session_kwargs={"trust_env": False, "auto_decompress": False, "read_bufsize": 16384},
+    )
+    configuration.client_go_retries = False
+    configuration.debug = False
+    client = ApiClient(configuration)
+    # The SDK's lazy connector factory uses this owned, verified SSLContext.
+    # Installing it before the first request preserves embedded mTLS support.
+    client.rest_client.ssl_context = context
+    client.default_headers["Accept-Encoding"] = "identity"
+    return client
+
+
 class KubernetesClient:
-    """Test one selected cluster using verified native async HTTP with bounded replies."""
+    """Use the official native async SDK with bounded replies and owned cleanup."""
 
-    def __init__(
-        self, *, timeout: float = 10, transport: httpx2.AsyncBaseTransport | None = None
-    ) -> None:
-        """Retain a bounded deadline and an optional controlled-test transport."""
+    def __init__(self, *, timeout: float = 10) -> None:
+        """Retain one bounded deadline for identity review and version discovery."""
         self.timeout = timeout
-        self.transport = transport
 
-    async def _json(
-        self, client: httpx2.AsyncClient, method: str, path: str, body: dict[str, str] | None = None
-    ) -> Mapping[str, object]:
-        """Read a bounded response without copying arbitrary upstream errors into logs."""
-        async with client.stream(method, path, json=body) as response:
+    async def _model[DTO: BaseModel](
+        self, response: aiohttp.ClientResponse, model: type[DTO]
+    ) -> DTO:
+        """Read bounded bytes before using official SDK response model validation."""
+        try:
             if response.headers.get("content-encoding", "identity").lower() != "identity":
                 raise SecretError("invalid_response")
-            if response.status_code in (401, 403):
-                raise SecretError("unauthorized" if response.status_code == 401 else "forbidden")
-            if response.status_code not in (200, 201):
+            if response.status in (401, 403):
+                raise SecretError("unauthorized" if response.status == 401 else "forbidden")
+            if response.status not in (200, 201):
                 raise SecretError("invalid_response")
             payload = bytearray()
-            async for chunk in response.aiter_raw(chunk_size=16384):
+            async for chunk in response.content.iter_chunked(16384):
                 payload.extend(chunk)
                 if len(payload) > 65536:
                     raise SecretError("invalid_response")
             try:
-                return mapping(json.loads(payload))
-            except (ValueError, UnicodeError, RecursionError, SecretError):
+                return model.model_validate_json(payload)
+            except (ValueError, UnicodeError, RecursionError):
                 raise SecretError("invalid_response") from None
+        finally:
+            response.close()
 
     async def test(self, config: Kubeconfig) -> ConnectionResult:
-        """Verify authenticated identity before reporting a discovered server version.
+        """Await official SDK APIs; only bounded TLS/file setup runs in a worker.
 
-        The SelfSubjectReview does not create a persistent workload. Public version
-        discovery alone does not prove that the supplied credentials were accepted.
-        Redirects and environment proxies are disabled; only the configured TLS
-        endpoint receives this credential. Cancellation propagates through cleanup.
+        Cancellation propagates through SDK session cleanup. Identity review is
+        required before version discovery; public discovery alone is insufficient.
+        SDK retries, environment proxies, decompression and redirects are disabled.
         """
-        headers = (
-            {"authorization": "Bearer " + config.token.get_secret_value()}
-            if config.token is not None
-            else {}
-        )
-        headers["accept-encoding"] = "identity"
         try:
             with anyio.fail_after(self.timeout):
-                async with httpx2.AsyncClient(
-                    base_url=config.server,
-                    verify=config.tls_context(),
-                    headers=headers,
-                    timeout=self.timeout,
-                    follow_redirects=False,
-                    trust_env=False,
-                    transport=self.transport,
-                ) as client:
-                    review = await self._json(
-                        client,
-                        "POST",
-                        "/apis/authentication.k8s.io/v1/selfsubjectreviews",
-                        {"apiVersion": "authentication.k8s.io/v1", "kind": "SelfSubjectReview"},
+                client = await anyio.to_thread.run_sync(build_sdk_client, config)
+                trace = aiohttp.TraceConfig()
+                trace.on_request_redirect.append(reject_redirect)
+                client.configuration.trace_configs = [trace]
+                async with client:
+                    response = await AuthenticationV1Api(
+                        client
+                    ).create_self_subject_review_without_preload_content(
+                        V1SelfSubjectReview(
+                            api_version="authentication.k8s.io/v1", kind="SelfSubjectReview"
+                        ),
+                        _request_timeout=float(self.timeout),
                     )
-                    try:
-                        username = mapping(mapping(review.get("status")).get("userInfo")).get(
-                            "username"
-                        )
-                    except SecretError:
-                        raise SecretError("invalid_response") from None
-                    if (
-                        not isinstance(username, str)
-                        or not username
-                        or username == "system:anonymous"
-                    ):
+                    review = await self._model(response, V1SelfSubjectReview)
+                    if review.status is None or review.status.user_info is None:
+                        raise SecretError("invalid_response")
+                    username = review.status.user_info.username
+                    if not username or username == "system:anonymous":
                         raise SecretError("unauthorized")
-                    discovered = await self._json(client, "GET", "/version")
-                    version = discovered.get("gitVersion")
+                    response = await VersionApi(client).get_code_without_preload_content(
+                        _request_timeout=float(self.timeout)
+                    )
+                    discovered = await self._model(response, VersionInfo)
+                    version = discovered.git_version
                     if (
-                        not isinstance(version, str)
-                        or re.fullmatch(r"v?[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?", version)
+                        re.fullmatch(r"v?[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?", version)
                         is None
                         or len(version) > 64
                     ):
@@ -306,7 +338,7 @@ class KubernetesClient:
                     return ConnectionResult(True, "connected", version)
         except SecretError as exc:
             return ConnectionResult(False, exc.code)
-        except (TimeoutError, httpx2.TimeoutException):
+        except TimeoutError:
             return ConnectionResult(False, "timeout")
-        except (httpx2.HTTPError, httpx2.InvalidURL, ssl.SSLError, OSError):
+        except (aiohttp.ClientError, ApiException, ssl.SSLError, OSError, ValueError):
             return ConnectionResult(False, "unreachable")

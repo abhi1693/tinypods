@@ -16,3 +16,4 @@ compose.env
 compose.env.*
 !compose.env.example
 .idea/
+.local/

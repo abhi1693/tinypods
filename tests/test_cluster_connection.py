@@ -13,12 +13,13 @@ from datetime import UTC, datetime, timedelta
 from ipaddress import ip_address
 from pathlib import Path
 
-import httpx2
+import aiohttp
 import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+from kubernetes.aio.client import AuthenticationV1Api
 from pydantic import SecretBytes, SecretStr
 from secret_fixtures import TOKEN, document
 from tinypods_core.secrets.crypto import SecretError
@@ -187,14 +188,29 @@ class TLSFixture:
             )
             if not authenticated:
                 reply = Reply(401, b'{"message":"fixture-private-error"}')
-            elif path in self.override:
-                reply = self.override[path]
+            elif path.rstrip("/") in self.override:
+                reply = self.override[path.rstrip("/")]
             elif path == "/apis/authentication.k8s.io/v1/selfsubjectreviews":
                 assert method == "POST" and json.loads(body)["kind"] == "SelfSubjectReview"
                 reply = Reply(201, b'{"status":{"userInfo":{"username":"fixture-client"}}}')
             else:
-                assert method == "GET" and path == "/version"
-                reply = Reply(200, b'{"gitVersion":"v1.33.1"}')
+                assert method == "GET" and path == "/version/"
+                reply = Reply(
+                    200,
+                    json.dumps(
+                        {
+                            "major": "1",
+                            "minor": "33",
+                            "gitVersion": "v1.33.1",
+                            "gitCommit": "fixture",
+                            "gitTreeState": "clean",
+                            "buildDate": "2026-01-01T00:00:00Z",
+                            "goVersion": "go1.24",
+                            "compiler": "gc",
+                            "platform": "linux/amd64",
+                        }
+                    ).encode(),
+                )
             response_headers = [
                 f"HTTP/1.1 {reply.status} Fixture",
                 "Content-Type: application/json",
@@ -262,7 +278,7 @@ def test_real_tls_token_and_client_certificate(
             )
             assert peer.requests == [
                 ("POST", "/apis/authentication.k8s.io/v1/selfsubjectreviews"),
-                ("GET", "/version"),
+                ("GET", "/version/"),
             ]
 
     asyncio.run(scenario())
@@ -280,7 +296,7 @@ def test_real_tls_token_and_client_certificate(
         (Reply(200, b"[]"), "invalid_response"),
         (Reply(200, b"{}"), "invalid_response"),
         (Reply(200, b'{"status":{"userInfo":{"username":"system:anonymous"}}}'), "unauthorized"),
-        (Reply(200, b'{"status":{"userInfo":{"username":7}}}'), "unauthorized"),
+        (Reply(200, b'{"status":{"userInfo":{"username":7}}}'), "invalid_response"),
         (Reply(200, b'{"status":{"userInfo":{"username":""}}}'), "unauthorized"),
         (Reply(200, b"x" * 65537), "invalid_response"),
         (Reply(200, b"{}", "gzip"), "invalid_response"),
@@ -311,8 +327,22 @@ def test_identity_review_diagnostics_are_bounded(
     [
         b"{}",
         b'{"gitVersion":true}',
-        b'{"gitVersion":"<unexpected>"}',
-        json.dumps({"gitVersion": "v" + "1" * 65 + ".2.3"}).encode(),
+        *[
+            json.dumps(
+                {
+                    "major": "1",
+                    "minor": "33",
+                    "gitVersion": version,
+                    "gitCommit": "fixture",
+                    "gitTreeState": "clean",
+                    "buildDate": "2026-01-01T00:00:00Z",
+                    "goVersion": "go1.24",
+                    "compiler": "gc",
+                    "platform": "linux/amd64",
+                }
+            ).encode()
+            for version in ("<unexpected>", "v" + "1" * 65 + ".2.3")
+        ],
     ],
 )
 def test_version_is_a_constrained_public_value(certificates: Certificates, body: bytes) -> None:
@@ -353,22 +383,29 @@ def test_tls_failure_timeout_and_cancellation(certificates: Certificates) -> Non
 @pytest.mark.parametrize(
     "error,reason",
     [
-        (httpx2.ConnectError("fixture"), "unreachable"),
-        (httpx2.ReadTimeout("fixture"), "timeout"),
+        (aiohttp.ClientConnectionError("fixture"), "unreachable"),
+        (TimeoutError("fixture"), "timeout"),
         (OSError("fixture"), "unreachable"),
     ],
 )
-def test_transport_failures_have_fixed_reasons(error: Exception, reason: str) -> None:
+def test_transport_failures_have_fixed_reasons(
+    error: Exception, reason: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Library and OS failures never propagate their potentially confidential messages."""
 
-    async def failing(request: httpx2.Request) -> httpx2.Response:
-        """Inject a controlled network failure without external traffic."""
+    async def failing(
+        self: AuthenticationV1Api, *args: object, **kwargs: object
+    ) -> aiohttp.ClientResponse:
+        """Inject only the official SDK request boundary, without external traffic."""
         raise error
 
+    monkeypatch.setattr(
+        AuthenticationV1Api, "create_self_subject_review_without_preload_content", failing
+    )
+
     async def scenario() -> None:
-        client = KubernetesClient(transport=httpx2.MockTransport(failing))
         config = Kubeconfig("https://example.test", token=SecretStr(TOKEN))
-        assert (await client.test(config)).reason == reason
+        assert (await KubernetesClient().test(config)).reason == reason
 
     asyncio.run(scenario())
 

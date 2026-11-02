@@ -2,6 +2,7 @@
 
 import base64
 import binascii
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -68,14 +69,24 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="TINYPODS_", hide_input_in_errors=True)
 
+    secret_key_provider: Literal["environment", "file"] = "environment"
+    secret_key_file: Path | None = None
     secret_keys: dict[str, SecretStr] = Field(default_factory=dict)
     secret_active_key_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,64}$")
 
-    @field_validator("secret_active_key_id", mode="before")
+    @field_validator("secret_active_key_id", "secret_key_file", mode="before")
     @classmethod
     def empty_secret_key_id(cls, value: object) -> object:
         """Allow an unset Compose variable to keep secret writes disabled."""
         return None if value == "" else value
+
+    @field_validator("secret_key_file")
+    @classmethod
+    def validate_secret_key_file(cls, value: Path | None) -> Path | None:
+        """Require an explicit operator path without depending on a deployment layout."""
+        if value is not None and not value.is_absolute():
+            raise ValueError("Secret key file must be an absolute operator-configured path")
+        return value
 
     @field_validator("secret_keys")
     @classmethod
@@ -107,6 +118,14 @@ class Settings(BaseSettings):
         if "secret_keys" not in info.data:
             return value
         keys = info.data["secret_keys"]
+        if info.data.get("secret_key_provider") == "file":
+            if info.data.get("secret_key_file") is None or value is None or keys:
+                raise ValueError(
+                    "File key provider requires a path and active key, without environment keys"
+                )
+            return value
+        if info.data.get("secret_key_file") is not None:
+            raise ValueError("Secret key file requires the file key provider")
         if bool(keys) != (value is not None):
             raise ValueError("Secret keys and active key identifier must be configured together")
         if value is not None and value not in keys:

@@ -12,7 +12,8 @@ from tinypods_core.audit import audit_context
 from tinypods_core.auth import Principal
 from tinypods_core.auth.authorization import AuthorizationService
 from tinypods_core.db import Database
-from tinypods_core.secrets.crypto import SecretError, SecretKeyring
+from tinypods_core.secrets.crypto import SecretError
+from tinypods_core.secrets.providers import encryption_provider
 from tinypods_core.secrets.service import RotationResult, SecretService
 
 secrets_app = typer.Typer(help="Manage encrypted cluster credential keys.", add_completion=False)
@@ -52,7 +53,9 @@ def rotate_key(
         try:
             async with database.session() as session:
                 service = SecretService(
-                    session, AuthorizationService(OperatorValidator()), SecretKeyring(settings)
+                    session,
+                    AuthorizationService(OperatorValidator()),
+                    encryption_provider(settings),
                 )
                 return await service.rotate(principal, batch_size)
         finally:

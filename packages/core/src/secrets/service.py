@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID, uuid4
 
+import anyio
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import QueryableAttribute, undefer
@@ -15,9 +16,10 @@ from tinypods_core.audit import AuditTrailMixin
 from tinypods_core.auth import Principal, Scope
 from tinypods_core.auth.authorization import AuthorizationService
 from tinypods_core.clusters import Cluster
-from tinypods_core.secrets.crypto import Ciphertext, SecretContext, SecretError, SecretKeyring
+from tinypods_core.secrets.crypto import Ciphertext, SecretContext, SecretError
 from tinypods_core.secrets.kubernetes import ConnectionResult, Kubeconfig, KubernetesClient
 from tinypods_core.secrets.models import ClusterSecret, Secret, SecretVersion
+from tinypods_core.secrets.providers import EncryptionProvider
 
 
 @dataclass(frozen=True)
@@ -36,13 +38,13 @@ class SecretService:
         self,
         session: AsyncSession,
         authorization: AuthorizationService,
-        keyring: SecretKeyring,
+        provider: EncryptionProvider,
         client: KubernetesClient | None = None,
     ) -> None:
         """Inject explicit authorization, external keys and an async cluster client."""
         self.session = session
         self.authorization = authorization
-        self.keyring = keyring
+        self.provider = provider
         self.client = client if client is not None else KubernetesClient()
 
     async def authorize(self, principal: Principal) -> None:
@@ -101,13 +103,13 @@ class SecretService:
             raise SecretError("secret_not_found", 404)
         return record
 
-    def _version(
+    async def _version(
         self, secret_id: UUID, cluster_id: UUID, number: int, payload: bytes
     ) -> SecretVersion:
         """Validate the consumer format, then encrypt original bytes as a new version."""
-        Kubeconfig.parse(payload).tls_context()
+        await anyio.to_thread.run_sync(Kubeconfig.parse(payload).tls_context)
         identity = uuid4()
-        encrypted = self.keyring.encrypt(
+        encrypted = await self.provider.encrypt(
             payload, SecretContext(secret_id, identity, number, cluster_id)
         )
         return SecretVersion(
@@ -120,7 +122,14 @@ class SecretService:
         )
 
     async def create(
-        self, principal: Principal, cluster_id: UUID, name: str, description: str, payload: bytes
+        self,
+        principal: Principal,
+        cluster_id: UUID,
+        name: str,
+        description: str,
+        payload: bytes,
+        *,
+        activate: bool = True,
     ) -> ClusterSecret:
         """Create complete metadata/version/scope atomically; serialize competing creates."""
         await self.authorize(principal)
@@ -138,9 +147,11 @@ class SecretService:
         ).first() is not None:
             raise SecretError("secret_conflict", 409)
         secret = Secret(name=name, description=description)
-        version = self._version(secret.id, cluster_id, 1, payload)
+        version = await self._version(secret.id, cluster_id, 1, payload)
         binding = ClusterSecret(
-            secret_id=secret.id, cluster_id=cluster_id, active_version_id=version.id
+            secret_id=secret.id,
+            cluster_id=cluster_id,
+            active_version_id=version.id if activate else None,
         )
         self.session.add(secret)
         await self.session.flush()
@@ -187,7 +198,7 @@ class SecretService:
                 )
             )
         ).one() or 0
-        version = self._version(secret_id, binding.cluster_id, number + 1, payload)
+        version = await self._version(secret_id, binding.cluster_id, number + 1, payload)
         self.session.add(version)
         await self.session.flush()
         if activate:
@@ -206,7 +217,7 @@ class SecretService:
             raise SecretError("secret_not_found", 404)
         binding = await self._locked_scope(existing.secret_id)
         version = await self._payload_version(version_id)
-        self._resolve(version, binding)
+        await self._resolve(version, binding)
         binding.active_version_id = version.id
         self.session.add(binding)
         await self._commit()
@@ -245,14 +256,14 @@ class SecretService:
             raise SecretError("secret_not_found", 404)
         return version
 
-    def _resolve(self, version: SecretVersion, binding: ClusterSecret) -> bytes:
+    async def _resolve(self, version: SecretVersion, binding: ClusterSecret) -> bytes:
         """Authenticate scope and revocation before decrypting any original bytes."""
         if version.secret_id != binding.secret_id:
             raise SecretError("secret_scope_mismatch", 409)
         if version.revoked_at is not None:
             raise SecretError("secret_revoked", 409)
         context = SecretContext(version.secret_id, version.id, version.version, binding.cluster_id)
-        return self.keyring.decrypt(
+        return await self.provider.decrypt(
             Ciphertext(version.encryption_key_id, version.nonce, version.encrypted_payload), context
         )
 
@@ -267,7 +278,7 @@ class SecretService:
         if binding is None or binding.active_version_id is None:
             raise SecretError("secret_not_found", 404)
         version = await self._payload_version(binding.active_version_id)
-        config = Kubeconfig.parse(self._resolve(version, binding))
+        config = Kubeconfig.parse(await self._resolve(version, binding))
         await self.session.rollback()
         await self.authorize(principal)
         return await self.client.test(config)
@@ -281,7 +292,7 @@ class SecretService:
         no longer require them. Credential validity at Kubernetes is unchanged.
         """
         await self.authorize(principal)
-        active = self.keyring.active
+        active = self.provider.active
         if active is None:
             raise SecretError("secret_key_unavailable", 503)
         if not 1 <= batch_size <= 1000:
@@ -303,11 +314,11 @@ class SecretService:
         try:
             for version, cluster_id in rows:
                 context = SecretContext(version.secret_id, version.id, version.version, cluster_id)
-                original = self.keyring.decrypt(
+                original = await self.provider.decrypt(
                     Ciphertext(version.encryption_key_id, version.nonce, version.encrypted_payload),
                     context,
                 )
-                encrypted = self.keyring.encrypt(original, context)
+                encrypted = await self.provider.encrypt(original, context)
                 version.encryption_key_id, version.nonce, version.encrypted_payload = (
                     encrypted.key_id,
                     encrypted.nonce,
@@ -326,3 +337,86 @@ class SecretService:
             )
         ).one()
         return RotationResult(len(rows), remaining, active)
+
+    async def cluster_binding(self, principal: Principal, cluster_id: UUID) -> ClusterSecret:
+        """Resolve credential ownership from the cluster path without client-supplied secrets."""
+        await self.authorize(principal)
+        if await self.session.get(Cluster, cluster_id) is None:
+            raise SecretError("cluster_not_found", 404)
+        binding = (
+            await self.session.exec(
+                select(ClusterSecret).where(col(ClusterSecret.cluster_id) == cluster_id)
+            )
+        ).first()
+        if binding is None:
+            raise SecretError("kubeconfig_not_found", 404)
+        return binding
+
+    async def save_cluster_version(
+        self, principal: Principal, cluster_id: UUID, payload: bytes, *, activate: bool = True
+    ) -> SecretVersion:
+        """Upload initial/replacement kubeconfig bytes without exposing storage associations.
+
+        The cluster row serializes competing first uploads. Existing lifecycle
+        writers keep their secret-before-association lock ordering. Internal secret
+        creation is atomic with version one; callers only manage cluster versions.
+        """
+        await self.authorize(principal)
+        cluster = (
+            await self.session.exec(
+                select(Cluster).where(col(Cluster.id) == cluster_id).with_for_update()
+            )
+        ).first()
+        if cluster is None:
+            raise SecretError("cluster_not_found", 404)
+        binding = (
+            await self.session.exec(
+                select(ClusterSecret).where(col(ClusterSecret.cluster_id) == cluster_id)
+            )
+        ).first()
+        if binding is None:
+            binding = await self.create(
+                principal, cluster_id, "Kubernetes kubeconfig", "", payload, activate=activate
+            )
+            return (
+                await self.session.exec(
+                    select(SecretVersion).where(
+                        col(SecretVersion.secret_id) == binding.secret_id,
+                        col(SecretVersion.version) == 1,
+                    )
+                )
+            ).one()
+        return await self.replace(principal, binding.secret_id, payload, activate=activate)
+
+    async def cluster_versions(
+        self, principal: Principal, cluster_id: UUID, *, limit: int, offset: int
+    ) -> tuple[list[SecretVersion], int]:
+        """Browse history belonging to the exact cluster named by the request."""
+        binding = await self.cluster_binding(principal, cluster_id)
+        return await self.versions(
+            principal, limit=limit, offset=offset, secret_id=binding.secret_id
+        )
+
+    async def cluster_version(
+        self, principal: Principal, cluster_id: UUID, version_id: UUID
+    ) -> tuple[ClusterSecret, SecretVersion]:
+        """Reject cross-cluster references before reads, activation or revocation."""
+        binding = await self.cluster_binding(principal, cluster_id)
+        version = await self.get(principal, SecretVersion, version_id)
+        if version.secret_id != binding.secret_id:
+            raise SecretError("kubeconfig_version_not_found", 404)
+        return binding, version
+
+    async def activate_cluster_version(
+        self, principal: Principal, cluster_id: UUID, version_id: UUID
+    ) -> ClusterSecret:
+        """Activate an existing non-revoked version in this cluster only."""
+        binding, _ = await self.cluster_version(principal, cluster_id, version_id)
+        return await self.activate(principal, binding.id, version_id)
+
+    async def revoke_cluster_version(
+        self, principal: Principal, cluster_id: UUID, version_id: UUID
+    ) -> SecretVersion:
+        """Permanently revoke a version after resolving its actual cluster scope."""
+        await self.cluster_version(principal, cluster_id, version_id)
+        return await self.revoke(principal, version_id)

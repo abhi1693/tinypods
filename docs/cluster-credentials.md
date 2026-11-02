@@ -40,7 +40,9 @@ errors include the confidential document. There is no plaintext read endpoint.
 Future application payloads will use the same byte-encryption boundary with their
 own actual scope associations.
 
-The manual connection test uses native async HTTP and verified TLS. Embedded
+The manual connection test uses the official Kubernetes Python SDK native async
+client (`kubernetes.aio`) and verified TLS. Network requests are awaitable; bounded
+filesystem and TLS setup run outside the event loop. Embedded
 certificate authority/client certificate/key data and bearer tokens are supported.
 External files, executable authentication plugins, proxies, redirects and insecure
 TLS are rejected. The current context chooses the endpoint; private LAN endpoints
@@ -60,13 +62,25 @@ Protocol references: [authenticated encryption](https://cryptography.io/en/lates
 
 ## Operator configuration
 
-`TINYPODS_SECRET_KEYS` is a JSON mapping of stable key identifiers to Base64-encoded
-32-byte keys. `TINYPODS_SECRET_ACTIVE_KEY_ID` chooses the key for new writes. Both
-are optional together; without them credential writes/resolution fail closed while
-metadata and other application features remain available. Incomplete/invalid
-keyrings fail settings validation at process startup. A missing historical key
-fails that version's resolution or rotation; metadata remains accessible for recovery.
-Compose forwards both settings. Keep real values in ignored operator configuration.
+Select `TINYPODS_SECRET_KEY_PROVIDER=environment` (the default) or `file`.
+The environment provider reads `TINYPODS_SECRET_KEYS`, a JSON mapping of stable
+key identifiers to Base64-encoded 32-byte keys. The file provider reads that same
+JSON mapping from the absolute operator-selected `TINYPODS_SECRET_KEY_FILE` path;
+leave environment keys empty when selecting a file. Both providers use
+`TINYPODS_SECRET_ACTIVE_KEY_ID` for new writes. No mount location or deployment
+technology is assumed. Compose forwards the selection; operators supply any
+required read-only file mount themselves.
+
+The shared async provider interface separates persistence from key access. File
+reads are asynchronous and bounded, with no retained key cache. Unreadable or
+invalid files fail closed without falling back to environment keys. Metadata
+access does not require opening the key file. Without configured keys, credential
+writes/resolution fail closed while ordinary features remain available.
+
+Keep real keys and local configuration outside Git and the image build context.
+A protected file reduces accidental configuration exposure; it does not isolate
+keys from a compromised backend. An external key service can implement the same
+provider interface later, but is not required or implemented in this phase.
 
 Configure the new active key alongside all old read keys, then run
 `tinypods secrets rotate-key --batch-size 100` repeatedly. Each invocation commits
@@ -79,25 +93,26 @@ revocation. Keep old keys until the required recovery window is covered.
 All routes are under `/api/v1` and require a live instance-owner session. Unsafe
 calls also require the existing CSRF header. Read DTOs use nested public metadata.
 
-1. Create `/cluster-secrets` with `cluster_id`, `name`, optional `description`, and
-   write-only `kubeconfig`. The first encrypted version becomes active.
-2. Read `/cluster-secrets?cluster_id=...` and `/secret-versions?secret_id=...` for
-   association and version metadata. Confidential columns stay deferred.
-3. POST `/secret-versions` with `secret_id`, write-only `kubeconfig` and optional
-   `activate` (defaults true). Set false to stage a version.
-4. POST `/cluster-secrets/{id}/activate` with `version_id` to switch to an existing,
-   non-revoked version of that exact secret.
-5. POST `/clusters/{id}/testConnection` without a body for fixed connection diagnostics.
-6. POST `/secret-versions/{id}/revoke` without a body to permanently block future
-   resolution. Revoking the active version does not silently select an older one.
+1. POST `/clusters/{cluster_id}/kubeconfig/versions` with write-only `kubeconfig` and explicit
+   `encoding` (`plain`, the default, or `base64`). Plain accepts UTF-8 YAML/JSON;
+   Base64 accepts a standard single-line encoding of those same bytes
+   and optional `activate` (defaults true). The first upload creates the internal
+   secret automatically; later uploads append versions. Set false to stage.
+2. GET `/clusters/{cluster_id}/kubeconfig` for active-version metadata.
+3. GET `/clusters/{cluster_id}/kubeconfig/versions` for paginated history, or
+   append `/{version_id}` for one version belonging to that cluster.
+4. POST `/clusters/{cluster_id}/kubeconfig/versions/{version_id}/activate` without
+   a body to activate a non-revoked version belonging to that cluster.
+5. POST `/clusters/{cluster_id}/testConnection` without a body for diagnostics.
+6. POST `/clusters/{cluster_id}/kubeconfig/versions/{version_id}/revoke` without
+   a body to permanently block resolution. Revoking the active version does not
+   silently select an older one.
 
-Before this phase cluster responses contained registry metadata only. That response
-stays public metadata; credential administration uses its own owner-only resource:
+Callers manage kubeconfig entirely through the cluster. Internal secret IDs and
+separate secret resources are not exposed. Metadata is shaped as:
 
 ```json
 {
-  "id": "association-uuid",
-  "secret": {"id": "secret-uuid", "name": "Pi credentials", "description": "", "kind": "cluster"},
   "cluster": {"id": "cluster-uuid", "name": "Cluster 1", "slug": "cluster-1", "region": {"id": "region-uuid", "name": "Gurugram", "slug": "gurugram", "flag": null}},
   "active_version": {"id": "version-uuid", "version": 1, "revoked_at": null}
 }
@@ -138,3 +153,7 @@ uv run --no-sync python -c "import base64; from cryptography.hazmat.primitives.c
 For example, use `TINYPODS_SECRET_KEYS={"primary":"<generated-key>"}` and
 `TINYPODS_SECRET_ACTIVE_KEY_ID=primary`. The placeholder is not a usable key.
 Base64 is used for key transport; confidential payload bytes are encrypted directly.
+
+Base64 is only the upload transport, not encryption. Strict decoding rejects malformed
+encoding and decoded payloads over 262144 bytes before parsing. Encryption protects
+the original decoded document bytes. Embedded certificate fields remain unchanged.

@@ -1,99 +1,90 @@
 """Write-only confidential inputs and nested metadata-only responses."""
 
+import base64
+import binascii
 from datetime import datetime
 from typing import Literal
-from uuid import UUID
 
-from pydantic import ConfigDict, Field, SecretStr, field_validator
+from pydantic import ConfigDict, Field, SecretStr, model_validator
 from tinypods_api.clusters.contracts import ClusterRead
-from tinypods_api.http import PageParams, RequestDTO
+from tinypods_api.http import RequestDTO
 from tinypods_api.http.model_contracts import DefinitionRead
-from tinypods_api.http.representations import Related
+from tinypods_api.http.representations import Related, ResourceRead
 from tinypods_core.secrets.crypto import MAX_SECRET_BYTES
-from tinypods_core.secrets.models import ClusterSecret, Secret, SecretVersion
+from tinypods_core.secrets.models import ClusterSecret, SecretVersion
 
 
-class SecretRead(DefinitionRead):
-    """Public secret metadata, without a confidential payload or encryption material."""
-
-    resource_model = Secret
-    name: str
-    description: str
-    kind: Literal["cluster"]
-
-
-class SecretVersionRead(DefinitionRead):
-    """Immutable logical version metadata and revocation state."""
+class KubeconfigVersionRead(DefinitionRead):
+    """One cluster's version metadata; storage-level secret identities remain internal."""
 
     resource_model = SecretVersion
-    secret: Related[SecretRead]
     version: int
     encryption_key_id: str
     revoked_at: datetime | None
 
 
-class ClusterSecretRead(DefinitionRead):
-    """Nested cluster association and the selected logical version's safe metadata."""
+class KubeconfigRead(ResourceRead):
+    """Cluster-focused credential metadata without a separate secret resource to manage."""
 
     resource_model = ClusterSecret
-    secret: Related[SecretRead]
+    created: datetime
+    last_updated: datetime
     cluster: Related[ClusterRead]
-    active_version: Related[SecretVersionRead] | None
+    active_version: Related[KubeconfigVersionRead] | None
 
 
 class KubeconfigInput(RequestDTO):
-    """Keep confidential input errors private and bound the original UTF-8 bytes."""
+    """Accept explicitly selected transport without exposing confidential input errors."""
 
     model_config = ConfigDict(hide_input_in_errors=True)
-    kubeconfig: SecretStr = Field(min_length=1, max_length=MAX_SECRET_BYTES)
-
-    @field_validator("kubeconfig")
-    @classmethod
-    def bounded_utf8(cls, value: SecretStr) -> SecretStr:
-        """Reject unpaired surrogates and byte-size expansion before persistence."""
-        try:
-            payload = value.get_secret_value().encode()
-        except UnicodeError:
-            raise ValueError("Kubeconfig must be valid UTF-8") from None
-        if len(payload) > MAX_SECRET_BYTES:
-            raise ValueError("Kubeconfig exceeds the byte limit")
-        return value
-
-
-class ClusterSecretWrite(KubeconfigInput):
-    """Create a cluster's self-contained kubeconfig; the document is never returned."""
-
-    cluster_id: UUID
-    name: str = Field(min_length=1, max_length=255, pattern=r"\S")
-    description: str = Field(default="", max_length=10000)
-
-
-class SecretVersionWrite(KubeconfigInput):
-    """Append a credential version, optionally staging it without activation."""
-
-    secret_id: UUID
-
-    activate: bool = Field(
-        default=True, description="Activate this version immediately; false keeps it staged."
+    encoding: Literal["plain", "base64"] = Field(
+        default="plain", description="How kubeconfig is transported; no automatic detection."
+    )
+    kubeconfig: SecretStr = Field(
+        min_length=1,
+        max_length=4 * ((MAX_SECRET_BYTES + 2) // 3),
+        description=(
+            "UTF-8 YAML/JSON or standard Base64, selected by encoding; decoded limit 262144 bytes."
+        ),
     )
 
+    def decoded_payload(self) -> bytes:
+        """Strictly decode the selected transport into bounded original UTF-8 bytes."""
+        text = self.kubeconfig.get_secret_value()
+        if self.encoding == "base64":
+            try:
+                payload = base64.b64decode(text, validate=True)
+                # Canonical encoding rejects ambiguous padding and unused non-zero bits.
+                if base64.b64encode(payload).decode("ascii") != text:
+                    raise ValueError
+            except (ValueError, binascii.Error):
+                raise ValueError("Kubeconfig must be canonical Base64") from None
+        else:
+            try:
+                payload = text.encode("utf-8")
+            except UnicodeError:
+                raise ValueError("Kubeconfig must be valid UTF-8") from None
+        if not payload or len(payload) > MAX_SECRET_BYTES:
+            raise ValueError("Decoded kubeconfig exceeds the byte limit or is empty")
+        try:
+            payload.decode("utf-8")
+        except UnicodeError:
+            raise ValueError("Decoded kubeconfig must be valid UTF-8") from None
+        return payload
 
-class ActivateWrite(RequestDTO):
-    """Select a non-revoked version that belongs to this association's secret."""
-
-    version_id: UUID
-
-
-class ClusterSecretQuery(PageParams):
-    """Filter owner-only credential associations by their actual cluster ID."""
-
-    cluster_id: UUID | None = None
+    @model_validator(mode="after")
+    def validate_transport(self) -> "KubeconfigInput":
+        """Reject malformed transport before service calls or persistence."""
+        self.decoded_payload()
+        return self
 
 
-class SecretVersionQuery(PageParams):
-    """Filter version history by its actual shared secret ID."""
+class KubeconfigWrite(KubeconfigInput):
+    """Upload a kubeconfig version for the cluster named by the request path."""
 
-    secret_id: UUID | None = None
+    activate: bool = Field(
+        default=True, description="Activate immediately; false stages this version."
+    )
 
 
 class ConnectionRead(RequestDTO):

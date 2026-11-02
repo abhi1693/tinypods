@@ -22,6 +22,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "redis>=8.1.0,<9",
     "semver>=3,<4",
+    "kubernetes>=37.0.1,<38",
 ]
 
 [tool.setuptools]
