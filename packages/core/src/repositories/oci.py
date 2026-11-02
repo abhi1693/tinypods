@@ -74,9 +74,13 @@ class OCIRepositoryClient:
         """Retain the shared bounded HTTPS policy."""
         self.http = http
 
-    async def registry_get(self, url: str, scope: str) -> Document:
+    async def registry_get(
+        self, url: str, scope: str, *, maximum_bytes: int | None = None
+    ) -> Document:
         """Support public registries' anonymous Bearer challenge without stored credentials."""
-        document = await self.http.get(url, headers={"Accept": MANIFEST})
+        document = await self.http.get(
+            url, headers={"Accept": MANIFEST}, maximum_bytes=maximum_bytes
+        )
         if document.status != 401:
             return document
         challenge = document.headers.get("www-authenticate", "")
@@ -121,7 +125,9 @@ class OCIRepositoryClient:
         if token is None or not token.get_secret_value() or len(token.get_secret_value()) > 8192:
             raise SourceError(502, "source_authentication_failed")
         return await self.http.get(
-            url, headers={"Accept": MANIFEST, "Authorization": "Bearer " + token.get_secret_value()}
+            url,
+            headers={"Accept": MANIFEST, "Authorization": "Bearer " + token.get_secret_value()},
+            maximum_bytes=maximum_bytes,
         )
 
     async def names(self, url: str, field: str, scope: str) -> list[str] | None:

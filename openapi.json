@@ -1433,6 +1433,12 @@
         "title": "IngressCapability",
         "type": "object"
       },
+      "JsonRecord": {
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue-Output"
+        },
+        "type": "object"
+      },
       "JsonValue-Input": {
         "anyOf": [
           {
@@ -3175,6 +3181,59 @@
           "code"
         ],
         "title": "ValidationIssue",
+        "type": "object"
+      },
+      "VerificationRead": {
+        "description": "Verified transient chart identity, metadata, defaults and optional values schema.",
+        "properties": {
+          "archive_bytes": {
+            "title": "Archive Bytes",
+            "type": "integer"
+          },
+          "defaults": {
+            "$ref": "#/components/schemas/JsonRecord"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "files": {
+            "title": "Files",
+            "type": "integer"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/JsonRecord"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "values_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JsonRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "digest",
+          "archive_bytes",
+          "files",
+          "metadata",
+          "defaults",
+          "values_schema"
+        ],
+        "title": "VerificationRead",
         "type": "object"
       },
       "VersionBrief": {
@@ -9014,6 +9073,174 @@
         "x-tinypods-rate-limit": {
           "limit": 120,
           "name": "repositoriesVersionRetrieve",
+          "window_ms": 60000
+        }
+      }
+    },
+    "/api/v1/chart-versions/{id}/verify": {
+      "post": {
+        "description": "Verify the exact pinned external archive and inspect its configuration without executing it.\n\nInstance owners only. Returns transient chart facts; no chart files are stored,\nno release configuration is changed and no Kubernetes resources are created.\nA missing pin or changed source fails explicitly rather than substituting latest.",
+        "operationId": "repositoriesVersionVerify",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Copy the current CSRF cookie value into this header.",
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "Verify Version",
+        "tags": [
+          "repositories"
+        ],
+        "x-tinypods-rate-limit": {
+          "limit": 5,
+          "name": "repositoriesVersionVerify",
           "window_ms": 60000
         }
       }

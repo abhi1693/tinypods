@@ -14,6 +14,7 @@ from tinypods_core.repositories import Chart, ChartRepository, ChartVersion
 from tinypods_core.repositories.client import RepositoryClient
 from tinypods_core.repositories.service import RepositorySync
 from tinypods_core.repositories.transport import MetadataHTTP
+from tinypods_core.repositories.verification import ChartVerification
 
 
 def repositories(
@@ -60,3 +61,18 @@ def presenter(session: Session, auth: SessionDependency) -> Presenter:
 
 
 PresenterDependency = Annotated[Presenter, Depends(presenter)]
+
+
+def verification(request: Request, auth: SessionDependency) -> ChartVerification:
+    """Compose bounded chart verification independently of metadata synchronization."""
+    database: Database | None = request.app.state.database
+    if database is None:
+        raise HTTPException(503)
+    return ChartVerification(
+        database,
+        AuthorizationService(auth),
+        RepositoryClient(MetadataHTTP(request.app.state.settings)),
+    )
+
+
+VerificationDependency = Annotated[ChartVerification, Depends(verification)]
