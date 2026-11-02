@@ -52,9 +52,15 @@ class MetadataHTTP:
         self.settings, self.resolver, self.transport = settings, resolver, transport
 
     async def get(
-        self, url: str, *, headers: Mapping[str, str] | None = None, authenticate: bool = True
+        self,
+        url: str,
+        *,
+        headers: Mapping[str, str] | None = None,
+        authenticate: bool = True,
+        maximum_bytes: int | None = None,
     ) -> Document:
         """Read bounded metadata, checking every redirect before making its connection."""
+        maximum = self.settings.repository_max_bytes if maximum_bytes is None else maximum_bytes
         current = url
         outbound = dict(headers or {})
         for _ in range(4):
@@ -117,12 +123,12 @@ class MetadataHTTP:
                     ) as response,
                 ):
                     length = response.headers.get("content-length")
-                    if length is not None and int(length) > self.settings.repository_max_bytes:
+                    if length is not None and int(length) > maximum:
                         raise SourceError(422, "source_metadata_too_large")
                     body = bytearray()
                     async for chunk in response.aiter_bytes():
                         body.extend(chunk)
-                        if len(body) > self.settings.repository_max_bytes:
+                        if len(body) > maximum:
                             raise SourceError(422, "source_metadata_too_large")
                     document = Document(
                         response.status_code, dict(response.headers), bytes(body), current

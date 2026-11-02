@@ -19,10 +19,15 @@ from tinypods_api.repositories.contracts import (
     RepositoryRead,
     RepositoryWrite,
     SyncRead,
+    VerificationRead,
     VersionQuery,
     VersionRead,
 )
-from tinypods_api.repositories.dependencies import PresenterDependency, SyncDependency
+from tinypods_api.repositories.dependencies import (
+    PresenterDependency,
+    SyncDependency,
+    VerificationDependency,
+)
 from tinypods_core.repositories import Chart, ChartRepository, ChartVersion
 
 router = APIRouter()
@@ -238,6 +243,19 @@ async def retrieve_version(
 ) -> VersionRead:
     """Read one version after current credential validation."""
     return VersionRead.model_validate(await service.get(principal, id))
+
+
+@version_router.detail_action("verify", response_model=VerificationRead)
+async def verify_version(
+    id: UUID, service: VerificationDependency, principal: PrincipalDependency
+) -> VerificationRead:
+    """Verify the exact pinned external archive and inspect its configuration without executing it.
+
+    Instance owners only. Returns transient chart facts; no chart files are stored,
+    no release configuration is changed and no Kubernetes resources are created.
+    A missing pin or changed source fails explicitly rather than substituting latest.
+    """
+    return VerificationRead(**asdict(await service.run(principal, id)))
 
 
 router.include_router(version_router)

@@ -4,11 +4,12 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import BaseModel, Field, model_validator
 from tinypods_api.http import PageParams, RequestDTO
 from tinypods_api.http.model_contracts import DefinitionPatch, DefinitionRead
 from tinypods_api.http.representations import Related
 from tinypods_core.applications import SourceType
+from tinypods_core.json_types import JsonRecord
 from tinypods_core.repositories.models import Chart, ChartRepository, ChartVersion
 from tinypods_core.repositories.sources import CHART_NAME, repository_url
 
@@ -121,3 +122,16 @@ class SyncRead(RequestDTO):
     versions: int
     discovery_supported: bool
     synced_at: datetime
+
+
+class VerificationRead(BaseModel):
+    """Verified transient chart identity, metadata, defaults and optional values schema."""
+
+    name: str
+    version: str
+    digest: str
+    archive_bytes: int
+    files: int
+    metadata: JsonRecord
+    defaults: JsonRecord
+    values_schema: JsonRecord | None
