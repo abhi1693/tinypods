@@ -196,3 +196,4 @@ for _model, _fields, _identity in CORE_AUDIT_MODELS:
 from tinypods_core.applications import models as _applications  # noqa: E402, F401
 from tinypods_core.clusters import models as _clusters  # noqa: E402, F401
 from tinypods_core.repositories import models as _repositories  # noqa: E402, F401
+from tinypods_core.secrets import models as _secrets  # noqa: E402, F401

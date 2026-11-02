@@ -15,6 +15,7 @@ from tinypods_core.applications.service import DefinitionError
 from tinypods_core.auth import AuthError
 from tinypods_core.rate_limit import RateLimitUnavailable
 from tinypods_core.repositories.sources import SourceError
+from tinypods_core.secrets.crypto import SecretError
 
 ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     code: {"model": ErrorResponse, "description": HTTPStatus(code).phrase}
@@ -135,6 +136,12 @@ async def source_error(request: Request, exc: Exception) -> JSONResponse:
     return error_response(request, exc.status, exc.code, "External repository request failed")
 
 
+async def secret_error(request: Request, exc: Exception) -> JSONResponse:
+    """Return fixed credential errors without plaintext, ciphertext or upstream content."""
+    assert isinstance(exc, SecretError)
+    return error_response(request, exc.status, exc.code, "Cluster credential request failed")
+
+
 def install_error_handlers(app: FastAPI) -> None:
     """Register deliberate HTTP, validation and unexpected-error translations.
 
@@ -147,5 +154,6 @@ def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(AuthError, authentication_error)
     app.add_exception_handler(DefinitionError, definition_error)
     app.add_exception_handler(SourceError, source_error)
+    app.add_exception_handler(SecretError, secret_error)
     app.add_exception_handler(RateLimitUnavailable, storage_unavailable)
     app.add_exception_handler(SQLAlchemyError, storage_unavailable)

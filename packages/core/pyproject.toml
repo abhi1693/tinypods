@@ -22,10 +22,11 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "redis>=8.1.0,<9",
     "semver>=3,<4",
+    "kubernetes>=37.0.1,<38",
 ]
 
 [tool.setuptools]
-packages = ["tinypods_core.clusters", "tinypods_core.repositories", "tinypods_core.applications", "tinypods_core.audit", "tinypods_core.auth.providers", "tinypods_core.auth.providers.local", "tinypods_core.auth.providers.zitadel", "tinypods_core", "tinypods_core.cache", "tinypods_core.db", "tinypods_core.logging", "tinypods_core.auth", "tinypods_core.rate_limit"]
+packages = ["tinypods_core.secrets", "tinypods_core.clusters", "tinypods_core.repositories", "tinypods_core.applications", "tinypods_core.audit", "tinypods_core.auth.providers", "tinypods_core.auth.providers.local", "tinypods_core.auth.providers.zitadel", "tinypods_core", "tinypods_core.cache", "tinypods_core.db", "tinypods_core.logging", "tinypods_core.auth", "tinypods_core.rate_limit"]
 
 [tool.setuptools.package-dir]
 tinypods_core = "src"
