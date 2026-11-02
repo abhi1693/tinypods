@@ -298,3 +298,6 @@ Region hierarchy and Kubernetes cluster registration are described in the [regio
 
 See [application installations](docs/application-installations.md) for intended
 targets, immutable configuration history and scoped application-secret APIs.
+
+See [transactional outbox persistence](docs/transactional-outbox.md) for typed
+transactional events, publication acknowledgment, payload bounds and delivery limits.
