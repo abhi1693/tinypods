@@ -185,6 +185,48 @@ def test_invalid_signed_identity_claims_are_rejected(field: str, value: object) 
     assert error.value.status == 401
 
 
+@pytest.mark.parametrize(
+    ("updates", "expected_reason"),
+    [
+        ({"iat": 1_800_000_001}, None),
+        ({"iat": 1_800_000_002}, "future"),
+        ({"iat": 1_800_000_000.5}, None),
+        ({"iat": "1800000000"}, "malformed"),
+        ({"iat": True}, "malformed"),
+        ({"iat": float("nan")}, "malformed"),
+        ({"iat": -(10**400)}, "malformed"),
+        ({"iat": 1_800_000_001, "exp": 1_799_999_999}, ""),
+        ({"iat": 1_800_000_001, "nbf": 1_800_000_001}, ""),
+        ({"iat": 1_800_000_001, "nonce": "wrong"}, ""),
+    ],
+)
+def test_issued_at_tolerance_is_claim_specific(
+    updates: dict[str, object],
+    expected_reason: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Allow one clock tick for iat while preserving the other signed claim checks."""
+    monkeypatch.setattr(time, "time", lambda: 1_800_000_000)
+    issuer = Issuer()
+    issuer.claims.update(updates)
+    if expected_reason is None:
+        assert (
+            asyncio.run(issuer.adapter().exchange("code-123", NONCE, VERIFIER)).issued_at
+            == (updates["iat"])
+        )
+    else:
+        with pytest.raises(AuthError) as error:
+            asyncio.run(issuer.adapter().exchange("code-123", NONCE, VERIFIER))
+        assert error.value.status == 401
+        reasons = [
+            record.reason
+            for record in caplog.records
+            if record.message == "Zitadel issued-at rejected"
+        ]
+        assert reasons == ([expected_reason] if expected_reason else [])
+
+
 @pytest.mark.parametrize("field", ["iss", "sub", "aud", "exp", "iat", "nonce"])
 def test_missing_required_claims(field: str) -> None:
     """Require all OIDC code-flow identity and request-correlation claims."""

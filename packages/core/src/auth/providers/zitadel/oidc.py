@@ -8,6 +8,7 @@ import time
 from dataclasses import replace
 from datetime import UTC, datetime
 from functools import partial
+from sys import float_info
 from typing import Any, cast
 from urllib.parse import urlencode, urlsplit
 
@@ -17,7 +18,7 @@ from authlib.integrations.base_client.errors import OAuthError  # type: ignore[i
 from authlib.integrations.httpx_client import AsyncOAuth2Client  # type: ignore[import-untyped]
 from authlib.oidc.core import CodeIDToken  # type: ignore[import-untyped]
 from joserfc import jwt
-from joserfc.errors import JoseError
+from joserfc.errors import InvalidClaimError, JoseError
 from joserfc.jwk import KeySet, KeySetSerialization
 from joserfc.jwt import JWTClaimsRegistry
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
@@ -25,6 +26,47 @@ from tinypods_core.auth.contracts import AuthError, LogoutNotice, VerifiedIdenti
 from tinypods_core.settings import Settings
 
 logger = logging.getLogger(__name__)
+_ID_TOKEN_CLAIMS = frozenset(
+    {
+        "iss",
+        "sub",
+        "aud",
+        "exp",
+        "iat",
+        "nbf",
+        "nonce",
+        "auth_time",
+        "acr",
+        "amr",
+        "azp",
+        "at_hash",
+        "c_hash",
+    }
+)
+
+
+class _IDTokenClaimsRegistry(JWTClaimsRegistry):
+    """Allow one second of issuer clock skew for issued-at only."""
+
+    def validate_iat(self, value: object) -> None:
+        """Require a finite numeric timestamp within the issued-at tolerance."""
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not -float_info.max <= value <= float_info.max
+        ):
+            logger.warning("Zitadel issued-at rejected", extra={"reason": "malformed"})
+            raise InvalidClaimError("iat")
+        if value > self.now + 1:
+            logger.warning("Zitadel issued-at rejected", extra={"reason": "future"})
+            raise InvalidClaimError("iat")
+        self.check_value("iat", value)
+
+
+class _ZitadelCodeIDToken(CodeIDToken):  # type: ignore[misc]
+    """Keep Authlib's code-flow checks with the narrower timing policy."""
+
+    registry_cls = _IDTokenClaimsRegistry
 
 
 class Discovery(BaseModel):
@@ -232,10 +274,13 @@ class ZitadelOIDC:
         except (httpx.HTTPError, TimeoutError):
             raise AuthError(503) from None
         except (OAuthError, JoseError, ValueError, KeyError, TypeError) as exc:
-            logger.warning(
-                "Zitadel code exchange or token validation rejected",
-                extra={"failure_type": type(exc).__name__},
-            )
+            details = {"failure_type": type(exc).__name__}
+            if isinstance(exc, InvalidClaimError):
+                claim = exc.claim
+                details["invalid_claim"] = (
+                    claim if isinstance(claim, str) and claim in _ID_TOKEN_CLAIMS else "unknown"
+                )
+            logger.warning("Zitadel code exchange or token validation rejected", extra=details)
             raise AuthError(401) from None
 
     @staticmethod
@@ -269,7 +314,7 @@ class ZitadelOIDC:
         decoded = jwt.decode(
             encoded, KeySet.import_key_set(cast(KeySetSerialization, keys)), algorithms=["RS256"]
         )
-        claims = CodeIDToken(
+        claims = _ZitadelCodeIDToken(
             decoded.claims,
             decoded.header,
             options={
