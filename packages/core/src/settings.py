@@ -212,6 +212,7 @@ class Settings(BaseSettings):
     )
     zitadel_client_id: str | None = Field(default=None, min_length=1, max_length=255)
     zitadel_client_secret: SecretStr | None = None
+    zitadel_iat_leeway_seconds: int = Field(default=1, ge=0, le=5)
     zitadel_token_auth_method: Literal["none", "client_secret_basic"] = "none"
     zitadel_redirect_uri: str | None = None
     zitadel_post_logout_uri: str | None = None

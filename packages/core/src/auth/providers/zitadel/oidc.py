@@ -5,6 +5,7 @@ import logging
 import math
 import re
 import time
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from functools import partial
@@ -20,7 +21,7 @@ from authlib.oidc.core import CodeIDToken  # type: ignore[import-untyped]
 from joserfc import jwt
 from joserfc.errors import InvalidClaimError, JoseError
 from joserfc.jwk import KeySet, KeySetSerialization
-from joserfc.jwt import JWTClaimsRegistry
+from joserfc.jwt import ClaimsOption, JWTClaimsRegistry
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 from tinypods_core.auth.contracts import AuthError, LogoutNotice, VerifiedIdentity
 from tinypods_core.settings import Settings
@@ -46,7 +47,19 @@ _ID_TOKEN_CLAIMS = frozenset(
 
 
 class _IDTokenClaimsRegistry(JWTClaimsRegistry):
-    """Allow one second of issuer clock skew for issued-at only."""
+    """Apply configured issuer clock tolerance to issued-at only."""
+
+    def __init__(
+        self,
+        now: int | Callable[[], int] | None = None,
+        leeway: int = 0,
+        *,
+        iat_leeway_seconds: int,
+        **options: ClaimsOption,
+    ) -> None:
+        """Keep the generic JWT timing policy separate from issued-at tolerance."""
+        super().__init__(now, leeway, **options)
+        self.iat_leeway_seconds = iat_leeway_seconds
 
     def validate_iat(self, value: object) -> None:
         """Require a finite numeric timestamp within the issued-at tolerance."""
@@ -57,16 +70,10 @@ class _IDTokenClaimsRegistry(JWTClaimsRegistry):
         ):
             logger.warning("Zitadel issued-at rejected", extra={"reason": "malformed"})
             raise InvalidClaimError("iat")
-        if value > self.now + 1:
+        if value > self.now + self.iat_leeway_seconds:
             logger.warning("Zitadel issued-at rejected", extra={"reason": "future"})
             raise InvalidClaimError("iat")
         self.check_value("iat", value)
-
-
-class _ZitadelCodeIDToken(CodeIDToken):  # type: ignore[misc]
-    """Keep Authlib's code-flow checks with the narrower timing policy."""
-
-    registry_cls = _IDTokenClaimsRegistry
 
 
 class Discovery(BaseModel):
@@ -314,7 +321,7 @@ class ZitadelOIDC:
         decoded = jwt.decode(
             encoded, KeySet.import_key_set(cast(KeySetSerialization, keys)), algorithms=["RS256"]
         )
-        claims = _ZitadelCodeIDToken(
+        claims = CodeIDToken(
             decoded.claims,
             decoded.header,
             options={
@@ -330,6 +337,10 @@ class ZitadelOIDC:
                 "client_id": self.client_id,
                 "access_token": token.get("access_token"),
             },
+        )
+        claims.registry_cls = partial(
+            _IDTokenClaimsRegistry,
+            iat_leeway_seconds=self.settings.zitadel_iat_leeway_seconds,
         )
         claims.validate(leeway=0)
         if "nonce" in claims and claims["nonce"] != nonce:

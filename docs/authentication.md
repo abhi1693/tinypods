@@ -70,11 +70,17 @@ TINYPODS_ZITADEL_ENABLED=true
 TINYPODS_ZITADEL_ISSUER=https://identity.example.org
 TINYPODS_ZITADEL_CLIENT_ID=your-client-id
 TINYPODS_ZITADEL_TOKEN_AUTH_METHOD=none
+TINYPODS_ZITADEL_IAT_LEEWAY_SECONDS=1
 TINYPODS_ZITADEL_REDIRECT_URI=https://tinypods.example.org/api/v1/auth/providers/zitadel/callback
 TINYPODS_ZITADEL_POST_LOGOUT_URI=https://tinypods.example.org/
 # Optional external-only policy, never an outage-triggered switch:
 TINYPODS_AUTH_LOCAL_ENABLED=false
 ```
+
+`TINYPODS_ZITADEL_IAT_LEEWAY_SECONDS` sets the permitted future skew for the
+signed ID token's issued-at claim. It defaults to one second and accepts
+whole seconds from zero to five. Set it to zero for exact clock matching.
+Expiry and not-before checks continue to use zero leeway.
 
 The issuer must exactly match discovery, without a trailing slash. No insecure
 HTTP/TLS-verification switch exists in production. Self-hosted private HTTPS issuers

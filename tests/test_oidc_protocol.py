@@ -11,7 +11,7 @@ import pytest
 from authlib.oidc.core.util import create_half_hash
 from joserfc import jwt
 from joserfc.jwk import OctKey, RSAKey
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 from tinypods_core.auth import AuthError
 from tinypods_core.auth.providers.zitadel.oidc import VerifiedIdentity, ZitadelOIDC
 from tinypods_core.settings import Settings
@@ -225,6 +225,37 @@ def test_issued_at_tolerance_is_claim_specific(
             if record.message == "Zitadel issued-at rejected"
         ]
         assert reasons == ([expected_reason] if expected_reason else [])
+
+
+@pytest.mark.parametrize(("seconds", "accepted"), [("0", False), ("2", True)])
+def test_issued_at_tolerance_environment_override(
+    seconds: str, accepted: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Apply each adapter's configured tolerance to signed issued-at claims."""
+    monkeypatch.setattr(time, "time", lambda: 1_800_000_000)
+    monkeypatch.setenv("TINYPODS_ZITADEL_IAT_LEEWAY_SECONDS", seconds)
+    issuer = Issuer()
+    issuer.claims["iat"] = 1_800_000_002 if accepted else 1_800_000_001
+    adapter = issuer.adapter()
+    if accepted:
+        assert (
+            asyncio.run(adapter.exchange("code-123", NONCE, VERIFIER)).issued_at
+            == (issuer.claims["iat"])
+        )
+    else:
+        with pytest.raises(AuthError) as error:
+            asyncio.run(adapter.exchange("code-123", NONCE, VERIFIER))
+        assert error.value.status == 401
+
+
+@pytest.mark.parametrize("seconds", ["-1", "6", "1.5"])
+def test_issued_at_tolerance_rejects_invalid_settings(
+    seconds: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reject configuration outside the supported whole-second range."""
+    monkeypatch.setenv("TINYPODS_ZITADEL_IAT_LEEWAY_SECONDS", seconds)
+    with pytest.raises(ValidationError, match="zitadel_iat_leeway_seconds"):
+        Settings()
 
 
 @pytest.mark.parametrize("field", ["iss", "sub", "aud", "exp", "iat", "nonce"])
