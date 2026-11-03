@@ -41,6 +41,7 @@ services:
       dockerfile: apps/web/Dockerfile
       target: ${TINYPODS_WEB_BUILD_TARGET:-development}
       args:
+        NEXT_PUBLIC_TINYPODS_API_ORIGIN: ${NEXT_PUBLIC_TINYPODS_API_ORIGIN:-http://localhost:8000}
         DOCKERHUB_PREFIX: ${TINYPODS_IMAGE_REGISTRY:+${TINYPODS_IMAGE_REGISTRY}/docker.io/library/}
     develop:
       watch:

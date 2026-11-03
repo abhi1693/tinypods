@@ -133,6 +133,30 @@ class Settings(BaseSettings):
         return value
 
     environment: Literal["production", "development"] = "production"
+    browser_origins: list[str] = Field(default_factory=list)
+
+    @field_validator("browser_origins")
+    @classmethod
+    def validate_browser_origins(cls, values: list[str], info: ValidationInfo) -> list[str]:
+        """Accept explicit browser origins without wildcards, paths or credentials."""
+        for value in values:
+            parts = urlsplit(value)
+            if (
+                parts.scheme not in {"http", "https"}
+                or not parts.hostname
+                or "*" in value
+                or parts.username is not None
+                or parts.password is not None
+                or value != f"{parts.scheme}://{parts.netloc}"
+                or (info.data.get("environment") == "production" and parts.scheme != "https")
+            ):
+                raise ValueError(
+                    "Browser origins must be explicit HTTP(S) origins; production requires HTTPS"
+                )
+            # Accessing port also validates malformed/out-of-range port values.
+            _ = parts.port
+        return values
+
     service_name: str = Field(default="TinyPods", min_length=1, max_length=80)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     log_format: Literal["text", "json"] = "text"

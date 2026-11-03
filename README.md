@@ -314,3 +314,9 @@ Production runtime:
 `TINYPODS_WEB_BUILD_TARGET=runtime docker compose -f compose.yaml -f compose.build.yaml up --build --force-recreate -d --wait web`.
 Open http://localhost:3000. Add --profile web before up to include web in the full-stack Watch command.
 See [frontend run and Watch details](apps/web/README.md#docker-compose).
+
+The web app now provides functional local login and backend-discovered provider
+choices through direct generated API requests. See the frontend README for
+explicit API/CORS origins, shared UI, generated validators/mocks and current
+post-login behavior. Use npm run format / npm run format:check for supported
+repository files; Ruff continues to own Python formatting.

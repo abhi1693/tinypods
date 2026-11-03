@@ -22,3 +22,7 @@ compose.env.*
 node_modules/
 .next/
 *.tsbuildinfo
+
+.orval-check-*/
+
+.frontend-test-*/

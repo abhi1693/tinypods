@@ -1,0 +1,26 @@
+# Runtime, dependencies, build output and local/operator files
+.git/
+.venv/
+**/node_modules/
+**/.next/
+**/dist/
+**/build/
+**/*.egg-info/
+**/__pycache__/
+.local/
+reports/
+.env*
+compose.env
+compose.env.*
+!compose.env.example
+.coverage*
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+# Canonical backend exporter owns this generated JSON; avoid formatter drift.
+openapi.json
+uv.lock
+
+.orval-check-*/
+
+.frontend-test-*/

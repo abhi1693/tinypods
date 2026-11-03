@@ -53,7 +53,11 @@ AuthorizationDependency = Annotated[AuthorizationService, Depends(get_authorizat
 def check_origin(request: Request) -> None:
     """Reject foreign browser origins; custom CSRF headers also exclude form submissions."""
     origin = request.headers.get("origin")
-    if origin is not None and origin != f"{request.url.scheme}://{request.url.netloc}":
+    if (
+        origin is not None
+        and origin != f"{request.url.scheme}://{request.url.netloc}"
+        and origin not in request.app.state.settings.browser_origins
+    ):
         raise HTTPException(403)
 
 

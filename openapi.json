@@ -2235,6 +2235,7 @@
           },
           "return_to": {
             "default": "/",
+            "description": "Relative API path or an absolute URL on a configured trusted browser origin.",
             "maxLength": 256,
             "title": "Return To",
             "type": "string"
@@ -20217,5 +20218,15 @@
         "summary": "Check whether the service is ready"
       }
     }
-  }
+  },
+  "servers": [
+    {
+      "url": "{origin}",
+      "variables": {
+        "origin": {
+          "default": "http://localhost:8000"
+        }
+      }
+    }
+  ]
 }

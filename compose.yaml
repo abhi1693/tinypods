@@ -11,6 +11,7 @@ x-runtime: &runtime
   networks: [default, data]
   environment: &environment
     TINYPODS_ENVIRONMENT: ${TINYPODS_ENVIRONMENT:-production}
+    TINYPODS_BROWSER_ORIGINS: ${TINYPODS_BROWSER_ORIGINS:-[]}
     TINYPODS_DATABASE_URL: ${TINYPODS_DATABASE_URL:?Set TINYPODS_DATABASE_URL}
     TINYPODS_MIGRATION_DATABASE_URL:
     TINYPODS_DATABASE_MODE: ${TINYPODS_DATABASE_MODE:-direct}
@@ -68,6 +69,9 @@ x-healthcheck: &healthcheck
 services:
   web:
     profiles: [web]
+    environment:
+      TINYPODS_WEB_DEV_HOST: ${TINYPODS_WEB_PUBLISH_HOST:-127.0.0.1}
+      NEXT_PUBLIC_TINYPODS_API_ORIGIN: ${NEXT_PUBLIC_TINYPODS_API_ORIGIN:-http://localhost:8000}
     image: ${TINYPODS_WEB_IMAGE:-tinypods/web:local}
     init: true
     restart: unless-stopped

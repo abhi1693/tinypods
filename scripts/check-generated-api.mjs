@@ -1,11 +1,10 @@
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { resolve, relative, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const root = resolve(import.meta.dirname, "..");
 const expected = resolve(root, "packages/http/src/generated");
-const temporary = await mkdtemp(join(tmpdir(), "tinypods-orval-"));
+const temporary = await mkdtemp(join(root, ".orval-check-"));
 async function files(directory, base = directory) {
   const result = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {

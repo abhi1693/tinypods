@@ -1,126 +1,140 @@
-# Console foundation
+# Web login
 
-From the repository root, use Node 24.21.x and npm 11 (versions are pinned in
-`.node-version` and `package.json`):
+The web app uses shared atomic UI, Orval-generated Fetch/TanStack Query and
+Zod validators. The centered login layout follows the supplied /dev/push UX
+reference with TinyPods branding and theme colors.
 
 ```sh
 npm ci
 npm run dev
 npm run check
 npm run build
-npm start
+npm run format
+npm run format:check
 ```
 
-Development/start bind to loopback on port 3000. This slice is a neutral App
-Router page, strict TypeScript, Tailwind v4/shadcn-compatible component wiring,
-and Orval/TanStack Query generation. Login, catalog screens, API proxy, cookie/CSRF
-integration, deployment controls are separate follow-ups. Compose run/watch is covered below.
-No credentials or backend URLs are configured by the scaffold.
+Use Node 24.21.x and npm 11. Python stays on Ruff; Prettier handles supported
+TS/TSX/JS/JSON/YAML/CSS/Markdown, including generated TypeScript. The canonical
+openapi.json is excluded because the backend exporter owns its exact formatting.
 
-## Structure
+## Authentication and direct API configuration
 
-- `apps/web/src/app`: routes, root layout and the minimal Query provider.
-- `apps/web/src/components/atoms`: app-only primitives; `molecules`: small compositions.
-- `organisms` and `templates`: reserved atomic-design folders, without speculative components.
-- `packages/ui`: shared primitives and `cn`; `packages/theme`: shared CSS tokens.
-- `packages/http`: generated request functions, query/mutation hooks, keys/options and models.
+Browsers call the API directly. There are no Next API forwarding routes,
+rewrites, proxy or duplicate endpoint client. Configure the browser-visible
+API origin and exact trusted frontend origin in the Docker host's .env:
 
-The QueryClient belongs to its mounted provider tree, not a module-level server
-singleton. TanStack owns caching, deduplication and request state. Nothing fetches
-API data until a later feature consumes a generated function or hook. Auth-related
-cache clearing, mutation invalidation, optimistic updates, SSR hydration and retry
-policies require feature-specific decisions; OpenAPI does not infer them.
+```dotenv
+COMPOSE_PROFILES=local,web
+TINYPODS_ENVIRONMENT=development
+TINYPODS_WEB_PUBLISH_HOST=192.168.1.101
+NEXT_PUBLIC_TINYPODS_API_ORIGIN=http://192.168.1.101:8000
+TINYPODS_BROWSER_ORIGINS=["http://192.168.1.101:3000"]
+```
 
-## Generated API
+Substitute the actual private host address. API and frontend use the same hostname
+with different ports; localhost in a remote browser refers to that browser's
+machine. Repository defaults stay on loopback for web publication.
+NEXT_PUBLIC_TINYPODS_API_ORIGIN is public configuration, never a secret.
+Next substitutes it during production build; build a runtime image for each
+API origin. The build overlay passes the same value as a build argument and
+development environment setting. OpenAPI's server template is authoritative;
+Orval explicitly selects server index 0 and its origin variable.
+
+Backend CORS uses explicit origins with credentials, JSON and CSRF headers.
+Origin validation trusts only the API's own origin or this configured list;
+wildcards/paths/credentials are rejected, and production origins require HTTPS.
+Production HttpOnly/Secure/Strict session cookies remain unchanged. HTTP LAN
+review uses the existing development cookie policy. CORS does not make Strict
+cookies usable across unrelated sites. Other future authenticated writes also
+need the current CSRF token; different-hostname CSRF delivery requires an explicit
+backend contract rather than a proxy or weaker cookie attributes.
+
+Local login uses generated credentials/header defaults and a generated LoginRequest
+Zod schema. The app maps validation issues to accessible shared fields. Failed
+requests clear the password, retries are disabled and mutation retention is zero.
+No session or password is written to localStorage. A generated session query
+distinguishes expected anonymous 401 from service/network failure; successful
+login updates its typed identity cache. Reload verifies the backend cookie.
+
+Provider discovery determines whether local login and external options appear.
+Configured external choices use the generated Zitadel start mutation, then open
+the backend-issued authorization URL. State, nonce, PKCE, correlation cookies,
+token verification and session issuance stay in the backend. Callback destinations
+may be a simple relative path or an absolute simple path on an explicitly trusted
+browser origin; changed origin configuration invalidates outstanding attempts.
+No external provider is fabricated or enabled by the UI.
+
+Current success behavior is an inline account confirmation. Social sign-in requests
+the frontend root. Protected-route guards, original deep-link/query capture and
+post-login deep-link navigation are not implemented by this slice.
+Signup/reset-password, catalog/deployment screens and a new auth framework are
+outside this change.
+
+## Shared structure and generated files
+
+- packages/ui/components/atoms: input/button primitives.
+- packages/ui/components/molecules: labeled field and provider buttons.
+- packages/ui/components/organisms/login-form: reusable presentational form.
+- packages/ui/components/templates/auth-shell: centered auth layout.
+- apps/web/components/organisms: generated API/schema/session/provider orchestration.
+- packages/http/src/generated/client/endpoints: one operation module per tag.
+- client/schemas/models: component DTOs/enums; client/schemas/types: operation types.
+- client/mocks: generated MSW handlers/default factories, test-only imports.
+- generated/validation/models: reusable Zod schemas.
+
+Use @tinypods/http/client, /models, /types and /validation exports. A model that
+is a TypeScript type is not duplicated as an invented class. Do not edit generated
+files. Regenerate from the canonical root contract:
 
 ```sh
-# After backend contract changes, export via the existing backend command first:
 uv run --no-sync tinypods-openapi
 npm run api:generate
 npm run api:check
-npm run test:contracts
 ```
 
-`apps/web/orval.config.ts` reads the one root `openapi.json`; no schema copy is
-maintained. Orval emits TanStack Query hooks over native fetch, including write
-mutations, underlying request functions, typed cache-update helpers and models in `packages/http`.
-Its normal verb selection is preserved. `forceSuccessResponse` makes HTTP failures
-reject so TanStack can represent error state; no custom fetch/cache framework is
-added. Generated exports can be consumed from `@tinypods/http/client` and models
-from `@tinypods/http/models`. Do not edit generated files.
+Orval's native Prettier formatter handles each output. Drift checks generate every
+output under an ignored repository-local temporary root, so the same formatter
+configuration resolves, compare all filenames/contents and delete only that
+temporary tree. CI checks formatting, deterministic generation, endpoint
+query/mutation contracts, Zod bounds, generated MSW auth flows, workspace types
+and production build in the existing .github/workflows/ci.yml.
 
-The drift check generates into a disposable directory and compares file names and
-contents, including additions/removals, without modifying checked-in output. Contract
-tests check every described GET/POST/PUT/PATCH/DELETE hook against the proper
-TanStack primitive and exercise generated success, failure and empty-response
-handling with a local fetch stub. Type checks compile the full generated surface.
-The frontend job in the existing `.github/workflows/ci.yml` runs these checks
-and a production build from `npm ci`, alongside the backend job, which
-continues to verify FastAPI/OpenAPI freshness. No backend feature changes are part
-of this scaffold.
+MSW tests seed generated factories with fixed assertion-critical identity/date
+overrides and isolated QueryClients. They cover success/session cache, 401/429
+without credential retry, pending/network error and provider initiation.
+They do not prove browser cookie/CORS behavior; the real LAN browser check does.
 
-## Docker Compose
+## Docker Compose and Watch
 
-Use the existing root Compose files and configured root .env (see the root
-README). Compose validates backend settings even when only web is selected;
-they are not passed into the web container. Compose Watch requires v2.22+.
+With the existing COMPOSE_FILE selection and configured .env:
 
 ```sh
-# Production standalone runtime:
-TINYPODS_WEB_BUILD_TARGET=runtime docker compose -f compose.yaml -f compose.build.yaml up --build --force-recreate -d --wait web
+# Full-stack development/Watch:
+docker compose up --build --watch
 
-# Development with Watch (leave TINYPODS_WEB_BUILD_TARGET unset):
+# Frontend only, rebuilding after configuration/dependency changes:
 docker compose -f compose.yaml -f compose.build.yaml up --build --force-recreate --watch web
 
+# Production standalone runtime, environment-specific API origin:
+TINYPODS_WEB_BUILD_TARGET=runtime docker compose -f compose.yaml -f compose.build.yaml up --build --force-recreate -d --wait web
+
 # Stop only the frontend:
-docker compose -f compose.yaml -f compose.build.yaml stop web
+docker compose stop web
 ```
 
-Open http://localhost:3000. Next binds to 0.0.0.0 inside the container; the
-published port defaults to host loopback. TINYPODS_WEB_PUBLISH_HOST and
-TINYPODS_WEB_PUBLISH_PORT override the host binding. Base compose.yaml uses
-TINYPODS_WEB_IMAGE for a prebuilt runtime image. The build overlay defaults to
-development; do not select runtime for Watch. Always start Watch with --build
-to include edits made while it was stopped. --force-recreate also ensures switching
-between development and runtime replaces the previous container.
+Without COMPOSE_FILE, pass compose.yaml, compose.build.yaml and
+compose.workers.yaml explicitly for full-stack development, retaining any local
+key-file overlay already configured. COMPOSE_PROFILES must include web for
+commands without explicit service selection. Restart a Watch process after
+changing profiles/environment; its old process retains its original selection.
+Recreate API/migrate/worker as well when changing backend browser-origin settings.
 
-Watch syncs app and shared UI/theme/HTTP source for Next hot reload. Run
-npm run api:generate on the host after OpenAPI changes; generated output syncs
-normally. Root/workspace manifests, the root lockfile, TypeScript/Next/PostCSS
-configuration, Dockerfile and ignore changes rebuild with npm ci using all
-workspace manifests. Dependencies and .next remain container-owned; no host
-node_modules, build artifacts or environment files are synced. The optional web profile keeps existing backend-only commands unchanged; selecting
-web explicitly activates it. Add --profile web for a full-stack run. Web receives
-no backend credentials and has no backend/data-service dependency.
+The normal development host is http://192.168.1.101:3000. Next binds 0.0.0.0 inside
+the non-root container, published on the configured private LAN interface.
+The configured host also feeds Next allowedDevOrigins for LAN HMR/hydration.
 
-The production stage copies only traced Next server dependencies and static
-assets. Node is digest-pinned and uses the existing optional Docker Hub registry
-prefix. No public assets directory exists yet; add its copy/watch rule when
-introducing public assets.
-
-### Review from another machine on the LAN
-
-In the Docker host's .env, include web in COMPOSE_PROFILES (local,web when using
-the bundled database/queue), and set TINYPODS_WEB_PUBLISH_HOST to that host's
-private LAN address. For the current development host this is 192.168.1.101.
-Recreate web after changing the published address:
-
-```sh
-docker compose up -d --no-deps --wait web
-```
-
-This short command uses the existing COMPOSE_FILE selection in .env. If that
-selection is not configured, use the explicit files from the commands above.
-Open http://192.168.1.101:3000 from the reviewing machine, substituting your own
-Docker host address. localhost in a browser refers to the reviewing machine.
-The repository default stays loopback; the private address is a local setting.
-
-Restart an already-running Watch command after changing profiles, since it
-retains its original service selection. With the existing COMPOSE_FILE selection:
-
-```sh
-docker compose up --build --watch
-```
-
-The example environment enables web for full-stack runs. A pre-existing .env
-with COMPOSE_PROFILES=local must explicitly add web.
+Watch syncs app and shared UI/theme/generated HTTP source. Manifest, lockfile,
+TypeScript/Next/PostCSS config and Docker changes rebuild with npm ci against
+all workspace manifests. Use --build when starting Watch after it was stopped.
+Host node_modules/.next and operator environment files are not synced.
+Production copies only traced Next server dependencies and static assets.

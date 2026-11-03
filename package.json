@@ -21,14 +21,20 @@
     "api:generate": "orval --config apps/web/orval.config.ts",
     "api:check": "node scripts/check-generated-api.mjs",
     "test:contracts": "node --test scripts/frontend-contract.test.mjs",
-    "check": "npm run api:check && npm run test:contracts && npm run typecheck"
+    "check": "npm run api:check && npm run test:contracts && npm run test:auth && npm run typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test:auth": "node --test scripts/frontend-auth-msw.test.mjs"
   },
   "devDependencies": {
-    "orval": "8.46.0",
-    "typescript": "5.9.3",
+    "@faker-js/faker": "10.6.0",
     "@types/node": "24.19.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "esbuild": "0.28.2"
+    "esbuild": "0.28.2",
+    "msw": "2.15.0",
+    "orval": "8.46.0",
+    "prettier": "3.9.10",
+    "typescript": "5.9.3"
   }
 }

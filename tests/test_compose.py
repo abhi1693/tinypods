@@ -297,7 +297,9 @@ def test_watch_rebuilds_api_worker_and_runs_new_migrations(
         shutil.copytree(
             ROOT / name,
             directory / name,
-            ignore=shutil.ignore_patterns("build", "*.egg-info", "__pycache__"),
+            ignore=shutil.ignore_patterns(
+                "build", "*.egg-info", "__pycache__", "node_modules", ".next", "*.tsbuildinfo"
+            ),
         )
     for name in [
         "Dockerfile",

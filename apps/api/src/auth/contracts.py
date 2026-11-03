@@ -92,7 +92,11 @@ class ProvidersResponse(BaseModel):
 class LoginStartRequest(RequestDTO):
     """The page to open after signing in."""
 
-    return_to: str = Field(default="/", max_length=256)
+    return_to: str = Field(
+        default="/",
+        max_length=256,
+        description="Relative API path or an absolute URL on a configured trusted browser origin.",
+    )
     identity_provider_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,255}$")
 
 

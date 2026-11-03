@@ -20,6 +20,8 @@ USER node
 EXPOSE 3000
 CMD ["node", "node_modules/next/dist/bin/next", "dev", "apps/web", "--hostname", "0.0.0.0"]
 FROM source AS builder
+ARG NEXT_PUBLIC_TINYPODS_API_ORIGIN=http://localhost:8000
+ENV NEXT_PUBLIC_TINYPODS_API_ORIGIN=$NEXT_PUBLIC_TINYPODS_API_ORIGIN
 RUN npm run build
 FROM ${DOCKERHUB_PREFIX}node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS runtime
 WORKDIR /app
