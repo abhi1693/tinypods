@@ -1,0 +1,19 @@
+{
+  "name": "@tinypods/http",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./client": "./src/generated/tinypods.ts",
+    "./models": "./src/generated/models/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "5.105.3"
+  },
+  "peerDependencies": {
+    "react": "^19.3.1"
+  }
+}

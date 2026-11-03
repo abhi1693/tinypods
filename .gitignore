@@ -17,3 +17,8 @@ compose.env.*
 !compose.env.example
 .idea/
 .local/
+
+# Frontend workspace build output
+node_modules/
+.next/
+*.tsbuildinfo

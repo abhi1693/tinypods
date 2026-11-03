@@ -300,3 +300,10 @@ targets, immutable configuration history and scoped application-secret APIs.
 
 See [durable jobs and RQ](docs/jobs.md) for transactional work, fixed task contracts,
 scheduling, recovery and delivery limits.
+
+## Frontend foundation
+
+The [console workspace](apps/web/README.md) contains the minimal Next.js App Router
+scaffold and Orval-generated TanStack Query client/models. From the repository
+root, run `npm ci`, `npm run dev`, and `npm run check`. Feature screens and API/auth
+integration follow separately.
