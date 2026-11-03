@@ -96,3 +96,30 @@ The production stage copies only traced Next server dependencies and static
 assets. Node is digest-pinned and uses the existing optional Docker Hub registry
 prefix. No public assets directory exists yet; add its copy/watch rule when
 introducing public assets.
+
+### Review from another machine on the LAN
+
+In the Docker host's .env, include web in COMPOSE_PROFILES (local,web when using
+the bundled database/queue), and set TINYPODS_WEB_PUBLISH_HOST to that host's
+private LAN address. For the current development host this is 192.168.1.101.
+Recreate web after changing the published address:
+
+```sh
+docker compose up -d --no-deps --wait web
+```
+
+This short command uses the existing COMPOSE_FILE selection in .env. If that
+selection is not configured, use the explicit files from the commands above.
+Open http://192.168.1.101:3000 from the reviewing machine, substituting your own
+Docker host address. localhost in a browser refers to the reviewing machine.
+The repository default stays loopback; the private address is a local setting.
+
+Restart an already-running Watch command after changing profiles, since it
+retains its original service selection. With the existing COMPOSE_FILE selection:
+
+```sh
+docker compose up --build --watch
+```
+
+The example environment enables web for full-stack runs. A pre-existing .env
+with COMPOSE_PROFILES=local must explicitly add web.
