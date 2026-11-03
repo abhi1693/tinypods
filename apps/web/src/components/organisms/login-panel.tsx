@@ -42,6 +42,14 @@ export function LoginPanel({
           Signed in
         </h1>
         <p className="mt-4">Signed in as {session.data.data.user.username}.</p>
+        {session.data.data.user.is_owner && (
+          <Link
+            className="mt-4 block text-sm underline underline-offset-4"
+            href="/admin"
+          >
+            Open TinyPods Admin
+          </Link>
+        )}
       </div>
     );
   }

@@ -1,5 +1,6 @@
 export * from "./auth-local-login";
 export * from "./auth-session-logout";
+export * from "./auth-owner-session-get";
 export * from "./auth-providers-list";
 export * from "./auth-zitadel-backchannel-logout";
 export * from "./auth-zitadel-login-callback";

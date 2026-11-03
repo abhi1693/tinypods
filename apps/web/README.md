@@ -219,3 +219,10 @@ The Next setup route sets no-store/no-referrer and suppresses native development
 request logging for this path; the API logs neither queries nor header values.
 Any external ingress/access logging must also omit the setup query. Treat the
 private setup URL as an operator credential and never paste it into reports.
+
+## Operator portal
+
+Open `/admin` on the same web service. It shares the sign-in form and browser
+session with TinyPods. The API checks the instance-owner policy before the
+operator shell renders. Configuration shows the deployment's current
+sign-in methods and public registration policy.
