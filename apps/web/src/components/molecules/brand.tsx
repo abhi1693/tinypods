@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BrandMark } from "../atoms/brand-mark";
+import { BrandMark } from "@tinypods/ui/components/atoms/brand-mark";
 
 export function Brand() {
   return (

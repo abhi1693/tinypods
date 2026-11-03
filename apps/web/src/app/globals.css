@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "@tinypods/theme/tokens.css";
 @source "../../../../packages/ui/src";
+@source "../../../../packages/web-auth/src";
 
 @theme inline {
   --color-background: var(--background);

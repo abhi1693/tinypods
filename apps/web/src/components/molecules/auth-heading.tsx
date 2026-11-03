@@ -1,4 +1,4 @@
-import { BrandMark } from "../atoms/brand-mark";
+import { BrandMark } from "@tinypods/ui/components/atoms/brand-mark";
 
 export function AuthHeading({
   mode,

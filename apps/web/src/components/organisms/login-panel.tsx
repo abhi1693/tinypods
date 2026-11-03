@@ -10,7 +10,7 @@ import {
 import { getRequestErrorMessage } from "@tinypods/http/errors";
 import { RequestFeedback } from "@tinypods/ui/components/molecules/request-feedback";
 import { AuthHeading } from "../molecules/auth-heading";
-import { LoginMethods } from "./login-methods";
+import { LoginMethods } from "@tinypods/web-auth/login-methods";
 
 export function LoginPanel({
   mode = "login",
@@ -42,14 +42,6 @@ export function LoginPanel({
           Signed in
         </h1>
         <p className="mt-4">Signed in as {session.data.data.user.username}.</p>
-        {session.data.data.user.is_owner && (
-          <Link
-            className="mt-4 block text-sm underline underline-offset-4"
-            href="/admin"
-          >
-            Open TinyPods Admin
-          </Link>
-        )}
       </div>
     );
   }

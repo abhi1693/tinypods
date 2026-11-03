@@ -98,7 +98,7 @@ export function LoginMethods({
     try {
       const response = await redirect.mutateAsync({
         data: {
-          return_to: window.location.origin + (operator ? "/admin" : "/"),
+          return_to: window.location.origin + "/",
           action: mode,
           identity_provider_id: option.identity,
         },

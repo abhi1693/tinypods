@@ -1,0 +1,19 @@
+{
+  "name": "@tinypods/web-auth",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./login-methods": "./src/login-methods.tsx",
+    "./providers": "./src/providers.tsx"
+  },
+  "dependencies": {
+    "@tinypods/http": "*",
+    "@tinypods/ui": "*",
+    "@tanstack/react-query": "5.105.3"
+  },
+  "peerDependencies": {
+    "next": "16.4.4",
+    "react": "^19.3.1"
+  }
+}

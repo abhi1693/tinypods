@@ -5,8 +5,10 @@ import type { ReactNode } from "react";
 import { useAuthOwnerSessionGet } from "@tinypods/http/client";
 import { RequestFeedback } from "@tinypods/ui/components/molecules/request-feedback";
 import { AuthShell } from "@tinypods/ui/components/templates/auth-shell";
-import { BrandMark } from "../atoms/brand-mark";
-import { LoginMethods } from "../organisms/login-methods";
+import { BrandMark } from "@tinypods/ui/components/atoms/brand-mark";
+import { LoginMethods } from "@tinypods/web-auth/login-methods";
+
+const webOrigin = process.env.NEXT_PUBLIC_TINYPODS_WEB_ORIGIN;
 
 export function OperatorShell({ children }: { children: ReactNode }) {
   const session = useAuthOwnerSessionGet({
@@ -46,12 +48,14 @@ export function OperatorShell({ children }: { children: ReactNode }) {
         <p className="mt-2 text-sm text-muted-foreground">
           This account does not have access to TinyPods Admin.
         </p>
-        <Link
-          className="mt-5 inline-block text-sm underline underline-offset-4"
-          href="/"
-        >
-          Back to TinyPods
-        </Link>
+        {webOrigin && (
+          <Link
+            className="mt-5 inline-block text-sm underline underline-offset-4"
+            href={webOrigin}
+          >
+            Back to TinyPods
+          </Link>
+        )}
       </AuthShell>
     );
   }
@@ -77,7 +81,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
         </div>
         <nav aria-label="Operator navigation" className="mt-5 md:mt-8">
           <Link
-            href="/admin"
+            href="/"
             aria-current="page"
             className="block rounded-lg bg-accent/30 px-3 py-2 text-sm font-semibold"
           >
@@ -87,9 +91,11 @@ export function OperatorShell({ children }: { children: ReactNode }) {
       </aside>
       <div className="min-w-0">
         <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border bg-card px-5 py-4 text-sm md:px-8">
-          <Link href="/" className="underline underline-offset-4">
-            Back to TinyPods
-          </Link>
+          {webOrigin && (
+            <Link href={webOrigin} className="underline underline-offset-4">
+              Back to TinyPods
+            </Link>
+          )}
           <p className="min-w-0 break-words text-muted-foreground">
             <span className="font-semibold text-foreground">
               {session.data.data.user.username}
