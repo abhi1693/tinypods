@@ -100,7 +100,6 @@ Runnable entry points live under `apps/`; shared Python packages live under
 `packages/`. Each package maps its import namespace to its flat `src/` directory.
 Tests live at the repository root. Frontend work follows the tracker dependencies.
 
-
 ## Docker Compose
 
 Use Docker Engine with Compose 2.24.4 or later. This follows the base, build and
@@ -161,7 +160,6 @@ provided services. It also verifies private networking, worker overrides, and
 host/port configuration. ARM64 image inputs are verified; runtime integration
 tests execute on the host architecture.
 
-
 ### Watch local changes
 
 Use the build and worker overrides with `up --watch` to rebuild and recreate
@@ -189,7 +187,6 @@ The Docker daemon and builder must trust the registry's certificate, whose names
 must include the configured hostname. Local backend images are built locally;
 the registry prefix does not redirect them. `TINYPODS_BACKEND_IMAGE` still selects
 an existing backend image when the build override is omitted.
-
 
 ## Backend logging
 
@@ -227,7 +224,6 @@ rather than silent truncation; binary values use complete hexadecimal envelopes.
 JSON cannot preserve Python object identity. See [CONTRIBUTING.md](CONTRIBUTING.md)
 for report, validation and contribution guidance.
 
-
 ## Backend module packages
 
 Core cache storage, database/migration access and logging live in `cache/`, `db/`
@@ -245,12 +241,10 @@ The build metadata registers every concrete subpackage. Packaging tests rebuild 
 four distributions from source archives, verify complete module/typing-marker
 inclusion and check public imports in fresh interpreters outside the checkout.
 
-
 Select the project `.venv/bin/python` interpreter (Python 3.13) in the IDE.
 The backend uses modern typing syntax, including `bytes | None` and literal types.
 An older or unrelated interpreter can report invalid annotations even when the
 installed project checks pass; verify the selected SDK before changing valid types.
-
 
 ## Authentication
 
@@ -285,7 +279,6 @@ hits. Per-peer policies use the trusted ASGI transport peer, never raw forwarded
 headers. Users behind a NAT share a peer budget. All replicas must share policy
 settings. Valkey needs non-evicting persistence; eviction/data loss resets budgets.
 The pool has 16 connections, 200 ms socket/connect waits and no automatic retries.
-
 
 ## Audit trail
 

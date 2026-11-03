@@ -4,7 +4,9 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
-const output = process.env.TINYPODS_ORVAL_OUTPUT ?? resolve(root, "packages/http/src/generated");
+const output =
+  process.env.TINYPODS_ORVAL_OUTPUT ??
+  resolve(root, "packages/http/src/generated");
 const specPath = resolve(root, "openapi.json");
 const spec = JSON.parse(readFileSync(specPath, "utf8"));
 const client = resolve(output, "client");
@@ -15,13 +17,19 @@ export default defineConfig({
     input: { target: specPath },
     output: {
       target: resolve(client, "endpoints/tinypods.ts"),
-      schemas: { path: resolve(client, "schemas/models"), mode: "split", type: "typescript" },
+      schemas: {
+        path: resolve(client, "schemas/models"),
+        mode: "split",
+        type: "typescript",
+      },
       operationSchemas: resolve(client, "schemas/types"),
       baseUrl: {
         getBaseUrlFromSpecification: true,
         index: 0,
         variables: {
-          origin: { runtime: `process.env.NEXT_PUBLIC_TINYPODS_API_ORIGIN ?? ${JSON.stringify(spec.servers[0].variables.origin.default)}` },
+          origin: {
+            runtime: `process.env.NEXT_PUBLIC_TINYPODS_API_ORIGIN ?? ${JSON.stringify(spec.servers[0].variables.origin.default)}`,
+          },
         },
       },
       client: "react-query",
@@ -40,10 +48,16 @@ export default defineConfig({
         query: { useSetQueryData: true },
         operations: {
           authLocalLogin: {
-            requestOptions: { credentials: "include", headers: { "x-csrf-token": "login" } },
+            requestOptions: {
+              credentials: "include",
+              headers: { "x-csrf-token": "login" },
+            },
           },
           authZitadelLoginStart: {
-            requestOptions: { credentials: "include", headers: { "x-csrf-token": "login" } },
+            requestOptions: {
+              credentials: "include",
+              headers: { "x-csrf-token": "login" },
+            },
           },
         },
       },
@@ -53,7 +67,11 @@ export default defineConfig({
     input: { target: specPath },
     output: {
       client: "zod",
-      schemas: { path: resolve(validation, "models"), type: "zod", mode: "split" },
+      schemas: {
+        path: resolve(validation, "models"),
+        type: "zod",
+        mode: "split",
+      },
       clean: true,
       formatter: "prettier",
       override: { zod: { version: 4 } },

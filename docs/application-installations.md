@@ -82,12 +82,14 @@ Reference an exact logical version in a validation/revision request:
 ```json
 {
   "release_id": "00000000-0000-0000-0000-000000000002",
-  "overrides": {"replicas": 2},
-  "secrets": [{
-    "version_id": "00000000-0000-0000-0000-000000000003",
-    "target": "database.password",
-    "use": "value"
-  }]
+  "overrides": { "replicas": 2 },
+  "secrets": [
+    {
+      "version_id": "00000000-0000-0000-0000-000000000003",
+      "target": "database.password",
+      "use": "value"
+    }
+  ]
 }
 ```
 

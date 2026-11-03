@@ -50,7 +50,6 @@ application, category and release services, DTOs, filters and actions on the sam
 branch and pull request. No chart execution, secret generation or publication
 state machine belongs to this API foundation.
 
-
 ## Application management endpoints
 
 Applications, categories and releases have collection GET/POST and item

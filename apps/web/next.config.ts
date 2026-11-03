@@ -6,7 +6,9 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: fileURLToPath(new URL("../../", import.meta.url)),
   transpilePackages: ["@tinypods/ui", "@tinypods/http"],
   poweredByHeader: false,
-  allowedDevOrigins: process.env.TINYPODS_WEB_DEV_HOST ? [process.env.TINYPODS_WEB_DEV_HOST] : [],
+  allowedDevOrigins: process.env.TINYPODS_WEB_DEV_HOST
+    ? [process.env.TINYPODS_WEB_DEV_HOST]
+    : [],
 };
 
 export default nextConfig;

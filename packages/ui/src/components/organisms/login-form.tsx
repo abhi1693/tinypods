@@ -8,11 +8,19 @@ export interface LoginFormProps {
   pending: boolean;
   error?: string;
   fieldErrors?: Partial<Record<"username" | "password", string>>;
-  onSubmit: (credentials: { username: string; password: string }) => Promise<void | boolean>;
+  onSubmit: (credentials: {
+    username: string;
+    password: string;
+  }) => Promise<void | boolean>;
 }
 
 /** Shared credential UI; the caller owns authentication, errors and session state. */
-export function LoginForm({ pending, error, fieldErrors, onSubmit }: LoginFormProps) {
+export function LoginForm({
+  pending,
+  error,
+  fieldErrors,
+  onSubmit,
+}: LoginFormProps) {
   const id = useId();
   const submitting = useRef(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -35,12 +43,44 @@ export function LoginForm({ pending, error, fieldErrors, onSubmit }: LoginFormPr
       submitting.current = false;
     }
   }
-  return <form onSubmit={submit} noValidate aria-busy={pending} className="mt-6 space-y-4">
-    <FormField label="Username" id={id + "-username"} name="username" autoComplete="username"
-      required error={fieldErrors?.username} disabled={pending} />
-    <FormField label="Password" id={id + "-password"} name="password" type="password"
-      autoComplete="current-password" required error={fieldErrors?.password} disabled={pending} />
-    {error && <p className="text-sm text-red-700" role="alert">{error}</p>}
-    <Button type="submit" disabled={pending} className="bg-foreground text-background hover:bg-foreground/90">{pending ? "Signing in…" : "Sign in"}</Button>
-  </form>;
+  return (
+    <form
+      onSubmit={submit}
+      noValidate
+      aria-busy={pending}
+      className="mt-6 space-y-4"
+    >
+      <FormField
+        label="Username"
+        id={id + "-username"}
+        name="username"
+        autoComplete="username"
+        required
+        error={fieldErrors?.username}
+        disabled={pending}
+      />
+      <FormField
+        label="Password"
+        id={id + "-password"}
+        name="password"
+        type="password"
+        autoComplete="current-password"
+        required
+        error={fieldErrors?.password}
+        disabled={pending}
+      />
+      {error && (
+        <p className="text-sm text-red-700" role="alert">
+          {error}
+        </p>
+      )}
+      <Button
+        type="submit"
+        disabled={pending}
+        className="bg-foreground text-background hover:bg-foreground/90"
+      >
+        {pending ? "Signing in…" : "Sign in"}
+      </Button>
+    </form>
+  );
 }
