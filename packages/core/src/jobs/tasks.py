@@ -1,6 +1,6 @@
 """Code-owned task/input and related-object contracts, never client import paths."""
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 from uuid import UUID
@@ -28,20 +28,10 @@ class Task:
     retry_intervals: tuple[int, ...] = (10, 30, 60)
 
 
-async def check_database(database: Database, inputs: TaskInput, job: Job) -> None:
-    """Run an operator-requested database diagnostic through the worker path."""
-    if job.requested_by_id is not None:
-        async with database.session() as session:
-            actor = await session.get(User, job.requested_by_id)
-            if actor is None or not actor.is_owner:
-                raise ValueError("Job actor is no longer authorized")
-    await database.installation()
-
-
 async def user_exists(session: AsyncSession, identity: UUID) -> bool:
     """Resolve an allowed related object without dynamic model or SQL lookup."""
     return await session.get(User, identity) is not None
 
 
-TASKS = MappingProxyType({"system.database_check": Task(TaskInput, check_database)})
+TASKS: Mapping[str, Task] = MappingProxyType({})
 TARGETS = MappingProxyType({"auth.user": user_exists})

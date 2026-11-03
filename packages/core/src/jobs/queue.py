@@ -111,6 +111,9 @@ async def recover(database: Database, settings: Settings, after: UUID | None = N
     work with a failed/missing/finished RQ record is marked failed for operator
     review, not re-executed. This is not external-side-effect reconciliation.
     """
+    # Terminal application state is authoritative even after RQ history expires.
+    # Inspect only unfinished work, in UUID order so continuation pages advance
+    # past active jobs instead of repeatedly selecting the same oldest batch.
     async with database.session() as session:
         query = select(Job).where(
             col(Job.status).in_((JobStatus.PENDING, JobStatus.QUEUED, JobStatus.RUNNING))
@@ -123,8 +126,13 @@ async def recover(database: Database, settings: Settings, after: UUID | None = N
     submitted = 0
     for job in rows:
         status = await asyncio.to_thread(rq_status, settings, job.id)
+        # Queue loss is not the same as a delayed/retrying/running RQ job. Leave
+        # active deliveries alone: RQ already owns their execution and schedule.
         if status in ACTIVE:
             continue
+        # A running handler may have produced effects before dying or losing its
+        # completion record. Missing/terminal RQ state cannot prove a safe retry.
+        # Likewise, don't resurrect a job RQ has exhausted/stopped/completed.
         if job.status == JobStatus.RUNNING or status in (
             RQStatus.FAILED,
             RQStatus.STOPPED,
@@ -138,6 +146,9 @@ async def recover(database: Database, settings: Settings, after: UUID | None = N
                     .values(status=JobStatus.FAILED, completed=datetime.now(UTC))
                 )
             continue
+        # Only work that has not started reaches submission again. Restore pending
+        # eligibility for queued work, then let the normal submission path check RQ.
+        # Conditional updates and submit's fresh read preserve racing state changes.
         if job.status == JobStatus.QUEUED:
             async with database.transaction() as session:
                 await session.exec(
@@ -146,6 +157,8 @@ async def recover(database: Database, settings: Settings, after: UUID | None = N
                     .values(status=JobStatus.PENDING)
                 )
         submitted += int(await submit(database, settings, job.id))
+    # Yield large scans back to RQ in bounded pages; recurrence is managed by the
+    # top-level reconciliation entry point, not restarted for each continuation.
     if len(rows) == settings.job_batch_size:
         await asyncio.to_thread(continue_recovery, settings, rows[-1].id)
     return submitted
@@ -159,6 +172,8 @@ def schedule_reconciliation(settings: Settings) -> None:
     """
     with connection(settings) as client:
         queue = queue_for(settings, client)
+        # Reuse an existing occurrence on restart; otherwise seed the chain lost
+        # with queue data or a hard kill before the previous run could reschedule.
         for identity in queue.scheduled_job_registry.get_job_ids():
             job = queue.fetch_job(identity)
             if job is not None and job.func_name == RECONCILE:

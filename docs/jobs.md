@@ -23,25 +23,22 @@ backpressure leave the Job pending and return false. A database failure after
 accepted enqueue can still propagate; retrying a business request needs the
 future domain idempotency contract rather than creating another Job blindly.
 
-The fixed owner-only `POST /api/v1/jobs/database-check` endpoint accepts an optional
-aware `scheduled_for`; it commits before submission and returns HTTP 202 for
-**durable acceptance**, including when delivery is pending. `GET /api/v1/jobs/{id}`
-returns safe status/timestamps. Both use existing platform-owner authorization;
-requester identity and related object links do not grant access. Argument JSON and
-raw errors are not exposed. This concrete read-only diagnostic exercises the real
-worker path without adding lifecycle mutations, email sending or generic public
-job submission.
+`GET /api/v1/jobs/{id}` returns safe status/timestamps under existing
+platform-owner authorization. Requester identity and related object links do not
+grant access. Argument JSON and raw errors are not exposed. There is no public
+job-submission endpoint; concrete domains own their acceptance/authorization paths.
 
 ## Task and target contracts
 
 `jobs.tasks.TASKS` is a code-owned mapping of stable task names to Pydantic input
 schemas, native async handlers and RQ timeout/retry policy. Handlers receive the
 validated input and detached Job metadata, including requester identity, and own
-their domain-specific execution authorization. The initial task is
-`system.database_check`. Add each new task with explicit validation and behavioral
-regressions, not a client-supplied callable/import path. All RQ domain jobs invoke
+their domain-specific execution authorization. No production task is registered
+yet. Tests register their own task in isolated processes, including real RQ and
+Compose workers, without packaging that task in runtime images. Add concrete
+domain tasks with explicit validation and behavioral regressions, not a client-supplied callable/import path. All RQ domain jobs invoke
 `tinypods_core.jobs.execution.execute` with one canonical UUID string. The worker
-loads and revalidates PostgreSQL arguments and current requester privileges.
+loads and revalidates PostgreSQL arguments; handlers own current requester checks.
 
 RQ uses JSON serialization, never pickle, on both producer and worker. Queue write
 access remains trusted: RQ can resolve callable names, so JSON alone does not make
@@ -81,8 +78,7 @@ Configuration:
 
 Recovery uses bounded UUID-ordered pages and RQ continuation jobs so active early
 rows cannot starve later work. It checks RQ before resubmitting pending or queued
-work missing from Valkey. RQ owns delayed delivery and retries (initial diagnostic:
-three intervals of 10, 30 and 60 seconds, 60-second execution timeout). Running or
+work missing from Valkey. RQ owns delayed delivery and retries according to each registered task policy. Running or
 terminal deliveries do not re-execute application work. A conditional database
 transition prevents two deliveries from both claiming pending/queued work; it is
 not a renewable lease or a guarantee against conflicting external effects.

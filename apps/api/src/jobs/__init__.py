@@ -1,4 +1,4 @@
-"""Operator-only durable job diagnostics and status routes."""
+"""Operator-only durable job status routes."""
 
 from tinypods_api.jobs.routes import router
 

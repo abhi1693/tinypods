@@ -82,7 +82,7 @@ class ComposeStack:
 
 
 @pytest.fixture(scope="module")
-def compose_stack() -> Iterator[ComposeStack]:
+def compose_stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ComposeStack]:
     """Build and start an isolated stack, then remove only its generated resources.
 
     Yields:
@@ -107,7 +107,24 @@ def compose_stack() -> Iterator[ComposeStack]:
             "TINYPODS_PUBLISH_PORT": "0",
         }
     )
-    stack = ComposeStack(name, environment)
+    # Only the test stack mounts a task and starts a registering worker wrapper.
+    # Production images exclude tests and keep their application registry empty.
+    override = tmp_path_factory.mktemp("rq-test-task") / "compose.jobs.yaml"
+    module = str(ROOT / "tests" / "job_fixtures.py")
+    override.write_text(
+        json.dumps(
+            {
+                "services": {
+                    "worker": {
+                        "command": ["python", "/tmp/job_fixtures.py"],
+                        "volumes": [module + ":/tmp/job_fixtures.py:ro"],
+                    },
+                    "api": {"volumes": [module + ":/tmp/job_fixtures.py:ro"]},
+                }
+            }
+        )
+    )
+    stack = ComposeStack(name, environment, (override,))
     try:
         stack.run("build", timeout=300)
         stack.run("up", "-d", "--wait", "--wait-timeout", "90")
@@ -430,17 +447,24 @@ def test_repository_sync_configuration_reaches_all_services(custom: bool) -> Non
 def test_rq_job_executes_within_worker_limits(compose_stack: ComposeStack) -> None:
     """Run a real durable Job under the shipped worker cgroup limits without an OOM/restart."""
     stack = compose_stack
+    # Earlier recreation tests may use other overrides; restore the test worker
+    # and its explicit task mount before exercising execution.
+    stack.run("up", "-d", "--wait", "--wait-timeout", "90")
     create = """
 import asyncio
 from tinypods_core.db import Database
 from tinypods_core.jobs.service import create_job
 from tinypods_core.jobs.queue import submit
 from tinypods_core.settings import load_settings
+import sys
+sys.path.insert(0, '/tmp')
+from job_fixtures import register
+register()
 async def main():
     settings = load_settings()
     async with Database(settings) as database:
         async with database.transaction() as session:
-            job = await create_job(session, 'system.database_check', {})
+            job = await create_job(session, 'tests.record', {})
         assert await submit(database, settings, job.id)
         print(job.id)
 asyncio.run(main())
@@ -460,7 +484,7 @@ asyncio.run(main())
 """
     deadline = time.monotonic() + 30
     while stack.run("exec", "-T", "api", "python", "-c", read, identity) != "succeeded":
-        assert time.monotonic() < deadline, "Worker did not complete the diagnostic"
+        assert time.monotonic() < deadline, "Worker did not complete the test task"
         time.sleep(0.1)
     container = stack.run("ps", "-q", "worker")
     state = subprocess.run(

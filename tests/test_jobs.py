@@ -3,6 +3,7 @@
 import asyncio
 import os
 import subprocess
+import sys
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -14,6 +15,7 @@ import psycopg
 import pytest
 from alembic import command
 from fastapi.testclient import TestClient
+from job_fixtures import TEST_TASKS
 from pydantic import SecretStr
 from redis.exceptions import ConnectionError, OutOfMemoryError
 from rq.job import JobStatus as RQStatus
@@ -30,15 +32,19 @@ from tinypods_core.settings import ConfigurationError, Settings
 
 
 @pytest.fixture
-def job_settings(auth_settings: Settings) -> Settings:
+def job_settings(auth_settings: Settings, monkeypatch: pytest.MonkeyPatch) -> Settings:
     """Use a unique RQ queue within disposable service containers."""
+    from tinypods_core.jobs import service
+
+    for module in (tasks, service, queue, execution):
+        monkeypatch.setattr(module, "TASKS", TEST_TASKS)
     return auth_settings.model_copy(update={"job_queue": "jobs-" + uuid4().hex})
 
 
 async def seed(database: Database, **options: object) -> Job:
-    """Commit one safe system diagnostic in an explicit business transaction."""
+    """Commit one registered test task in an explicit business transaction."""
     async with database.transaction() as session:
-        return await create_job(session, "system.database_check", {}, **options)
+        return await create_job(session, "tests.record", {}, **options)
 
 
 def environment(settings: Settings) -> dict[str, str]:
@@ -59,28 +65,26 @@ def test_atomic_creation_validation_and_migration(job_settings: Settings) -> Non
             with pytest.raises(RuntimeError):
                 async with database.transaction() as session:
                     session.add(User(username="rollback"))
-                    await create_job(session, "system.database_check", {})
+                    await create_job(session, "tests.record", {})
                     await session.flush()
                     raise RuntimeError("abort")
             async with database.session() as session:
                 assert (await session.exec(text("SELECT count(*) FROM jobs"))).scalar() == 0
                 for name, data in [
                     ("os.system", {}),
-                    ("system.database_check", {"extra": "private"}),
+                    ("tests.record", {"extra": "private"}),
                 ]:
                     with pytest.raises(ValueError):
                         await create_job(session, name, data)
                 with pytest.raises(ValueError, match="timezone"):
-                    await create_job(
-                        session, "system.database_check", {}, scheduled_for=datetime.now()
-                    )
+                    await create_job(session, "tests.record", {}, scheduled_for=datetime.now())
                 with pytest.raises(ValueError, match="paired"):
-                    await create_job(session, "system.database_check", {}, target_type="auth.user")
+                    await create_job(session, "tests.record", {}, target_type="auth.user")
                 for target in ("auth.user", "arbitrary.table"):
                     with pytest.raises(ValueError, match="target"):
                         await create_job(
                             session,
-                            "system.database_check",
+                            "tests.record",
                             {},
                             target_type=target,
                             target_id=uuid4(),
@@ -90,7 +94,7 @@ def test_atomic_creation_validation_and_migration(job_settings: Settings) -> Non
                 session.add(user)
                 await session.flush()
                 job = await create_job(
-                    session, "system.database_check", {}, target_type="auth.user", target_id=user.id
+                    session, "tests.record", {}, target_type="auth.user", target_id=user.id
                 )
                 assert "data=" not in repr(job)
             async with database.transaction() as session:
@@ -121,7 +125,7 @@ def test_atomic_creation_validation_and_migration(job_settings: Settings) -> Non
 
 
 def test_real_worker_submission_duplicates_and_schedule(job_settings: Settings) -> None:
-    """Installed RQ worker consumes JSON IDs and completes a real diagnostic once."""
+    """Installed RQ worker consumes JSON IDs and completes a registered test task once."""
 
     async def prepare() -> tuple[UUID, UUID]:
         async with Database(job_settings) as database:
@@ -136,7 +140,7 @@ def test_real_worker_submission_duplicates_and_schedule(job_settings: Settings) 
 
     first, later = asyncio.run(prepare())
     result = subprocess.run(
-        ["tinypods-worker", "--burst"],
+        [sys.executable, str(Path(__file__).with_name("job_fixtures.py")), "--burst"],
         env=environment(job_settings),
         capture_output=True,
         text=True,
@@ -197,9 +201,7 @@ def test_handoff_outage_and_queue_loss_recovery(job_settings: Settings) -> None:
     asyncio.run(scenario())
 
 
-def test_execution_failure_retry_and_actor_validation(
-    job_settings: Settings, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_execution_failure_retry_and_safe_reporting(job_settings: Settings) -> None:
     """Use RQ retry policy without duplicate attempt tables or raw exception disclosure."""
 
     async def failing(database: Database, inputs: tasks.TaskInput, job: Job) -> None:
@@ -208,9 +210,8 @@ def test_execution_failure_retry_and_actor_validation(
     async def scenario() -> None:
         async with Database(job_settings) as database:
             job = await seed(database)
-            monkeypatch.setattr(tasks, "check_database", failing)
-            definition = replace(tasks.TASKS["system.database_check"], run=failing)
-            with patch.object(execution, "TASKS", {"system.database_check": definition}):
+            definition = replace(tasks.TASKS["tests.record"], run=failing)
+            with patch.object(execution, "TASKS", {"tests.record": definition}):
                 for retries in (1, 0):
                     with patch.object(
                         execution,
@@ -224,15 +225,6 @@ def test_execution_failure_retry_and_actor_validation(
                         assert "private" not in str(error.value)
             async with database.session() as session:
                 assert (await session.get(Job, job.id)).status == JobStatus.FAILED
-            async with database.transaction() as session:
-                user = User(username="ordinary")
-                session.add(user)
-                await session.flush()
-                denied = await create_job(
-                    session, "system.database_check", {}, requested_by_id=user.id
-                )
-            with pytest.raises(execution.JobExecutionError):
-                await execution.run(database, denied.id)
             # No record and already terminal deliveries are harmless.
             await execution.run(database, uuid4())
             await execution.run(database, job.id)
@@ -288,11 +280,18 @@ def test_recurrence_and_invalid_entrypoint(
         pass
 
 
-def test_owner_job_api_and_outage(job_settings: Settings) -> None:
-    """Expose durable acceptance/status only to current owners, without argument dumps."""
-    asyncio.run(LocalPasswordProvider(Database(job_settings)).bootstrap(credentials()))
+def test_owner_job_status_api(job_settings: Settings) -> None:
+    """Retain owner-only status reads without a diagnostic submission surface."""
+
+    async def prepare() -> UUID:
+        async with Database(job_settings) as database:
+            await LocalPasswordProvider(database).bootstrap(credentials())
+            return (await seed(database)).id
+
+    identity = asyncio.run(prepare())
     with TestClient(create_app(job_settings), base_url="https://testserver") as client:
-        assert client.post("/api/v1/jobs/database-check", json={}).status_code == 401
+        path = "/api/v1/jobs/" + str(identity)
+        assert client.get(path).status_code == 401
         login = client.post(
             "/api/v1/auth/login",
             headers={"x-csrf-token": "login"},
@@ -300,17 +299,15 @@ def test_owner_job_api_and_outage(job_settings: Settings) -> None:
         )
         assert login.status_code == 200, login.text
         client.headers["x-csrf-token"] = client.cookies["__Host-tinypods-csrf"]
-        with patch.object(queue, "enqueue", side_effect=ConnectionError("private")):
-            result = client.post("/api/v1/jobs/database-check", json={})
-        assert result.status_code == 202, result.text
+        result = client.get(path)
+        assert result.status_code == 200
         assert result.json()["status"] == "pending"
         assert "data" not in result.json()
-        assert client.get("/api/v1/jobs/" + result.json()["id"]).status_code == 200
         assert client.get("/api/v1/jobs/" + str(uuid4())).status_code == 404
-        assert (
-            client.post("/api/v1/jobs/database-check", json={"task": "os.system"}).status_code
-            == 422
-        )
+        assert client.post("/api/v1/jobs/database-check", json={}).status_code == 405
+        schema = client.get("/openapi.json").json()
+        assert "/api/v1/jobs/database-check" not in schema["paths"]
+        assert "CheckRequest" not in schema["components"]["schemas"]
 
 
 def test_real_noeviction_and_connection_outage(job_settings: Settings) -> None:
@@ -347,7 +344,7 @@ def test_cancelled_execution_is_not_blindly_restarted(job_settings: Settings) ->
 
         async with Database(job_settings) as database:
             job = await seed(database)
-            definition = replace(tasks.TASKS["system.database_check"], run=interrupted)
+            definition = replace(tasks.TASKS["tests.record"], run=interrupted)
             with patch.object(execution, "TASKS", {job.task: definition}):
                 task = asyncio.create_task(execution.run(database, job.id))
                 async with asyncio.timeout(5):
@@ -373,7 +370,7 @@ def test_payload_bounds_and_safe_task_resolution(job_settings: Settings) -> None
 
     async def scenario() -> None:
         async with Database(job_settings) as database:
-            definition = replace(tasks.TASKS["system.database_check"], schema=LargeInput)
+            definition = replace(tasks.TASKS["tests.record"], schema=LargeInput)
             with patch.object(service, "TASKS", {"test.large": definition}):
                 async with database.session() as session:
                     with pytest.raises(ValueError, match="16384"):
@@ -384,7 +381,7 @@ def test_payload_bounds_and_safe_task_resolution(job_settings: Settings) -> None
                 await session.flush()
                 job = await create_job(
                     session,
-                    "system.database_check",
+                    "tests.record",
                     {},
                     requested_by_id=user.id,
                     target_type="auth.user",
@@ -402,33 +399,8 @@ def test_payload_bounds_and_safe_task_resolution(job_settings: Settings) -> None
     asyncio.run(scenario())
 
 
-def test_missing_requester_boundary_and_scheduler_orphan(job_settings: Settings) -> None:
-    """Fail closed on an actor disappearing at lookup; ignore an orphan scheduled ID."""
-
-    async def scenario() -> None:
-        async with Database(job_settings) as database:
-            job = await seed(database)
-            # A real requester FK prevents normal deletion; inject a disappearing
-            # resolver boundary rather than weaken the persistence constraint.
-            job.requested_by_id = uuid4()
-            from sqlmodel.ext.asyncio.session import AsyncSession
-
-            original = AsyncSession.get
-
-            async def missing_user(
-                self: AsyncSession, entity: type, identity: object, **kwargs: object
-            ) -> object:
-                if entity is User:
-                    return None
-                return await original(self, entity, identity, **kwargs)
-
-            with (
-                patch.object(AsyncSession, "get", missing_user),
-                pytest.raises(ValueError, match="authorized"),
-            ):
-                await tasks.check_database(database, tasks.TaskInput(), job)
-
-    asyncio.run(scenario())
+def test_scheduler_orphan(job_settings: Settings) -> None:
+    """Ignore an orphan scheduled ID when repairing recurrence."""
     with queue.connection(job_settings) as client:
         rq = queue.queue_for(job_settings, client)
         client.zadd(rq.scheduled_job_registry.key, {"orphan": datetime.now(UTC).timestamp() + 30})
