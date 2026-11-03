@@ -1,4 +1,4 @@
-"""Public dispatch for the worker process foundation."""
+"""Public entry point for the RQ worker process."""
 
 from tinypods_worker.main import main as run_worker
 

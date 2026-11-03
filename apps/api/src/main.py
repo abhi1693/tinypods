@@ -21,6 +21,7 @@ from tinypods_api.http.middleware import RequestLoggingMiddleware
 from tinypods_api.http.operations import build_operation_id
 from tinypods_api.http.versioning import API_V1_PREFIX
 from tinypods_api.installations import router as installations_router
+from tinypods_api.jobs import router as jobs_router
 from tinypods_api.rate_limit import GlobalRateLimitMiddleware, RateLimitedRoute
 from tinypods_api.repositories import router as repositories_router
 from tinypods_api.secrets import router as secrets_router
@@ -189,6 +190,7 @@ def create_app(
 
     app.include_router(applications_router, prefix=API_V1_PREFIX)
     app.include_router(installations_router, prefix=API_V1_PREFIX)
+    app.include_router(jobs_router, prefix=API_V1_PREFIX)
     app.include_router(repositories_router, prefix=API_V1_PREFIX)
     app.include_router(clusters_router, prefix=API_V1_PREFIX)
     app.include_router(capabilities_router, prefix=API_V1_PREFIX)

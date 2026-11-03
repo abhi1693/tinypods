@@ -129,3 +129,24 @@ def test_worker_check_closes_owned_logging(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr("sys.argv", ["tinypods-worker", "--check"])
     worker.main()
     assert not any(isinstance(handler, StderrHandler) for handler in logging.getLogger().handlers)
+
+
+@pytest.mark.parametrize("failure", ["configuration", "queue"])
+def test_worker_runtime_dependency_failure_is_safe(
+    failure: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exit cleanly without raw third-party diagnostics on worker startup failure."""
+    from redis.exceptions import ConnectionError
+    from tinypods_core.settings import ConfigurationError
+
+    monkeypatch.setattr("sys.argv", ["tinypods-worker"])
+
+    def unavailable(*args: object, **kwargs: object) -> None:
+        if failure == "configuration":
+            raise ConfigurationError("database_url is required")
+        raise ConnectionError("private credential")
+
+    monkeypatch.setattr(worker, "run_worker", unavailable)
+    with pytest.raises(SystemExit) as error:
+        worker.main()
+    assert "private" not in str(error.value)

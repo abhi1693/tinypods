@@ -16,6 +16,7 @@ PROJECTS = {
 }
 PUBLIC_PACKAGES = (
     "tinypods_core",
+    "tinypods_core.jobs",
     "tinypods_core.cache",
     "tinypods_core.auth",
     "tinypods_core.auth.providers",
@@ -28,6 +29,7 @@ PUBLIC_PACKAGES = (
     "tinypods_core.repositories",
     "tinypods_core.clusters",
     "tinypods_core.logging",
+    "tinypods_api.jobs",
     "tinypods_api",
     "tinypods_api.applications",
     "tinypods_api.repositories",
