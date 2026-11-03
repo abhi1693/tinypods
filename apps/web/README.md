@@ -54,7 +54,8 @@ contents, including additions/removals, without modifying checked-in output. Con
 tests check every described GET/POST/PUT/PATCH/DELETE hook against the proper
 TanStack primitive and exercise generated success, failure and empty-response
 handling with a local fetch stub. Type checks compile the full generated surface.
-CI runs these checks and a production build from `npm ci`; the existing backend CI
+The frontend job in the existing `.github/workflows/ci.yml` runs these checks
+and a production build from `npm ci`, alongside the backend job, which
 continues to verify FastAPI/OpenAPI freshness. No backend feature changes are part
 of this scaffold.
 
