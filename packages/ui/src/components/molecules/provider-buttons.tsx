@@ -1,17 +1,23 @@
 "use client";
+
 import { Button } from "../atoms/button";
+import { ProviderIcon } from "../atoms/provider-icon";
 
 export interface ProviderOption {
   id: string;
   label: string;
+  iconUrl?: string | null;
+  iconLabel?: string;
 }
 export function ProviderButtons({
   options,
-  pending,
+  pendingId,
+  disabled = false,
   onSelect,
 }: {
   options: ProviderOption[];
-  pending: boolean;
+  pendingId: string | null;
+  disabled?: boolean;
   onSelect: (id: string) => void;
 }) {
   return (
@@ -20,13 +26,20 @@ export function ProviderButtons({
         <Button
           key={option.id}
           type="button"
-          disabled={pending}
+          loading={pendingId === option.id}
+          disabled={disabled}
+          icon={
+            <ProviderIcon
+              key={option.iconUrl ?? option.id}
+              src={option.iconUrl}
+              label={option.iconLabel ?? option.label}
+            />
+          }
           onClick={() => onSelect(option.id)}
         >
-          Continue with {option.label}
+          {option.label}
         </Button>
       ))}
-      {pending && <p role="status">Opening sign-in provider…</p>}
     </div>
   );
 }

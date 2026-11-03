@@ -22,8 +22,8 @@ from typer.testing import CliRunner
 
 
 @pytest.mark.parametrize("mixed", [False, True])
-def test_first_user_bootstrap_serializes_providers(auth_settings: Settings, mixed: bool) -> None:
-    """Concurrent first sign-ins select exactly one owner across both providers."""
+def test_public_enrollment_never_bootstraps_owner(auth_settings: Settings, mixed: bool) -> None:
+    """Public enrollment stays ordinary even when racing explicit operator bootstrap."""
 
     async def scenario() -> None:
         settings = enabled(auth_settings)
@@ -37,15 +37,18 @@ def test_first_user_bootstrap_serializes_providers(auth_settings: Settings, mixe
                 else mappings.resolve(VerifiedIdentity(ISSUER, "second"))
             )
             results = await asyncio.gather(external, other, return_exceptions=True)
-            assert isinstance(results[0], UUID)
-            if isinstance(results[1], AuthError):
-                assert mixed and results[1].status == 409
+            assert all(isinstance(result, UUID) for result in results)
             async with database.session() as session:
                 users = (await session.exec(select(User))).all()
                 owners = [user for user in users if user.is_owner]
-                assert len(owners) == 1
+                assert len(owners) == (1 if mixed else 0)
                 instance = await session.get(Installation, 1)
-                assert instance is not None and instance.owner_id == owners[0].id
+                assert instance is not None
+                assert instance.owner_id == (owners[0].id if mixed else None)
+                public = await session.get(User, results[0])
+                assert public is not None and not public.is_owner
+            if not mixed:
+                await LocalPasswordProvider(database).bootstrap(credentials())
             later = await mappings.resolve(VerifiedIdentity(ISSUER, "later"))
             assert await mappings.resolve(VerifiedIdentity(ISSUER, "later")) == later
             async with database.session() as session:

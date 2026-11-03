@@ -4,11 +4,13 @@
  * TinyPods API
  * OpenAPI spec version: 0.0.1
  */
+import type { LoginStartRequestAction } from "./loginStartRequestAction";
 
 /**
  * The page to open after signing in.
  */
 export interface LoginStartRequest {
+  action?: LoginStartRequestAction;
   identity_provider_id?: string | null;
   /**
    * Relative API path or an absolute URL on a configured trusted browser origin.

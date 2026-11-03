@@ -179,7 +179,13 @@ class ZitadelOIDC:
             raise AuthError(401)
 
     async def authorization_url(
-        self, state: str, nonce: str, verifier: str, *, identity_provider_id: str | None = None
+        self,
+        state: str,
+        nonce: str,
+        verifier: str,
+        *,
+        identity_provider_id: str | None = None,
+        registration: bool = False,
     ) -> str:
         """Create a fresh authorization URL using server-owned transaction proof."""
         self._proof(nonce, verifier)
@@ -195,6 +201,7 @@ class ZitadelOIDC:
                         nonce=nonce,
                         code_verifier=verifier,
                         response_type="code",
+                        **({"prompt": "create"} if registration else {}),
                     )
                     return cast(str, url)
         except TimeoutError:

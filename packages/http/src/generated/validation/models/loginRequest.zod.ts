@@ -9,9 +9,10 @@ import * as zod from "zod";
 export const loginRequestPasswordMin = 15;
 export const loginRequestPasswordMax = 128;
 
-export const loginRequestUsernameMax = 64;
+export const loginRequestUsernameOneMax = 64;
 
-export const loginRequestUsernameRegExp = new RegExp("^[a-zA-Z0-9_.-]+$");
+export const loginRequestUsernameOneRegExp = new RegExp("^[a-zA-Z0-9_.-]+$");
+export const loginRequestUsernameTwoMax = 254;
 
 export const LoginRequest = zod
   .object({
@@ -19,11 +20,14 @@ export const LoginRequest = zod
       .string()
       .min(loginRequestPasswordMin)
       .max(loginRequestPasswordMax),
-    username: zod
-      .string()
-      .min(1)
-      .max(loginRequestUsernameMax)
-      .regex(loginRequestUsernameRegExp),
+    username: zod.union([
+      zod
+        .string()
+        .min(1)
+        .max(loginRequestUsernameOneMax)
+        .regex(loginRequestUsernameOneRegExp),
+      zod.email().max(loginRequestUsernameTwoMax),
+    ]),
   })
   .describe("Username and password for a local account.");
 

@@ -185,10 +185,14 @@ test("generated Zod login schema preserves OpenAPI request bounds", async () => 
     password: "p".repeat(fields.password.minLength),
   };
   assert.equal(LoginRequest.safeParse(valid).success, true);
+  assert.equal(
+    LoginRequest.safeParse({ ...valid, username: "owner@example.com" }).success,
+    true,
+  );
   for (const invalid of [
     { ...valid, username: "" },
     { ...valid, username: "spaces forbidden" },
-    { ...valid, username: "u".repeat(fields.username.maxLength + 1) },
+    { ...valid, username: "u".repeat(fields.username.anyOf[0].maxLength + 1) },
     { ...valid, password: "p".repeat(fields.password.minLength - 1) },
     { ...valid, password: "p".repeat(fields.password.maxLength + 1) },
   ])

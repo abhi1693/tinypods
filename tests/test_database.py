@@ -149,7 +149,7 @@ def test_migrations_preserve_identity_and_unmanaged_tables(settings: Settings) -
     assert "plugin_data" not in core_metadata.tables
     migration.upgrade()
     migration.check()
-    assert migration.current() == ("0010_jobs",)
+    assert migration.current() == ("0011_email_login_names",)
     with psycopg.connect(settings.database_url.get_secret_value()) as connection:
         assert (
             connection.execute("SELECT installation_id FROM platform_installation").fetchone()
@@ -182,7 +182,7 @@ def test_populated_upgrade_and_failed_migration_are_transactional(
     revision = tmp_path / "migrations/versions/0002_test.py"
     revision.write_text(
         "from alembic import op\nimport sqlalchemy as sa\n"
-        "revision='0002_test'\ndown_revision='0010_jobs'\n"
+        "revision='0002_test'\ndown_revision='0011_email_login_names'\n"
         "def upgrade():\n    op.add_column('platform_installation', sa.Column('note', sa.Text()))\n"
         "def downgrade():\n    op.drop_column('platform_installation', 'note')\n"
     )

@@ -6,4 +6,5 @@ export * from "./auth-zitadel-login-callback";
 export * from "./auth-zitadel-logout";
 export * from "./auth-zitadel-session-refresh";
 export * from "./auth-zitadel-login-start";
+export * from "./auth-local-register";
 export * from "./auth-session-get";

@@ -192,6 +192,8 @@ class Settings(BaseSettings):
     auth_local_icon_url: HttpUrl | None = None
     zitadel_label: str = Field(default="Zitadel", min_length=1, max_length=80)
     zitadel_icon_url: HttpUrl | None = None
+    setup_token: SecretStr | None = Field(default=None, min_length=43, max_length=128)
+    auth_registration_enabled: bool = False
     auth_local_enabled: bool = True
     zitadel_enabled: bool = False
     zitadel_refresh_enabled: bool = False

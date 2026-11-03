@@ -12,6 +12,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 from tinypods_api.applications import router as applications_router
 from tinypods_api.auth import build_router
+from tinypods_api.auth.setup_routes import router as setup_router
 from tinypods_api.cache import CachePolicy
 from tinypods_api.clusters import router as clusters_router
 from tinypods_api.clusters.capabilities import router as capabilities_router
@@ -161,7 +162,7 @@ def create_app(
         allow_origins=config.browser_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allow_headers=["content-type", "x-csrf-token"],
+        allow_headers=["content-type", "x-csrf-token", "x-setup-token"],
         expose_headers=["retry-after"],
     )
     app.state.rate_limiter = limiter
@@ -203,6 +204,7 @@ def create_app(
         prefix=API_V1_PREFIX,
     )
 
+    app.include_router(setup_router, prefix=API_V1_PREFIX)
     app.include_router(applications_router, prefix=API_V1_PREFIX)
     app.include_router(installations_router, prefix=API_V1_PREFIX)
     app.include_router(jobs_router, prefix=API_V1_PREFIX)

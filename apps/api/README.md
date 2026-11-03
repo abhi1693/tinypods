@@ -26,7 +26,7 @@ These are project rules, not requirements imposed by FastAPI.
 - Follow the shared [documentation guidance](../../CONTRIBUTING.md#documentation-and-comments). Every route needs a meaningful docstring. The exporter checks public routes for a docstring and nonblank OpenAPI description. Document purpose, response semantics and material status behavior.
 - Use PageParams (limit 1–100, default 25; offset >= 0) and Page[ResponseDTO] for collections. Use deterministic ordering with a unique tie-breaker. Declare query binding explicitly when using PageParams.
 - Use OperationStatus for queued work and HTTP 202 when creating an operation. Use HTTP 201 for resource creation and 204 for a successful empty response where appropriate.
-- Use ErrorResponse for errors. Its request_id matches the x-request-id header. Validation issues expose locations and codes, not input values or validator context. HTTP exceptions use standard status messages; unexpected failures use a fixed message. Existing logging is unchanged.
+- Use ErrorResponse for errors. Its request_id matches the x-request-id header. Validation issues expose locations, codes and safe source-owned messages, not input values or validator context. HTTP exceptions use standard status messages; unexpected failures use a fixed message. Existing logging is unchanged.
 - Keep routes thin: inject services and sessions, await work, then return DTOs. Preserve transaction ownership in services and keep blocking database calls out of async request paths.
 
 ## Current coverage and remaining work

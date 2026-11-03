@@ -786,12 +786,13 @@ async def test_real_read_timeout_is_bounded_and_does_not_fail_http(
         await cache.redis.ping()
         # Keep the real fault active longer than the HTTP deadline. A short pause
         # can expire before a loaded CI runner schedules the request's first read.
-        started = time.monotonic()
         await cache.redis.execute_command("CLIENT", "PAUSE", 5000, "ALL")
         resumes_at = time.monotonic() + 5.1
         try:
             # Reproduce a scheduling delay longer than the old 350 ms fault window.
             await asyncio.sleep(0.4)
+            # Measure the request deadline independently of deliberate fault setup.
+            started = time.monotonic()
             task = asyncio.create_task(client.get("/api/v1/info"))
             await asyncio.sleep(0)
             assert not task.done()

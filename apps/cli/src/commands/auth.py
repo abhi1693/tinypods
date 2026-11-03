@@ -1,6 +1,7 @@
 """Operator-only interactive initialization; credentials never enter command arguments."""
 
 import asyncio
+import secrets
 from uuid import UUID
 
 import typer
@@ -14,6 +15,12 @@ from tinypods_core.db import Database
 auth_app = typer.Typer(help="Manage authentication and identity links.", add_completion=False)
 
 
+@auth_app.command("setup-token")
+def setup_token() -> None:
+    """Generate a private setup secret for TINYPODS_SETUP_TOKEN configuration."""
+    typer.echo(secrets.token_urlsafe(32))
+
+
 @auth_app.command()
 def bootstrap() -> None:
     """Create the instance owner once after migrations, using hidden password prompts."""
@@ -24,8 +31,7 @@ def bootstrap() -> None:
         credentials = Credentials(username=username, password=SecretStr(password))
     except ValidationError:
         raise typer.BadParameter(
-            "Use a 1-64 character ASCII account name (letters, digits, _.-) "
-            "and a 15-128 character password"
+            "Use a valid username or email address and a 15-128 character password"
         ) from None
 
     async def initialize() -> None:

@@ -14,10 +14,5 @@ export interface LoginRequest {
    * @maxLength 128
    */
   password: string;
-  /**
-   * @minLength 1
-   * @maxLength 64
-   * @pattern ^[a-zA-Z0-9_.-]+$
-   */
   username: string;
 }

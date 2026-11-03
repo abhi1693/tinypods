@@ -27,7 +27,13 @@ class RedirectProvider(Protocol):
     """Describe browser challenge/exchange/logout without exposing OAuth details to routes."""
 
     async def authorization_url(
-        self, state: str, nonce: str, verifier: str, *, identity_provider_id: str | None = None
+        self,
+        state: str,
+        nonce: str,
+        verifier: str,
+        *,
+        identity_provider_id: str | None = None,
+        registration: bool = False,
     ) -> str:
         """Build a fresh authorization challenge for a server-owned transaction."""
         ...
@@ -77,7 +83,7 @@ class IdentityMappings:
         self.provider = provider
 
     async def resolve(self, identity: VerifiedIdentity) -> UUID:
-        """Map verified identity; only the first account of a new instance becomes its owner."""
+        """Map linked accounts; open registration admits new verified ordinary identities."""
         policy = identity_policy(self.settings, self.provider)
         if not policy.enabled or identity.issuer != policy.issuer:
             raise AuthError(403)
@@ -97,15 +103,13 @@ class IdentityMappings:
             ).one_or_none()
             if mapping is not None:
                 return mapping.user_id
-            # The singleton lock serializes local and external bootstrap together.
-            # The persisted first-owner marker prevents later sign-ins from claiming it.
-            first_user = installation.owner_id is None
-            user = User(username="oidc_" + uuid4().hex, is_owner=first_user)
+            # Closing registration never blocks existing linked accounts. A newly
+            # verified provider identity still needs application enrollment permission.
+            if not self.settings.auth_registration_enabled:
+                raise AuthError(403)
+            user = User(username="oidc_" + uuid4().hex, is_owner=False)
             session.add(user)
             await session.flush()
-            if first_user:
-                installation.owner_id = user.id
-                session.add(installation)
             session.add(
                 ExternalIdentity(issuer=identity.issuer, subject=identity.subject, user_id=user.id)
             )
@@ -209,6 +213,7 @@ class BrowserLogin:
             json.dumps(
                 [
                     self.settings.zitadel_enabled,
+                    self.settings.auth_registration_enabled,
                     self.settings.zitadel_refresh_enabled,
                     self.settings.zitadel_issuer,
                     self.settings.zitadel_client_id,
@@ -231,6 +236,7 @@ class BrowserLogin:
         browser_token: str | None = None,
         identity_provider_id: str | None = None,
         previous_refresh_token: str | None = None,
+        registration: bool = False,
     ) -> LoginStart:
         """Rate-limit initiation and persist a five-minute browser-bound challenge.
 
@@ -239,6 +245,8 @@ class BrowserLogin:
         """
         if not self.settings.zitadel_enabled:
             raise AuthError(404)
+        if registration and not self.settings.auth_registration_enabled:
+            raise AuthError(403)
         if identity_provider_id is not None and identity_provider_id not in {
             provider.id for provider in self.settings.zitadel_identity_providers
         }:
@@ -265,7 +273,11 @@ class BrowserLogin:
             else secrets.token_urlsafe(32)
         )
         url = await self.provider.authorization_url(
-            state, nonce, verifier, identity_provider_id=identity_provider_id
+            state,
+            nonce,
+            verifier,
+            identity_provider_id=identity_provider_id,
+            registration=registration,
         )
         async with self.database.transaction() as session:
             now = (await session.exec(select(func.clock_timestamp()))).one()

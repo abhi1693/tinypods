@@ -4,19 +4,59 @@ from datetime import datetime
 from typing import Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, Field, HttpUrl, SecretStr
+from pydantic import BaseModel, Field, HttpUrl, SecretStr, ValidationInfo, field_validator
+from pydantic_core import PydanticCustomError
 from tinypods_api.http.contracts import RequestDTO
 from tinypods_api.http.representations import Related, ResourceRead
 from tinypods_api.http.versioning import API_V1_PREFIX
 from tinypods_core.auth import Principal
+from tinypods_core.auth.contracts import AccountName, EmailAddress, Password
 from tinypods_core.db.models import User
 
 
 class LoginRequest(RequestDTO):
     """Username and password for a local account."""
 
-    username: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_.-]+$")
-    password: SecretStr = Field(min_length=15, max_length=128)
+    username: AccountName
+    password: Password
+
+
+class PasswordConfirmationRequest(RequestDTO):
+    """A password and matching confirmation."""
+
+    password: Password
+    password_confirmation: Password
+
+    @field_validator("password_confirmation")
+    @classmethod
+    def confirm_password(cls, value: SecretStr, info: ValidationInfo) -> SecretStr:
+        """Check confirmation on the server without putting either secret in errors."""
+        password = info.data.get("password")
+        if (
+            isinstance(password, SecretStr)
+            and value.get_secret_value() != password.get_secret_value()
+        ):
+            message = "The passwords do not match."
+            raise PydanticCustomError("password_mismatch", message, {"public_message": message})
+        return value
+
+
+class RegistrationRequest(PasswordConfirmationRequest):
+    """Credentials for registering a local account."""
+
+    username: AccountName
+
+
+class OwnerSetupRequest(PasswordConfirmationRequest):
+    """Email and credentials for initial owner setup."""
+
+    email: EmailAddress
+
+
+class SetupStatusResponse(BaseModel):
+    """Whether the token-authorized setup form is available."""
+
+    available: bool
 
 
 class UserRead(ResourceRead):
@@ -46,6 +86,10 @@ class IdentityResponse(BaseModel):
                 **fields,
             }
         )
+
+
+class RegistrationResponse(IdentityResponse):
+    """A new account ready to sign in; registration does not issue a session."""
 
 
 class LoginResponse(IdentityResponse):
@@ -81,17 +125,20 @@ class ProviderDescriptor(BaseModel):
     login_path: str
     logout_path: str = API_V1_PREFIX + "/auth/logout"
     refresh_path: str | None = None
+    registration_path: str | None = None
 
 
 class ProvidersResponse(BaseModel):
     """Available sign-in methods."""
 
     data: list[ProviderDescriptor]
+    registration_allowed: bool
 
 
 class LoginStartRequest(RequestDTO):
     """The page to open after signing in."""
 
+    action: Literal["login", "register"] = "login"
     return_to: str = Field(
         default="/",
         max_length=256,

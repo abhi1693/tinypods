@@ -6,6 +6,7 @@
  */
 import * as zod from "zod";
 
+export const authZitadelLoginStartBodyActionDefault = `login`;
 export const authZitadelLoginStartBodyIdentityProviderIdOneRegExp = new RegExp(
   "^[A-Za-z0-9_-]{1,255}$",
 );
@@ -14,6 +15,9 @@ export const authZitadelLoginStartBodyReturnToMax = 256;
 
 export const AuthZitadelLoginStartBody = zod
   .object({
+    action: zod
+      .enum(["login", "register"])
+      .default(authZitadelLoginStartBodyActionDefault),
     identity_provider_id: zod
       .union([
         zod

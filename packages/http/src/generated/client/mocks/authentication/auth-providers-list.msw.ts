@@ -39,8 +39,13 @@ export const getAuthProvidersListResponseMock = (
       faker.string.alpha({ length: { min: 10, max: 20 } }),
       null,
     ]),
+    registration_path: faker.helpers.arrayElement([
+      faker.string.alpha({ length: { min: 10, max: 20 } }),
+      null,
+    ]),
     type: faker.helpers.arrayElement(["password", "redirect"] as const),
   })),
+  registration_allowed: faker.datatype.boolean(),
   ...overrideResponse,
 });
 

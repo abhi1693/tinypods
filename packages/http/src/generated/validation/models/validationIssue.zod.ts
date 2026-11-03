@@ -6,10 +6,15 @@
  */
 import * as zod from "zod";
 
+export const validationIssueMessageDefault = `Enter a valid value.`;
 export const ValidationIssue = zod
   .object({
     code: zod.string(),
     location: zod.array(zod.union([zod.string(), zod.int()])),
+    message: zod
+      .string()
+      .default(validationIssueMessageDefault)
+      .describe("Human-readable explanation of this validation issue."),
   })
   .describe("A field that needs to be corrected.");
 

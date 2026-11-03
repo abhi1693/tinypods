@@ -40,6 +40,9 @@ async def providers(request: Request) -> ProvidersResponse:
                 type="password",
                 icon_url=settings.auth_local_icon_url,
                 login_path=API_V1_PREFIX + "/auth/login",
+                registration_path=API_V1_PREFIX + "/auth/register"
+                if settings.auth_registration_enabled
+                else None,
             )
         )
     if settings.zitadel_enabled:
@@ -59,12 +62,15 @@ async def providers(request: Request) -> ProvidersResponse:
                 ],
                 type="redirect",
                 login_path=API_V1_PREFIX + "/auth/providers/zitadel/start",
+                registration_path=API_V1_PREFIX + "/auth/providers/zitadel/start"
+                if settings.auth_registration_enabled
+                else None,
                 refresh_path=API_V1_PREFIX + "/auth/providers/zitadel/refresh"
                 if settings.zitadel_refresh_enabled
                 else None,
             )
         )
-    return ProvidersResponse(data=data)
+    return ProvidersResponse(data=data, registration_allowed=settings.auth_registration_enabled)
 
 
 def build_router(settings: Settings, *, include_disabled_providers: bool = False) -> APIRouter:

@@ -6,6 +6,7 @@
  */
 import * as zod from "zod";
 
+export const loginStartRequestActionDefault = `login`;
 export const loginStartRequestIdentityProviderIdOneRegExp = new RegExp(
   "^[A-Za-z0-9_-]{1,255}$",
 );
@@ -14,6 +15,9 @@ export const loginStartRequestReturnToMax = 256;
 
 export const LoginStartRequest = zod
   .object({
+    action: zod
+      .enum(["login", "register"])
+      .default(loginStartRequestActionDefault),
     identity_provider_id: zod
       .union([
         zod.string().regex(loginStartRequestIdentityProviderIdOneRegExp),

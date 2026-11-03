@@ -11,4 +11,6 @@
 export interface ValidationIssue {
   code: string;
   location: (string | number)[];
+  /** Human-readable explanation of this validation issue. */
+  message?: string;
 }

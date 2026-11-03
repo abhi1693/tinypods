@@ -92,3 +92,23 @@ def test_auth_origin_allows_only_same_or_configured_origins(origin: str | None) 
     with pytest.raises(HTTPException) as denied:
         check_origin(request)
     assert denied.value.status_code == 403
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_native_login_discovery_matches_backend_enforcement(enabled: bool) -> None:
+    """Turning native login off removes its form descriptor and HTTP login route."""
+    settings = Settings(environment="development", auth_local_enabled=enabled)
+    assert settings.zitadel_label == "Zitadel"
+    with TestClient(create_app(settings)) as client:
+        methods = client.get("/api/v1/auth/providers").json()["data"]
+        assert any(provider["type"] == "password" for provider in methods) is enabled
+        response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": "fixture",
+                "password": "a sufficiently long fixture password",
+            },
+            headers={"x-csrf-token": "login", "origin": "http://testserver"},
+        )
+        # Enabled route has no auth service in this deliberately database-free fixture.
+        assert response.status_code == (503 if enabled else 404)

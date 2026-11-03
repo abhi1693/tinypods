@@ -18,5 +18,6 @@ export interface ProviderDescriptor {
   login_path: string;
   logout_path?: string;
   refresh_path?: string | null;
+  registration_path?: string | null;
   type: ProviderDescriptorType;
 }

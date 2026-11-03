@@ -16,6 +16,10 @@ await build({
   stdin: {
     contents: [
       'export * from "./packages/http/src/generated/client/endpoints/index.ts";',
+      'export * from "./packages/http/src/errors.ts";',
+      'export * from "./packages/http/src/generated/client/mocks/authentication/auth-local-register.msw.ts";',
+      'export * from "./packages/http/src/generated/client/mocks/setup/setup-owner-create.msw.ts";',
+      'export * from "./packages/http/src/generated/client/mocks/setup/setup-status-get.msw.ts";',
       'export * from "./packages/http/src/generated/client/mocks/authentication/auth-local-login.msw.ts";',
       'export * from "./packages/http/src/generated/client/mocks/authentication/auth-session-get.msw.ts";',
       'export * from "./packages/http/src/generated/client/mocks/authentication/auth-providers-list.msw.ts";',
@@ -217,6 +221,180 @@ test("generated discovery and provider start preserve configured choices and log
     assert.equal(
       response.data.authorization_url,
       "https://issuer.test/authorize",
+    );
+  } finally {
+    query.clear();
+  }
+});
+
+test("server validation feedback is preserved without client-owned rules", async () => {
+  const query = client();
+  const info = {
+    code: "validation_error",
+    message: "Check the highlighted fields.",
+    request_id: "fixture",
+    issues: [
+      {
+        location: ["body", "username"],
+        code: "source_owned",
+        message: "Message supplied by the server.",
+      },
+      {
+        location: ["body", "username"],
+        code: "second",
+        message: "Second message.",
+      },
+      {
+        location: ["query", "token"],
+        code: "ignored",
+        message: "Not a form field.",
+      },
+    ],
+  };
+  let values;
+  server.use(
+    http.post(api.getAuthLocalLoginUrl(), async ({ request }) => {
+      values = await request.json();
+      return HttpResponse.json(info, { status: 422 });
+    }),
+  );
+  try {
+    const mutation = new MutationObserver(
+      query,
+      api.getAuthLocalLoginMutationOptions({
+        mutation: { retry: false, gcTime: 0 },
+      }),
+    );
+    await assert.rejects(
+      mutation.mutate({ data: { username: "", password: "" } }),
+      (error) => {
+        assert.deepEqual(api.getValidationFeedback(error), {
+          message: info.message,
+          fields: { username: "Message supplied by the server." },
+        });
+        return true;
+      },
+    );
+    assert.deepEqual(values, { username: "", password: "" });
+    assert.equal(
+      api.getRequestErrorMessage({ info }, "fallback"),
+      info.message,
+    );
+    assert.equal(
+      api.getRequestErrorMessage(
+        {
+          status: 429,
+          info: {
+            code: "http_429",
+            message: "Too Many Requests",
+          },
+        },
+        "fallback",
+        { 429: "Wait before retrying." },
+      ),
+      "Wait before retrying.",
+    );
+    assert.equal(
+      api.getRequestErrorMessage(
+        new Error("private transport detail"),
+        "Try again.",
+      ),
+      "Try again.",
+    );
+    assert.equal(
+      api.getRequestErrorMessage(
+        {
+          status: 503,
+          info: {
+            code: "setup_conflict",
+            message: "Server domain feedback.",
+          },
+        },
+        "fallback",
+        { 503: "Unavailable" },
+      ),
+      "Server domain feedback.",
+    );
+    assert.equal(
+      api.getValidationFeedback({ info: { ...info, code: "other" } }),
+      undefined,
+    );
+    assert.equal(api.getValidationFeedback(null), undefined);
+  } finally {
+    query.clear();
+  }
+});
+
+test("generated registration and setup use direct endpoints, CSRF and private token headers", async () => {
+  const query = client();
+  const data = {
+    username: "fixture@example.com",
+    password: credentials.password,
+    password_confirmation: credentials.password,
+  };
+  server.use(
+    api.getAuthLocalRegisterMockHandler(async ({ request }) => {
+      assert.equal(request.credentials, "include");
+      assert.equal(request.headers.get("x-csrf-token"), "login");
+      assert.deepEqual(await request.json(), data);
+      return api.getAuthLocalRegisterResponseMock({
+        user: { ...identity, username: data.username },
+      });
+    }),
+    api.getSetupStatusGetMockHandler(async ({ request }) => {
+      assert.equal(
+        request.headers.get("x-setup-token"),
+        "test-only-operator-token",
+      );
+      return api.getSetupStatusGetResponseMock({ available: true });
+    }),
+    api.getSetupOwnerCreateMockHandler(async ({ request }) => {
+      assert.equal(request.headers.get("x-csrf-token"), "login");
+      assert.equal(
+        request.headers.get("x-setup-token"),
+        "test-only-operator-token",
+      );
+      const values = await request.json();
+      assert.equal(values.email, data.username);
+      return api.getSetupOwnerCreateResponseMock({
+        user: { ...identity, is_owner: true },
+      });
+    }),
+  );
+  try {
+    const register = new MutationObserver(
+      query,
+      api.getAuthLocalRegisterMutationOptions({
+        mutation: { retry: false, gcTime: 0 },
+      }),
+    );
+    assert.equal((await register.mutate({ data })).data.user.is_owner, false);
+    const headers = { "x-setup-token": "test-only-operator-token" };
+    const access = await query.fetchQuery(
+      api.getSetupStatusGetQueryOptions({
+        fetch: { headers },
+        query: { retry: false, gcTime: 0 },
+      }),
+    );
+    assert.equal(access.data.available, true);
+    const setup = new MutationObserver(
+      query,
+      api.getSetupOwnerCreateMutationOptions({
+        fetch: { headers },
+        mutation: { retry: false, gcTime: 0 },
+      }),
+    );
+    assert.equal(
+      (
+        await setup.mutate({
+          data: {
+            email: data.username,
+            password: data.password,
+            password_confirmation: data.password_confirmation,
+          },
+        })
+      ).data.user.is_owner,
+      true,
     );
   } finally {
     query.clear();

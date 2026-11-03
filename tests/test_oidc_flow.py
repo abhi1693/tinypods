@@ -46,6 +46,7 @@ def enabled(settings: Settings, **updates: object) -> Settings:
         {
             **settings.model_dump(),
             "zitadel_enabled": True,
+            "auth_registration_enabled": True,
             "zitadel_issuer": ISSUER,
             "zitadel_client_id": "test-client",
             "zitadel_redirect_uri": CALLBACK,
@@ -61,17 +62,25 @@ class FakeProvider:
         """Retain challenge inputs for assertions without logging or echoing secrets."""
         self.challenges: list[tuple[str, str, str]] = []
         self.selected_identity_providers: list[str | None] = []
+        self.registration_prompts: list[bool] = []
         self.exchanges: list[tuple[str, str, str]] = []
         self.start_failure = False
 
     async def authorization_url(
-        self, state: str, nonce: str, verifier: str, *, identity_provider_id: str | None = None
+        self,
+        state: str,
+        nonce: str,
+        verifier: str,
+        *,
+        identity_provider_id: str | None = None,
+        registration: bool = False,
     ) -> str:
         """Create an opaque challenge and optionally model discovery failure."""
         if self.start_failure:
             raise AuthError(503)
         self.challenges.append((state, nonce, verifier))
         self.selected_identity_providers.append(identity_provider_id)
+        self.registration_prompts.append(registration)
         return ISSUER + "/authorize?" + urlencode({"state": state})
 
     async def exchange(self, code: str, nonce: str, verifier: str) -> VerifiedIdentity:

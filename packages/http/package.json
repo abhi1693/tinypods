@@ -7,7 +7,8 @@
     "./client": "./src/generated/client/endpoints/index.ts",
     "./models": "./src/generated/client/schemas/models/index.ts",
     "./validation": "./src/generated/validation/models/index.ts",
-    "./types": "./src/generated/client/schemas/types/index.ts"
+    "./types": "./src/generated/client/schemas/types/index.ts",
+    "./errors": "./src/errors.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

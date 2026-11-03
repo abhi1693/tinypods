@@ -3,17 +3,62 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    SecretStr,
+    ValidationError,
+    ValidatorFunctionWrapHandler,
+    WrapValidator,
+    field_validator,
+)
+from pydantic_core import PydanticCustomError
+
+
+def credential_feedback(value: object, handler: ValidatorFunctionWrapHandler) -> object:
+    """Attach public credential-field feedback at its validation source."""
+    try:
+        result: object = handler(value)
+        return result
+    except ValidationError as exc:
+        error = exc.errors()[0]
+        context = error.get("ctx") or {}
+        kind = error["type"]
+        if value == "":
+            message = "This field is required."
+        elif len(exc.errors()) > 1:
+            kind = "account_name_invalid"
+            message = "Enter a valid username or email address."
+        elif kind in {"string_too_short", "too_short"}:
+            message = f"Use at least {context['min_length']} characters."
+        elif kind in {"string_too_long", "too_long"}:
+            message = f"Use no more than {context['max_length']} characters."
+        else:
+            message = "Enter a valid value."
+        raise PydanticCustomError(kind, message, {**context, "public_message": message}) from None
+
+
+Username = Annotated[str, Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_.-]+$")]
+EmailAddress = Annotated[EmailStr, Field(max_length=254), WrapValidator(credential_feedback)]
+AccountName = Annotated[Username | EmailAddress, WrapValidator(credential_feedback)]
+Password = Annotated[
+    SecretStr,
+    Field(min_length=15, max_length=128),
+    WrapValidator(credential_feedback),
+]
 
 
 class Credentials(BaseModel):
     """Validate ASCII account names and bounded passwords without logging secrets."""
 
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
-    username: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_.-]+$")
-    password: SecretStr = Field(min_length=15, max_length=128)
+    username: AccountName
+    password: Password
 
     @field_validator("username")
     @classmethod

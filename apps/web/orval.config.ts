@@ -47,6 +47,18 @@ export default defineConfig({
         fetch: { forceSuccessResponse: true },
         query: { useSetQueryData: true },
         operations: {
+          setupOwnerCreate: {
+            requestOptions: {
+              credentials: "include",
+              headers: { "x-csrf-token": "login" },
+            },
+          },
+          authLocalRegister: {
+            requestOptions: {
+              credentials: "include",
+              headers: { "x-csrf-token": "login" },
+            },
+          },
           authLocalLogin: {
             requestOptions: {
               credentials: "include",

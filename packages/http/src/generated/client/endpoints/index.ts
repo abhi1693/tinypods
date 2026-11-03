@@ -4,3 +4,4 @@ export * from "./clusters/index";
 export * from "./default/index";
 export * from "./jobs/index";
 export * from "./repositories/index";
+export * from "./setup/index";

@@ -11,4 +11,5 @@ import type { ProviderDescriptor } from "../models/providerDescriptor";
  */
 export interface ProvidersResponse {
   data: ProviderDescriptor[];
+  registration_allowed: boolean;
 }

@@ -56,10 +56,12 @@ export const ProvidersResponse = zod
             .string()
             .default(providersResponseDataItemLogoutPathDefault),
           refresh_path: zod.union([zod.string(), zod.null()]).optional(),
+          registration_path: zod.union([zod.string(), zod.null()]).optional(),
           type: zod.enum(["password", "redirect"]),
         })
         .describe("A sign-in method available for this instance."),
     ),
+    registration_allowed: zod.boolean(),
   })
   .describe("Available sign-in methods.");
 
