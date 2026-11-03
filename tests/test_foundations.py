@@ -18,6 +18,7 @@ from urllib.request import urlopen
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from test_auth import auth_settings as auth_settings
 from tinypods_api.main import create_app
 from tinypods_core.logging import JsonFormatter, configure_logging
 from tinypods_core.settings import ConfigurationError, Settings, load_settings
@@ -198,14 +199,19 @@ def test_entry_points_reject_bad_environment_without_secrets(command: list[str])
     assert "private-credential" not in result.stdout + result.stderr
 
 
-def test_worker_stops_cleanly_on_sigterm() -> None:
+def test_worker_stops_cleanly_on_sigterm(auth_settings: Settings) -> None:
     """Verify worker stops cleanly on sigterm."""
     process = subprocess.Popen(
         ["tinypods-worker"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        env={**os.environ, "TINYPODS_WORKER_HEARTBEAT_INTERVAL": "0.05"},
+        env={
+            **os.environ,
+            "TINYPODS_DATABASE_URL": auth_settings.database_url.get_secret_value(),
+            "TINYPODS_VALKEY_URL": auth_settings.valkey_url.get_secret_value(),
+            "TINYPODS_JOB_QUEUE": "signal-test",
+        },
     )
     try:
         assert process.stderr is not None
@@ -216,10 +222,19 @@ def test_worker_stops_cleanly_on_sigterm() -> None:
             while time.monotonic() < deadline:
                 if selector.select(timeout=0.2):
                     line = process.stderr.readline()
-                    if "heartbeat" in line:
+                    if "RQ worker started" in line:
                         heartbeat = True
                         break
-            assert heartbeat, "Worker did not emit a heartbeat before the shutdown check"
+            assert heartbeat, "RQ worker did not start before the shutdown check"
+        from rq import Worker
+        from tinypods_core.jobs.queue import connection, queue_for
+
+        with connection(auth_settings) as redis:
+            target = queue_for(auth_settings.model_copy(update={"job_queue": "signal-test"}), redis)
+            deadline = time.monotonic() + 5
+            while not any(worker.get_state() == "idle" for worker in Worker.all(queue=target)):
+                assert time.monotonic() < deadline, "RQ signal handlers were not installed"
+                time.sleep(0.02)
         process.send_signal(signal.SIGTERM)
         stdout, stderr = process.communicate(timeout=10)
         assert process.returncode == 0, stderr

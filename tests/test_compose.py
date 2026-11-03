@@ -105,7 +105,6 @@ def compose_stack() -> Iterator[ComposeStack]:
             "TINYPODS_LOCAL_IMAGE_PREFIX": "tinypods-tests/" + name,
             "TINYPODS_PUBLISH_HOST": "127.0.0.1",
             "TINYPODS_PUBLISH_PORT": "0",
-            "TINYPODS_WORKER_HEARTBEAT_INTERVAL": "0.1",
         }
     )
     stack = ComposeStack(name, environment)
@@ -162,7 +161,7 @@ def test_compose_startup_health_and_private_services(compose_stack: ComposeStack
     assert services["api"]["environment"]["TINYPODS_API_HOST"] == "0.0.0.0"
     assert stack.run("exec", "-T", "api", "id", "-u") == "10001"
     deadline = time.monotonic() + 5
-    while "Worker process heartbeat" not in stack.run("logs", "--no-color", "worker"):
+    while "RQ worker started" not in stack.run("logs", "--no-color", "worker"):
         assert time.monotonic() < deadline
         time.sleep(0.1)
     for key, expected in [
@@ -322,7 +321,7 @@ def test_watch_rebuilds_api_worker_and_runs_new_migrations(
             probe.write_text('VALUE = "after"\n')
             (directory / "migrations/versions/0002_watch.py").write_text(
                 "from alembic import op\nrevision='0002_watch'\n"
-                "down_revision='0010_transactional_outbox'\n"
+                "down_revision='0010_jobs'\n"
                 "def upgrade():\n    op.execute('CREATE TABLE compose_watch_probe (id integer)')\n"
             )
             deadline = time.monotonic() + 150
@@ -426,3 +425,65 @@ def test_repository_sync_configuration_reaches_all_services(custom: bool) -> Non
         assert all(configured[key] == value for key, value in expected.items())
         if not custom:
             assert configured.get("TINYPODS_REPOSITORY_CREDENTIALS") is None
+
+
+def test_rq_job_executes_within_worker_limits(compose_stack: ComposeStack) -> None:
+    """Run a real durable Job under the shipped worker cgroup limits without an OOM/restart."""
+    stack = compose_stack
+    create = """
+import asyncio
+from tinypods_core.db import Database
+from tinypods_core.jobs.service import create_job
+from tinypods_core.jobs.queue import submit
+from tinypods_core.settings import load_settings
+async def main():
+    settings = load_settings()
+    async with Database(settings) as database:
+        async with database.transaction() as session:
+            job = await create_job(session, 'system.database_check', {})
+        assert await submit(database, settings, job.id)
+        print(job.id)
+asyncio.run(main())
+"""
+    identity = stack.run("exec", "-T", "api", "python", "-c", create)
+    read = """
+import asyncio, sys
+from uuid import UUID
+from tinypods_core.db import Database
+from tinypods_core.jobs import Job
+from tinypods_core.settings import load_settings
+async def main():
+    async with Database(load_settings()) as database, database.session() as session:
+        job = await session.get(Job, UUID(sys.argv[1]))
+        print(job.status)
+asyncio.run(main())
+"""
+    deadline = time.monotonic() + 30
+    while stack.run("exec", "-T", "api", "python", "-c", read, identity) != "succeeded":
+        assert time.monotonic() < deadline, "Worker did not complete the diagnostic"
+        time.sleep(0.1)
+    container = stack.run("ps", "-q", "worker")
+    state = subprocess.run(
+        ["docker", "inspect", "--format", "{{.State.OOMKilled}} {{.RestartCount}}", container],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    ).stdout.strip()
+    assert state == "false 0"
+    peak = int(stack.run("exec", "-T", "worker", "cat", "/sys/fs/cgroup/memory.peak"))
+    limit = int(stack.run("exec", "-T", "worker", "cat", "/sys/fs/cgroup/memory.max"))
+    assert limit == 256 * 1024 * 1024
+    assert peak <= limit
+    configuration = json.loads(stack.run("config", "--format", "json"))
+    assert float(configuration["services"]["worker"]["cpus"]) == 0.5
+    report = {
+        "kind": "development-host Compose execution smoke; not Pi qualification",
+        "job_status": "succeeded",
+        "worker_memory_peak_bytes": peak,
+        "worker_memory_limit_bytes": limit,
+        "worker_cpu_limit": 0.5,
+        "oom_killed": False,
+        "restart_count": 0,
+    }
+    (ROOT / "reports" / "job-compose-resource.json").write_text(json.dumps(report, indent=2) + "\n")

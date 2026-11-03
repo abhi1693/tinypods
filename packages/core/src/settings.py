@@ -272,7 +272,9 @@ class Settings(BaseSettings):
                 raise ValueError("Confidential Zitadel clients require a secret")
         return self
 
-    worker_heartbeat_interval: float = Field(default=30.0, gt=0, le=60)
+    job_reconcile_minutes: int = Field(default=30, ge=1, le=1440)
+    job_batch_size: int = Field(default=100, ge=1, le=1000)
+    job_queue: str = Field(default="tinypods", pattern=r"^[a-zA-Z0-9_-]{1,64}$")
 
     @field_validator("valkey_url", "cache_valkey_url", "rate_limit_valkey_url")
     @classmethod

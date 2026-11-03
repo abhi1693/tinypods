@@ -25,10 +25,11 @@ dependencies = [
     "kubernetes>=37.0.1,<38",
     "jsonschema>=4.26,<5",
     "semantic-version>=2.10,<3",
+    "rq==2.6.0",
 ]
 
 [tool.setuptools]
-packages = ["tinypods_core.secrets", "tinypods_core.clusters", "tinypods_core.repositories", "tinypods_core.applications", "tinypods_core.audit", "tinypods_core.auth.providers", "tinypods_core.auth.providers.local", "tinypods_core.auth.providers.zitadel", "tinypods_core", "tinypods_core.cache", "tinypods_core.db", "tinypods_core.logging", "tinypods_core.auth", "tinypods_core.rate_limit"]
+packages = ["tinypods_core.jobs", "tinypods_core.secrets", "tinypods_core.clusters", "tinypods_core.repositories", "tinypods_core.applications", "tinypods_core.audit", "tinypods_core.auth.providers", "tinypods_core.auth.providers.local", "tinypods_core.auth.providers.zitadel", "tinypods_core", "tinypods_core.cache", "tinypods_core.db", "tinypods_core.logging", "tinypods_core.auth", "tinypods_core.rate_limit"]
 
 [tool.setuptools.package-dir]
 tinypods_core = "src"

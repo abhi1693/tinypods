@@ -24,8 +24,7 @@ the migrated instance record. Liveness does not depend on the database.
 
 Settings use the `TINYPODS_` environment prefix; `.env.example` lists supported
 settings. Environment files are not loaded implicitly. Keep credentials out of
-commits. Valkey supports the optional public response cache; durable queue integration
-is tracked separately. See the [API cache guide](apps/api/README.md#public-response-cache)
+commits. Valkey supports the optional public response cache and private RQ job delivery. See the [API cache guide](apps/api/README.md#public-response-cache)
 for behavior and limits.
 
 ## PostgreSQL
@@ -69,8 +68,8 @@ be identical; migrations need schema-change permissions, not superuser access.
 Separate runtime and migration roles can be used when deploying with restricted
 runtime permissions. The migration lock prevents concurrent core migrators.
 
-The worker starts an idle, signal-aware process with a heartbeat. Queue dispatch
-and operation handlers are separate issues. The general plugin SDK and runtime remain deferred.
+The worker runs RQ with its built-in scheduler and durable Job reconciliation.
+See [durable jobs](docs/jobs.md) for task contracts, delivery and recovery limits. The general plugin SDK and runtime remain deferred.
 Supported authentication adapters and shared session policy live in core as described below.
 
 ## Checks
@@ -133,9 +132,9 @@ evicting queued work. The container has a separate 384 MiB memory limit. An
 evictable cache must use a different instance. PostgreSQL/Valkey health checks
 gate startup, and API readiness checks the migrated database.
 
-The worker currently logs its heartbeat but has no queue handlers. Compose tracks
-its running state; a queue-backed worker health probe belongs with queue runtime
-support. No heartbeat files or file-based health probes are used. The worker
+The worker consumes JSON RQ jobs and reconciles durable PostgreSQL work at startup
+and every configured interval (default 30 minutes). Compose tracks its running
+state; no heartbeat files or file-based probes are used. The worker
 override enables workers and configures replicas, CPU and memory independently.
 Omit it for an API-only setup, or enable the `workers` profile explicitly.
 
@@ -235,7 +234,7 @@ Core cache storage, database/migration access and logging live in `cache/`, `db/
 and `logging/` packages. API route caching lives in `cache/`; HTTP DTOs, errors,
 request middleware and schema export live in `http/`. CLI command implementations
 live in `commands/`, with process setup and failure handling in the entrypoint.
-The worker remains a single process module until it has additional responsibilities.
+The worker entry point composes RQ; shared Job behavior lives in core jobs/.
 
 Each package exposes its intended public API through `__init__.py` and an explicit
 `__all__`. Import shared contracts from the domain package; keep constants, codecs,
@@ -299,5 +298,5 @@ Region hierarchy and Kubernetes cluster registration are described in the [regio
 See [application installations](docs/application-installations.md) for intended
 targets, immutable configuration history and scoped application-secret APIs.
 
-See [transactional outbox persistence](docs/transactional-outbox.md) for typed
-transactional events, publication acknowledgment, payload bounds and delivery limits.
+See [durable jobs and RQ](docs/jobs.md) for transactional work, fixed task contracts,
+scheduling, recovery and delivery limits.
