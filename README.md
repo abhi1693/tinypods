@@ -307,3 +307,10 @@ The [console workspace](apps/web/README.md) contains the minimal Next.js App Rou
 scaffold and Orval-generated TanStack Query client/models. From the repository
 root, run `npm ci`, `npm run dev`, and `npm run check`. Feature screens and API/auth
 integration follow separately.
+
+The web service joins the same Compose project. Frontend-only Watch:
+`docker compose -f compose.yaml -f compose.build.yaml up --build --force-recreate --watch web`.
+Production runtime:
+`TINYPODS_WEB_BUILD_TARGET=runtime docker compose -f compose.yaml -f compose.build.yaml up --build --force-recreate -d --wait web`.
+Open http://localhost:3000. Add --profile web before up to include web in the full-stack Watch command.
+See [frontend run and Watch details](apps/web/README.md#docker-compose).

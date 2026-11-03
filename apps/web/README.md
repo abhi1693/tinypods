@@ -14,7 +14,7 @@ npm start
 Development/start bind to loopback on port 3000. This slice is a neutral App
 Router page, strict TypeScript, Tailwind v4/shadcn-compatible component wiring,
 and Orval/TanStack Query generation. Login, catalog screens, API proxy, cookie/CSRF
-integration, deployment controls and Compose hosting are separate follow-ups.
+integration, deployment controls are separate follow-ups. Compose run/watch is covered below.
 No credentials or backend URLs are configured by the scaffold.
 
 ## Structure
@@ -57,3 +57,42 @@ handling with a local fetch stub. Type checks compile the full generated surface
 CI runs these checks and a production build from `npm ci`; the existing backend CI
 continues to verify FastAPI/OpenAPI freshness. No backend feature changes are part
 of this scaffold.
+
+## Docker Compose
+
+Use the existing root Compose files and configured root .env (see the root
+README). Compose validates backend settings even when only web is selected;
+they are not passed into the web container. Compose Watch requires v2.22+.
+
+```sh
+# Production standalone runtime:
+TINYPODS_WEB_BUILD_TARGET=runtime docker compose -f compose.yaml -f compose.build.yaml up --build --force-recreate -d --wait web
+
+# Development with Watch (leave TINYPODS_WEB_BUILD_TARGET unset):
+docker compose -f compose.yaml -f compose.build.yaml up --build --force-recreate --watch web
+
+# Stop only the frontend:
+docker compose -f compose.yaml -f compose.build.yaml stop web
+```
+
+Open http://localhost:3000. Next binds to 0.0.0.0 inside the container; the
+published port defaults to host loopback. TINYPODS_WEB_PUBLISH_HOST and
+TINYPODS_WEB_PUBLISH_PORT override the host binding. Base compose.yaml uses
+TINYPODS_WEB_IMAGE for a prebuilt runtime image. The build overlay defaults to
+development; do not select runtime for Watch. Always start Watch with --build
+to include edits made while it was stopped. --force-recreate also ensures switching
+between development and runtime replaces the previous container.
+
+Watch syncs app and shared UI/theme/HTTP source for Next hot reload. Run
+npm run api:generate on the host after OpenAPI changes; generated output syncs
+normally. Root/workspace manifests, the root lockfile, TypeScript/Next/PostCSS
+configuration, Dockerfile and ignore changes rebuild with npm ci using all
+workspace manifests. Dependencies and .next remain container-owned; no host
+node_modules, build artifacts or environment files are synced. The optional web profile keeps existing backend-only commands unchanged; selecting
+web explicitly activates it. Add --profile web for a full-stack run. Web receives
+no backend credentials and has no backend/data-service dependency.
+
+The production stage copies only traced Next server dependencies and static
+assets. Node is digest-pinned and uses the existing optional Docker Hub registry
+prefix. No public assets directory exists yet; add its copy/watch rule when
+introducing public assets.
