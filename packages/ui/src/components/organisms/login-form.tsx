@@ -31,6 +31,12 @@ export function LoginForm({
 }: LoginFormProps) {
   const id = useId();
   const submitting = useRef(false);
+  const identityField = mode === "setup" ? "email" : "username";
+  const hasFieldError = Boolean(
+    fieldErrors?.[identityField] ||
+    fieldErrors?.password ||
+    (mode !== "login" && fieldErrors?.password_confirmation),
+  );
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending || disabled || submitting.current) return;
@@ -74,16 +80,16 @@ export function LoginForm({
       onSubmit={submit}
       noValidate
       aria-busy={pending}
-      className="mt-6 space-y-4"
+      className="mt-6 space-y-2"
     >
       <FormField
         label={mode === "setup" ? "Email" : "Email or username"}
         id={id + "-username"}
-        name={mode === "setup" ? "email" : "username"}
+        name={identityField}
         autoComplete={mode === "setup" ? "email" : "username"}
         type={mode === "setup" ? "email" : "text"}
         aria-required="true"
-        error={mode === "setup" ? fieldErrors?.email : fieldErrors?.username}
+        error={fieldErrors?.[identityField]}
         disabled={pending || disabled}
       />
       <FormField
@@ -108,8 +114,11 @@ export function LoginForm({
           disabled={pending || disabled}
         />
       )}
-      {error && (
-        <p className="text-sm text-red-700" role="alert">
+      {error && !hasFieldError && (
+        <p
+          className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+          role="alert"
+        >
           {error}
         </p>
       )}
