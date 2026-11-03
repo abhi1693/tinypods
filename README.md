@@ -294,22 +294,18 @@ targets, immutable configuration history and scoped application-secret APIs.
 See [durable jobs and RQ](docs/jobs.md) for transactional work, fixed task contracts,
 scheduling, recovery and delivery limits.
 
-## Frontend foundation
+## Web login
 
-The [console workspace](apps/web/README.md) contains the minimal Next.js App Router
-scaffold and Orval-generated TanStack Query client/models. From the repository
-root, run `npm ci`, `npm run dev`, and `npm run check`. Feature screens and API/auth
-integration follow separately.
+The [web workspace](apps/web/README.md) provides shared login UI, local credentials
+and backend-discovered provider choices through direct Orval-generated API calls.
+It includes per-operation Fetch/TanStack modules, generated Zod validation and MSW
+test factories. From the root, run npm ci, npm run dev and npm run check.
 
-The web service joins the same Compose project. Frontend-only Watch:
-`docker compose -f compose.yaml -f compose.build.yaml up --build --force-recreate --watch web`.
-Production runtime:
-`TINYPODS_WEB_BUILD_TARGET=runtime docker compose -f compose.yaml -f compose.build.yaml up --build --force-recreate -d --wait web`.
-Open http://localhost:3000. Add --profile web before up to include web in the full-stack Watch command.
-See [frontend run and Watch details](apps/web/README.md#docker-compose).
+The web service joins the existing Compose project. With COMPOSE_FILE configured
+and COMPOSE_PROFILES=local,web, use docker compose up --build --watch.
+See the frontend README for explicit-file commands, production image builds,
+private LAN publishing, browser API origins/CORS and current post-login behavior.
 
-The web app now provides functional local login and backend-discovered provider
-choices through direct generated API requests. See the frontend README for
-explicit API/CORS origins, shared UI, generated validators/mocks and current
-post-login behavior. Use npm run format / npm run format:check for supported
-repository files; Ruff continues to own Python formatting.
+Use npm run format / npm run format:check for supported repository files.
+Ruff remains the Python formatter/linter. Frontend checks run alongside backend
+checks in the existing unified CI workflow.
