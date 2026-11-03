@@ -27,7 +27,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
     return (
       <AuthShell>
         <h1 className="text-center text-lg font-semibold">
-          Sign in to TinyPods Admin
+          Sign in to TinyPods Admin Portal
         </h1>
         <p className="mt-2 text-center text-sm text-muted-foreground">
           Use an instance owner account.
@@ -46,7 +46,7 @@ export function OperatorShell({ children }: { children: ReactNode }) {
       <AuthShell>
         <h1 className="text-lg font-semibold">Owner access required</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          This account does not have access to TinyPods Admin.
+          This account does not have access to TinyPods Admin Portal.
         </p>
         {webOrigin && (
           <Link
@@ -73,40 +73,29 @@ export function OperatorShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-dvh md:grid md:grid-cols-[15rem_minmax(0,1fr)]">
-      <aside className="border-b border-border bg-card px-5 py-4 md:border-r md:border-b-0 md:py-6">
-        <div className="flex items-center gap-2.5 font-semibold">
-          <BrandMark className="size-7" />
-          <span>TinyPods Admin</span>
+    <div className="min-h-dvh">
+      <header className="border-b border-border bg-card">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-5 py-4 md:px-8">
+          <div className="flex items-center gap-2.5 font-semibold">
+            <BrandMark className="size-7" />
+            <span>TinyPods Admin Portal</span>
+          </div>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+            <p className="min-w-0 break-words text-muted-foreground">
+              <span className="font-semibold text-foreground">
+                {session.data.data.user.username}
+              </span>
+              <span className="ml-2">Instance owner</span>
+            </p>
+            {webOrigin && (
+              <Link href={webOrigin} className="underline underline-offset-4">
+                Back to TinyPods
+              </Link>
+            )}
+          </div>
         </div>
-        <nav aria-label="Operator navigation" className="mt-5 md:mt-8">
-          <Link
-            href="/"
-            aria-current="page"
-            className="block rounded-lg bg-accent/30 px-3 py-2 text-sm font-semibold"
-          >
-            Configuration
-          </Link>
-        </nav>
-      </aside>
-      <div className="min-w-0">
-        <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border bg-card px-5 py-4 text-sm md:px-8">
-          {webOrigin && (
-            <Link href={webOrigin} className="underline underline-offset-4">
-              Back to TinyPods
-            </Link>
-          )}
-          <p className="min-w-0 break-words text-muted-foreground">
-            <span className="font-semibold text-foreground">
-              {session.data.data.user.username}
-            </span>
-            <span className="ml-2">Instance owner</span>
-          </p>
-        </header>
-        <main className="mx-auto max-w-5xl px-5 py-8 md:px-8 md:py-10">
-          {children}
-        </main>
-      </div>
+      </header>
+      <main className="mx-auto max-w-6xl px-5 md:px-8">{children}</main>
     </div>
   );
 }

@@ -96,6 +96,9 @@ npm run api:generate
 npm run api:check
 ```
 
+The Orval configuration lives in `packages/http/orval.config.ts`. The user and
+admin apps use the same generated package exports from `@tinypods/http`.
+
 Orval's native Prettier formatter handles each output. Drift checks generate every
 output under an ignored repository-local temporary root, so the same formatter
 configuration resolves, compare all filenames/contents and delete only that

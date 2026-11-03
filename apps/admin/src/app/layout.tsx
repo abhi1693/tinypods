@@ -5,8 +5,8 @@ import { OperatorShell } from "@/components/operator-shell";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "TinyPods Admin",
-  description: "Operator configuration for TinyPods.",
+  title: "TinyPods Admin Portal",
+  description: "Administration for TinyPods.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

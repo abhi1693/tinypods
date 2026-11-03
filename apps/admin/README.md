@@ -1,6 +1,6 @@
-# TinyPods Admin
+# TinyPods Admin Portal
 
-TinyPods Admin is a separate Next.js app. For local Compose development, add
+TinyPods Admin Portal is a separate Next.js app. For local Compose development, add
 `admin` to `COMPOSE_PROFILES`. The service publishes to loopback on port 3001 by
 default. Set `TINYPODS_ADMIN_PUBLISH_HOST` and `TINYPODS_ADMIN_PUBLISH_PORT` for
 the desired listener.
@@ -16,6 +16,5 @@ admin source and shared auth, UI, theme, and generated API sources. The
 `TINYPODS_ADMIN_BUILD_TARGET` option selects the development or standalone runtime
 image. Supply public origins at build time for standalone images.
 
-The API checks the instance-owner policy before the operator shell renders.
-Configuration shows the registration policy and sign-in methods from the
-existing authentication discovery endpoint.
+The API checks the instance-owner policy before the Admin Portal shell renders.
+Sign-in methods come from the existing authentication discovery endpoint.

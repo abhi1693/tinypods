@@ -6851,7 +6851,7 @@
             "description": "Gateway Timeout"
           }
         },
-        "summary": "Verify access to the operator portal",
+        "summary": "Verify access to the Admin Portal",
         "tags": [
           "Authentication"
         ]

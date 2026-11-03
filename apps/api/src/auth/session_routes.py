@@ -35,7 +35,7 @@ async def session_identity(principal: PrincipalDependency) -> IdentityResponse:
 @router.get(
     "/owner-session",
     operation_id=build_operation_id("auth", "ownerSession", "get"),
-    summary="Verify access to the operator portal",
+    summary="Verify access to the Admin Portal",
     response_model=IdentityResponse,
 )
 async def owner_session(

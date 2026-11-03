@@ -112,7 +112,7 @@ export const getAuthOwnerSessionGetUrl = () => {
 
 /**
  * Return the current identity after checking the platform owner policy.
- * @summary Verify access to the operator portal
+ * @summary Verify access to the Admin Portal
  */
 export const authOwnerSessionGet = async (
   options?: RequestInit,
@@ -259,7 +259,7 @@ export function useAuthOwnerSessionGet<
   queryKey: DataTag<QueryKey, TData, TError>;
 };
 /**
- * @summary Verify access to the operator portal
+ * @summary Verify access to the Admin Portal
  */
 
 export function useAuthOwnerSessionGet<
@@ -291,7 +291,7 @@ export function useAuthOwnerSessionGet<
 }
 
 /**
- * @summary Verify access to the operator portal
+ * @summary Verify access to the Admin Portal
  */
 export const useSetAuthOwnerSessionGetQueryData = () => {
   const queryClient = useQueryClient();
