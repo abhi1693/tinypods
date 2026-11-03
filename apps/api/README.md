@@ -26,7 +26,7 @@ These are project rules, not requirements imposed by FastAPI.
 - Follow the shared [documentation guidance](../../CONTRIBUTING.md#documentation-and-comments). Every route needs a meaningful docstring. The exporter checks public routes for a docstring and nonblank OpenAPI description. Document purpose, response semantics and material status behavior.
 - Use PageParams (limit 1–100, default 25; offset >= 0) and Page[ResponseDTO] for collections. Use deterministic ordering with a unique tie-breaker. Declare query binding explicitly when using PageParams.
 - Use OperationStatus for queued work and HTTP 202 when creating an operation. Use HTTP 201 for resource creation and 204 for a successful empty response where appropriate.
-- Use ErrorResponse for errors. Its request_id matches the x-request-id header. Validation issues expose locations and codes, not input values or validator context. HTTP exceptions use standard status messages; unexpected failures use a fixed message. Existing logging is unchanged.
+- Use ErrorResponse for errors. Its request_id matches the x-request-id header. Validation issues expose locations, codes and safe source-owned messages, not input values or validator context. HTTP exceptions use standard status messages; unexpected failures use a fixed message. Existing logging is unchanged.
 - Keep routes thin: inject services and sessions, await work, then return DTOs. Preserve transaction ownership in services and keep blocking database calls out of async request paths.
 
 ## Current coverage and remaining work
@@ -64,7 +64,6 @@ uv run tinypods-openapi
 
 The sync script generates matching versions in every workspace pyproject.toml. CI rejects drift. These generated metadata values let each setuptools package build on its own without reaching outside its directory. Runtime code reads the installed tinypods-core distribution version; the API and OpenAPI export use that same value. No source-checkout file is required at runtime.
 
-
 ## Public response cache
 
 GET /api/v1/info is the initial opt-in metadata endpoint. Installing CachedReadRoute does not enable caching automatically. Only a GET endpoint with an explicit CachePolicy opts in. Current health/readiness and ordinary routes have no policy and run live; there is no special path-name blacklist. A future public route can opt in with CachedReadRoute and CachePolicy only if its response is independent of identity, cookies, authorization and varying request headers. Never opt authenticated or personalized routes into the shared cache.
@@ -79,11 +78,9 @@ Await ResponseCache.invalidate only after a successful committed source change. 
 
 The default Compose service keeps its AOF and noeviction policy, stays on the private data network and runs non-root with dropped capabilities. Cache and queue still share capacity: use the separate cache URL when resource policies need to differ. Cached data is disposable, not a source of truth. In-process public cache policy is a developer contract, not an authorization sandbox.
 
-
 Cache storage errors are handled at the narrow Redis/socket boundary so optional I/O can fail open. Invalid cached JSON/DTO values are handled separately as data errors. Endpoint exceptions and cancellation are not swallowed. Publication and lock cleanup suppress only CacheUnavailable; cleanup is awaited under a cancellation shield with the same bounded socket deadlines. Pool shutdown is awaited through the application lifespan even if another resource's cleanup fails.
 
 JSON identity construction, hashing and DTO serialization remain bounded synchronous CPU work. They do not perform network I/O. Cache methods, including invalidation and close, must be awaited; they are not thread-pool adapters.
-
 
 ## Authentication and service authorization
 
@@ -144,7 +141,6 @@ resources, the admin sync action, CLI command, normalized release references and
 operator network/credential configuration.
 
 Read relationships use [nested public representations](../../docs/nested-api-representations.md); write inputs and filters retain UUID foreign keys.
-
 
 ## Release publication
 

@@ -12,8 +12,8 @@ jobs:
   python:
     uses: abhi1693/actions/.github/workflows/python-ci.yml@4bc25a3100cbfbece517ddad161d59d13c029675
     with:
-      python-version: '3.13'
-      uv-version: '0.12.21'
+      python-version: "3.13"
+      uv-version: "0.12.21"
       sync-command: uv sync --locked --all-packages --no-editable
       lint-command: uv run --no-sync python scripts/sync_version.py --check && uv run --no-sync ruff check . && uv run --no-sync ruff format --check . && uv run --no-sync mypy
       test-command: |
@@ -161,7 +161,8 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
+      - run: npm run format:check
       - run: npm run check
       - run: npm run build
         env:
-          NEXT_TELEMETRY_DISABLED: '1'
+          NEXT_TELEMETRY_DISABLED: "1"

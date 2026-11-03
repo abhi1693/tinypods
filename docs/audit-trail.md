@@ -68,7 +68,6 @@ controls do not constrain a database owner who can alter triggers or schemas.
 Retention is operator-triggered only; no automatic expiry or scheduler is added. No public history API, catalog models,
 outbox, metrics, SDK or deletion-protection framework is included.
 
-
 ## Explicit operator maintenance
 
 These commands use the direct migration connection and default to dry-run reports:

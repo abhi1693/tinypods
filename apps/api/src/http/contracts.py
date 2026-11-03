@@ -3,7 +3,7 @@
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, AliasPath, BaseModel, ConfigDict, Field
 
 
 class RequestDTO(BaseModel):
@@ -51,8 +51,13 @@ class ReadinessResponse(BaseModel):
 class ValidationIssue(BaseModel):
     """A field that needs to be corrected."""
 
-    location: list[str | int]
-    code: str
+    location: list[str | int] = Field(validation_alias=AliasChoices("location", "loc"))
+    code: str = Field(validation_alias=AliasChoices("code", "type"))
+    message: str = Field(
+        default="Enter a valid value.",
+        validation_alias=AliasChoices("message", AliasPath("ctx", "public_message")),
+        description="Human-readable explanation of this validation issue.",
+    )
 
 
 class ErrorResponse(BaseModel):

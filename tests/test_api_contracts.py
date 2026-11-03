@@ -110,7 +110,13 @@ def test_errors_are_typed_correlated_and_do_not_echo_inputs() -> None:
         denied = client.get("/test/denied")
         assert denied.headers["www-authenticate"] == "Bearer"
         validation = client.post("/test/items", json={"name": "ok", "count": "bad"}).json()
-        assert validation["issues"] == [{"location": ["body", "count"], "code": "int_parsing"}]
+        assert validation["issues"] == [
+            {
+                "location": ["body", "count"],
+                "code": "int_parsing",
+                "message": "Enter a valid value.",
+            }
+        ]
         assert client.post("/test/items", json={"name": "ok", "count": 1}).json() == {
             "name": "ok",
             "count": 1,

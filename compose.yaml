@@ -11,6 +11,7 @@ x-runtime: &runtime
   networks: [default, data]
   environment: &environment
     TINYPODS_ENVIRONMENT: ${TINYPODS_ENVIRONMENT:-production}
+    TINYPODS_BROWSER_ORIGINS: ${TINYPODS_BROWSER_ORIGINS:-[]}
     TINYPODS_DATABASE_URL: ${TINYPODS_DATABASE_URL:?Set TINYPODS_DATABASE_URL}
     TINYPODS_MIGRATION_DATABASE_URL:
     TINYPODS_DATABASE_MODE: ${TINYPODS_DATABASE_MODE:-direct}
@@ -25,6 +26,8 @@ x-runtime: &runtime
     TINYPODS_SECRET_KEY_FILE:
     TINYPODS_SECRET_KEYS:
     TINYPODS_SECRET_ACTIVE_KEY_ID:
+    TINYPODS_SETUP_TOKEN:
+    TINYPODS_AUTH_REGISTRATION_ENABLED: ${TINYPODS_AUTH_REGISTRATION_ENABLED:-false}
     TINYPODS_AUTH_LOCAL_ENABLED: ${TINYPODS_AUTH_LOCAL_ENABLED:-true}
     TINYPODS_ZITADEL_ENABLED: ${TINYPODS_ZITADEL_ENABLED:-false}
     TINYPODS_ZITADEL_ISSUER:
@@ -53,11 +56,11 @@ x-runtime: &runtime
     TINYPODS_LOG_LEVEL: ${TINYPODS_LOG_LEVEL:-INFO}
   logging:
     driver: json-file
-    options: {max-size: 10m, max-file: '3'}
+    options: { max-size: 10m, max-file: "3" }
 
 x-local-ready: &local-ready
-  postgres: {condition: service_healthy, required: false}
-  valkey: {condition: service_healthy, required: false}
+  postgres: { condition: service_healthy, required: false }
+  valkey: { condition: service_healthy, required: false }
 
 x-healthcheck: &healthcheck
   interval: 10s
@@ -68,16 +71,25 @@ x-healthcheck: &healthcheck
 services:
   web:
     profiles: [web]
+    environment:
+      TINYPODS_WEB_DEV_HOST: ${TINYPODS_WEB_PUBLISH_HOST:-127.0.0.1}
+      NEXT_PUBLIC_TINYPODS_API_ORIGIN: ${NEXT_PUBLIC_TINYPODS_API_ORIGIN:-http://localhost:8000}
     image: ${TINYPODS_WEB_IMAGE:-tinypods/web:local}
     init: true
     restart: unless-stopped
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     ports:
-      - '${TINYPODS_WEB_PUBLISH_HOST:-127.0.0.1}:${TINYPODS_WEB_PUBLISH_PORT:-3000}:3000'
+      - "${TINYPODS_WEB_PUBLISH_HOST:-127.0.0.1}:${TINYPODS_WEB_PUBLISH_PORT:-3000}:3000"
     healthcheck:
       <<: *healthcheck
-      test: [CMD, node, -e, 'fetch("http://127.0.0.1:3000").then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))']
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          'fetch("http://127.0.0.1:3000").then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))',
+        ]
 
   postgres:
     image: ${TINYPODS_IMAGE_REGISTRY:+${TINYPODS_IMAGE_REGISTRY}/docker.io/library/}postgres:17-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
@@ -95,7 +107,7 @@ services:
 
   # Queue and optional response cache share this non-evicting, private service.
   valkey:
-    user: '999:999'
+    user: "999:999"
     read_only: true
     tmpfs: ["/tmp:size=16m,mode=1777"]
     cap_drop: [ALL]
@@ -104,10 +116,29 @@ services:
     profiles: [local]
     restart: unless-stopped
     # Validate the password before starting the non-root server.
-    entrypoint: [tini, --, sh, -ec, 'test -n "$$VALKEYCLI_AUTH" || { echo "Set VALKEY_PASSWORD" >&2; exit 1; }; exec docker-entrypoint.sh "$$@"', --]
-    command: [valkey-server, --appendonly, 'yes', --appendfsync, everysec,
-              --maxmemory, 128mb, --maxmemory-policy, noeviction,
-              --requirepass, '${VALKEY_PASSWORD:-}']
+    entrypoint:
+      [
+        tini,
+        --,
+        sh,
+        -ec,
+        'test -n "$$VALKEYCLI_AUTH" || { echo "Set VALKEY_PASSWORD" >&2; exit 1; }; exec docker-entrypoint.sh "$$@"',
+        --,
+      ]
+    command:
+      [
+        valkey-server,
+        --appendonly,
+        "yes",
+        --appendfsync,
+        everysec,
+        --maxmemory,
+        128mb,
+        --maxmemory-policy,
+        noeviction,
+        --requirepass,
+        "${VALKEY_PASSWORD:-}",
+      ]
     environment:
       VALKEYCLI_AUTH: ${VALKEY_PASSWORD:-}
     # Leave headroom for AOF rewrite buffers and copy-on-write pages.
@@ -120,7 +151,7 @@ services:
 
   migrate:
     <<: *runtime
-    restart: 'no'
+    restart: "no"
     command: [tinypods, db, upgrade]
     depends_on: *local-ready
 
@@ -133,15 +164,21 @@ services:
       TINYPODS_ZITADEL_REFRESH_ENCRYPTION_KEYS: ${TINYPODS_ZITADEL_REFRESH_ENCRYPTION_KEYS:-[]}
       TINYPODS_ZITADEL_REFRESH_MAX_AGE_SECONDS: ${TINYPODS_ZITADEL_REFRESH_MAX_AGE_SECONDS:-2592000}
       TINYPODS_API_HOST: 0.0.0.0
-      TINYPODS_API_PORT: '8000'
+      TINYPODS_API_PORT: "8000"
     ports:
-      - '${TINYPODS_PUBLISH_HOST:-0.0.0.0}:${TINYPODS_PUBLISH_PORT:-8000}:8000'
+      - "${TINYPODS_PUBLISH_HOST:-0.0.0.0}:${TINYPODS_PUBLISH_PORT:-8000}:8000"
     depends_on:
       <<: *local-ready
-      migrate: {condition: service_completed_successfully}
+      migrate: { condition: service_completed_successfully }
     healthcheck:
       <<: *healthcheck
-      test: [CMD, python, -c, 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/readyz", timeout=3)']
+      test:
+        [
+          CMD,
+          python,
+          -c,
+          'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/readyz", timeout=3)',
+        ]
 
   worker:
     <<: *runtime
@@ -153,11 +190,11 @@ services:
       TINYPODS_JOB_BATCH_SIZE: ${TINYPODS_JOB_BATCH_SIZE:-100}
     depends_on:
       <<: *local-ready
-      migrate: {condition: service_completed_successfully}
+      migrate: { condition: service_completed_successfully }
 
 volumes:
   postgres-data:
   valkey-data:
 
 networks:
-  data: {internal: true}
+  data: { internal: true }

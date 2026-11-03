@@ -96,3 +96,13 @@ exact statement/branch counts and missing-code lists rather than a percentage
 rounded for display. Keep the existing API/core/CLI/worker scope intact; add
 behavioral regressions or controlled fault injection rather than hiding reachable
 code through exclusions.
+
+## Frontend and repository formatting
+
+Use the pinned root Prettier via npm run format or npm run format:check for
+supported TypeScript/TSX, JavaScript, JSON, YAML, CSS and Markdown. Ruff remains
+the Python formatter/linter. Ignore rules exclude dependencies, build/runtime
+artifacts and the backend-owned canonical OpenAPI JSON to avoid format loops.
+Orval uses its native Prettier formatter; regenerate output rather than editing it.
+The frontend job in the existing ci.yml checks formatting alongside generation,
+tests, types and build.

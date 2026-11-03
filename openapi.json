@@ -2172,11 +2172,20 @@
             "writeOnly": true
           },
           "username": {
-            "maxLength": 64,
-            "minLength": 1,
-            "pattern": "^[a-zA-Z0-9_.-]+$",
-            "title": "Username",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[a-zA-Z0-9_.-]+$",
+                "type": "string"
+              },
+              {
+                "format": "email",
+                "maxLength": 254,
+                "type": "string"
+              }
+            ],
+            "title": "Username"
           }
         },
         "required": [
@@ -2221,6 +2230,15 @@
         "additionalProperties": false,
         "description": "The page to open after signing in.",
         "properties": {
+          "action": {
+            "default": "login",
+            "enum": [
+              "login",
+              "register"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
           "identity_provider_id": {
             "anyOf": [
               {
@@ -2235,6 +2253,7 @@
           },
           "return_to": {
             "default": "/",
+            "description": "Relative API path or an absolute URL on a configured trusted browser origin.",
             "maxLength": 256,
             "title": "Return To",
             "type": "string"
@@ -2403,6 +2422,41 @@
           "schedulable"
         ],
         "title": "NodeCapability",
+        "type": "object"
+      },
+      "OwnerSetupRequest": {
+        "additionalProperties": false,
+        "description": "Email and credentials for initial owner setup.",
+        "properties": {
+          "email": {
+            "format": "email",
+            "maxLength": 254,
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 15,
+            "title": "Password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "password_confirmation": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 15,
+            "title": "Password Confirmation",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "password",
+          "password_confirmation",
+          "email"
+        ],
+        "title": "OwnerSetupRequest",
         "type": "object"
       },
       "Page_ApplicationRead_": {
@@ -2974,6 +3028,17 @@
             ],
             "title": "Refresh Path"
           },
+          "registration_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registration Path"
+          },
           "type": {
             "enum": [
               "password",
@@ -3027,10 +3092,15 @@
             },
             "title": "Data",
             "type": "array"
+          },
+          "registration_allowed": {
+            "title": "Registration Allowed",
+            "type": "boolean"
           }
         },
         "required": [
-          "data"
+          "data",
+          "registration_allowed"
         ],
         "title": "ProvidersResponse",
         "type": "object"
@@ -3289,6 +3359,64 @@
           "slug"
         ],
         "title": "RegionWrite",
+        "type": "object"
+      },
+      "RegistrationRequest": {
+        "additionalProperties": false,
+        "description": "Credentials for registering a local account.",
+        "properties": {
+          "password": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 15,
+            "title": "Password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "password_confirmation": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 15,
+            "title": "Password Confirmation",
+            "type": "string",
+            "writeOnly": true
+          },
+          "username": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[a-zA-Z0-9_.-]+$",
+                "type": "string"
+              },
+              {
+                "format": "email",
+                "maxLength": 254,
+                "type": "string"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "password",
+          "password_confirmation",
+          "username"
+        ],
+        "title": "RegistrationRequest",
+        "type": "object"
+      },
+      "RegistrationResponse": {
+        "description": "A new account ready to sign in; registration does not issue a session.",
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/UserBrief"
+          }
+        },
+        "required": [
+          "user"
+        ],
+        "title": "RegistrationResponse",
         "type": "object"
       },
       "ReleaseBrief": {
@@ -4305,6 +4433,20 @@
         "title": "SecretVersionRead",
         "type": "object"
       },
+      "SetupStatusResponse": {
+        "description": "Whether the token-authorized setup form is available.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "available"
+        ],
+        "title": "SetupStatusResponse",
+        "type": "object"
+      },
       "SourceType": {
         "description": "Supported Helm chart sources.",
         "enum": [
@@ -4482,6 +4624,12 @@
             },
             "title": "Location",
             "type": "array"
+          },
+          "message": {
+            "default": "Enter a valid value.",
+            "description": "Human-readable explanation of this validation issue.",
+            "title": "Message",
+            "type": "string"
           }
         },
         "required": [
@@ -7531,6 +7679,155 @@
         "x-tinypods-rate-limit": {
           "limit": 10,
           "name": "oidc_start",
+          "window_ms": 60000
+        }
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "description": "Register a local account, then sign in with your new credentials.\n\nRegistration must be available for this instance. Provide the sign-in header\nshown in the request parameters. No session is issued by this request.",
+        "operationId": "authLocalRegister",
+        "parameters": [
+          {
+            "description": "Set this header to login when starting sign-in.",
+            "example": "login",
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": true,
+            "schema": {
+              "const": "login",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationResponse"
+                }
+              }
+            },
+            "description": "Account created. Sign in with the new credentials."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Registration is closed or the browser request was not verified."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "description": "An account could not be created with those details."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "description": "Too many registration attempts."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "Register with a local account",
+        "tags": [
+          "Authentication"
+        ],
+        "x-tinypods-rate-limit": {
+          "limit": 10,
+          "name": "registration",
           "window_ms": 60000
         }
       }
@@ -19939,6 +20236,350 @@
         }
       }
     },
+    "/api/v1/setup": {
+      "get": {
+        "description": "Allow the setup form only with a valid token and an uninitialized installation.",
+        "operationId": "setupStatusGet",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-setup-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Setup-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "Check owner setup access",
+        "tags": [
+          "Setup"
+        ]
+      },
+      "post": {
+        "description": "Create the owner once with an operator token, email and matching passwords.\n\nThe installation row lock and account creation share one transaction. Setup\ncannot create another owner after initialization, even with the original token.",
+        "operationId": "setupOwnerCreate",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-setup-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Setup-Token"
+            }
+          },
+          {
+            "description": "Set this header to login when starting sign-in.",
+            "example": "login",
+            "in": "header",
+            "name": "x-csrf-token",
+            "required": true,
+            "schema": {
+              "const": "login",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerSetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Method Not Allowed"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "Initialize the owner account",
+        "tags": [
+          "Setup"
+        ],
+        "x-tinypods-rate-limit": {
+          "limit": 10,
+          "name": "setup",
+          "window_ms": 60000
+        }
+      }
+    },
     "/healthz": {
       "get": {
         "description": "Check whether the service is running. Connected services are not checked.",
@@ -20217,5 +20858,15 @@
         "summary": "Check whether the service is ready"
       }
     }
-  }
+  },
+  "servers": [
+    {
+      "url": "{origin}",
+      "variables": {
+        "origin": {
+          "default": "http://localhost:8000"
+        }
+      }
+    }
+  ]
 }

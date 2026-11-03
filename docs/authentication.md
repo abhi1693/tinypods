@@ -3,7 +3,8 @@
 TinyPods owns identities, durable sessions and resource authorization. Built-in
 provider adapters support local username/password authentication and Zitadel OIDC.
 Provider discovery exposes the enabled login methods through the API. API keys,
-organization management and a browser console are not implemented.
+organization management is not implemented. The web console provides login,
+public registration and token-gated first-owner setup.
 
 ## Enable methods explicitly
 
@@ -17,15 +18,29 @@ API schema. The offline client contract lists all supported provider operations.
 Disabling local login is explicit; external failure never activates local fallback.
 Provider configuration is deployment/operator-owned, not a public mutation API.
 
-Run migrations explicitly before serving requests. Bootstrap the owner from the
-trusted backend host with `tinypods auth bootstrap` (Compose: `docker compose run
---rm api tinypods auth bootstrap`). It prompts for an ASCII account name and a
-hidden, confirmed 15-128 character password. Names normalize to lowercase;
-passwords are not trimmed or normalized. Concurrent bootstraps serialize on the
-instance row, and later attempts cannot overwrite the owner. No default
-credentials, password arguments or bootstrap HTTP endpoint exist. Argon2id uses
-argon2-cffi's RFC 9106 low-memory profile; at most two hash jobs per process run
-outside the event loop. Account identity and optional local credentials are separate.
+Run migrations explicitly before serving requests. Generate an operator secret with
+`tinypods auth setup-token`, configure TINYPODS_SETUP_TOKEN on the backend and
+privately open `/setup?token=<secret>`. The page scrubs the token immediately and
+requires API authorization before displaying email/password/confirmation fields.
+The API creates the first owner and closes setup atomically using the locked
+installation marker. No default secret or credentials exist. Remove the configured
+secret after setup. External ingress logs must omit the setup URL query.
+See [web setup details](../apps/web/README.md#registration-and-first-owner-setup).
+
+The trusted backend CLI `tinypods auth bootstrap` remains an operator recovery
+path. It accepts an ASCII username or validated email login name and a hidden,
+confirmed 15-128 character password. Names normalize to lowercase; passwords
+are not trimmed or normalized. Existing owners and installation data are retained.
+Concurrent setup/bootstrap attempts serialize on the same installation row.
+Argon2id uses argon2-cffi's RFC 9106 low-memory profile; at most two hash jobs per
+process run outside the event loop. Identity and local credentials are separate.
+
+Public registration is controlled by TINYPODS_AUTH_REGISTRATION_ENABLED, false
+by default. When enabled, `/auth/register` creates an ordinary account immediately;
+the same flag controls new federated identity admission. Existing accounts keep
+sign-in access when registration is closed. Public signup never initializes owner
+access. Hosted signup uses the supported OIDC flow with prompt=create, subject to
+upstream provider policy; TinyPods cannot disable external provider account creation.
 
 ## Operator access management
 
@@ -39,9 +54,9 @@ the new rights on their next authorization check. No HTTP owner-management route
 is exposed. Internal installation table/field names remain compatible; the user-facing
 term is instance.
 
-For external-only instances, restrict initial sign-in through the configured
-Zitadel project/organization before opening the new service: the first admitted
-user becomes its owner. No separate local-password bootstrap is needed.
+For hosted-only sign-in, initialize ownership through token-gated setup or the
+operator CLI, then explicitly link the verified provider subject to that account.
+Verify the hosted sign-in before disabling native login.
 
 ## Zitadel setup
 
@@ -88,12 +103,10 @@ local accounts use the frontend's username/password form. Organization selection
 is checked at sign-in; it does not continuously poll membership for existing
 sessions. Provider authentication and instance-owner rights remain separate.
 
-There is no per-user admission list. A verified
-`(issuer, sub)` creates a core account with no local password. On a fresh instance,
-only the very first admitted account becomes the instance owner. Local bootstrap
-and verified Zitadel admission share a database lock, so simultaneous sign-ins
-cannot assign multiple bootstrap owners. Subsequent accounts remain non-owners.
-Revoking ownership never reopens bootstrap.
+There is no per-user admission list. When public registration is enabled, a verified
+(issuer, sub) creates an ordinary core account with no local password. Existing
+mappings continue to work with registration disabled. Federated admission never
+claims the installation owner marker. Revoking ownership never reopens setup.
 Email, names and organization/role claims never link accounts or elevate access.
 To link a provider subject to an existing account (including the existing owner),
 run `tinypods auth link PROVIDER SUBJECT USER_ID` (currently `zitadel` is the supported external provider) from a trusted operator shell. Obtain the

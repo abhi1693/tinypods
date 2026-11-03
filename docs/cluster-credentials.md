@@ -114,8 +114,18 @@ separate secret resources are not exposed. Metadata is shaped as:
 
 ```json
 {
-  "cluster": {"id": "cluster-uuid", "name": "Cluster 1", "slug": "cluster-1", "region": {"id": "region-uuid", "name": "Gurugram", "slug": "gurugram", "flag": null}},
-  "active_version": {"id": "version-uuid", "version": 1, "revoked_at": null}
+  "cluster": {
+    "id": "cluster-uuid",
+    "name": "Cluster 1",
+    "slug": "cluster-1",
+    "region": {
+      "id": "region-uuid",
+      "name": "Gurugram",
+      "slug": "gurugram",
+      "flag": null
+    }
+  },
+  "active_version": { "id": "version-uuid", "version": 1, "revoked_at": null }
 }
 ```
 

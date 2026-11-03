@@ -8,6 +8,7 @@ from uuid import UUID
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import TypeAdapter
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException
 from tinypods_api.http.contracts import ErrorResponse, ValidationIssue
@@ -17,6 +18,8 @@ from tinypods_core.auth import AuthError
 from tinypods_core.rate_limit import RateLimitUnavailable
 from tinypods_core.repositories.sources import SourceError
 from tinypods_core.secrets.crypto import SecretError
+
+VALIDATION_ISSUES = TypeAdapter(list[ValidationIssue])
 
 ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     code: {"model": ErrorResponse, "description": HTTPStatus(code).phrase}
@@ -52,7 +55,9 @@ def error_response(
         request_id=UUID(request.state.request_id),
         issues=issues or [],
     )
-    return JSONResponse(payload.model_dump(mode="json"), status_code=status, headers=headers)
+    return JSONResponse(
+        payload.model_dump(mode="json", exclude_none=True), status_code=status, headers=headers
+    )
 
 
 async def http_error(request: Request, exc: Exception) -> JSONResponse:
@@ -87,11 +92,11 @@ async def validation_error(request: Request, exc: Exception) -> JSONResponse:
         Public error JSON with correlation metadata and the selected HTTP status.
     """
     assert isinstance(exc, RequestValidationError)
-    issues = [
-        ValidationIssue(location=list(error["loc"]), code=error["type"]) for error in exc.errors()
-    ]
+    # The issue DTO projects only public aliases; rejected input and arbitrary
+    # Pydantic messages/context are not fields in the serialized representation.
+    issues = VALIDATION_ISSUES.validate_python(exc.errors())
     return error_response(
-        request, 422, "validation_error", "Request validation failed", issues=issues
+        request, 422, "validation_error", "Check the highlighted fields.", issues=issues
     )
 
 

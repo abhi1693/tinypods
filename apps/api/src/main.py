@@ -8,9 +8,11 @@ from contextlib import AsyncExitStack, asynccontextmanager
 import anyio
 import uvicorn
 from fastapi import FastAPI, Response
+from starlette.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 from tinypods_api.applications import router as applications_router
 from tinypods_api.auth import build_router
+from tinypods_api.auth.setup_routes import router as setup_router
 from tinypods_api.cache import CachePolicy
 from tinypods_api.clusters import router as clusters_router
 from tinypods_api.clusters.capabilities import router as capabilities_router
@@ -143,11 +145,25 @@ def create_app(
                     logger.info("API stopped")
 
     app = LoggedFastAPI(
-        title="TinyPods API", version=__version__, lifespan=lifespan, responses=ERROR_RESPONSES
+        title="TinyPods API",
+        version=__version__,
+        lifespan=lifespan,
+        responses=ERROR_RESPONSES,
+        servers=[
+            {"url": "{origin}", "variables": {"origin": {"default": "http://localhost:8000"}}}
+        ],
     )
     app.router.route_class = RateLimitedRoute
     app.add_middleware(
         GlobalRateLimitMiddleware, limiter=limiter, limit=config.rate_limit_global_per_minute
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=config.browser_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        allow_headers=["content-type", "x-csrf-token", "x-setup-token"],
+        expose_headers=["retry-after"],
     )
     app.state.rate_limiter = limiter
     app.state.settings = config
@@ -188,6 +204,7 @@ def create_app(
         prefix=API_V1_PREFIX,
     )
 
+    app.include_router(setup_router, prefix=API_V1_PREFIX)
     app.include_router(applications_router, prefix=API_V1_PREFIX)
     app.include_router(installations_router, prefix=API_V1_PREFIX)
     app.include_router(jobs_router, prefix=API_V1_PREFIX)

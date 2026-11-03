@@ -98,6 +98,7 @@ async def start(
         body.return_to,
         request.cookies.get(policy.session),
         browser_token=request.cookies.get(policy.oidc),
+        registration=body.action == "register",
         identity_provider_id=body.identity_provider_id,
         previous_refresh_token=request.cookies.get(policy.refresh),
     )

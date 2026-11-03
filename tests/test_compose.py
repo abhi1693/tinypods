@@ -297,7 +297,9 @@ def test_watch_rebuilds_api_worker_and_runs_new_migrations(
         shutil.copytree(
             ROOT / name,
             directory / name,
-            ignore=shutil.ignore_patterns("build", "*.egg-info", "__pycache__"),
+            ignore=shutil.ignore_patterns(
+                "build", "*.egg-info", "__pycache__", "node_modules", ".next", "*.tsbuildinfo"
+            ),
         )
     for name in [
         "Dockerfile",
@@ -338,7 +340,7 @@ def test_watch_rebuilds_api_worker_and_runs_new_migrations(
             probe.write_text('VALUE = "after"\n')
             (directory / "migrations/versions/0002_watch.py").write_text(
                 "from alembic import op\nrevision='0002_watch'\n"
-                "down_revision='0010_jobs'\n"
+                "down_revision='0011_email_login_names'\n"
                 "def upgrade():\n    op.execute('CREATE TABLE compose_watch_probe (id integer)')\n"
             )
             deadline = time.monotonic() + 150

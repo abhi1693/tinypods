@@ -17,45 +17,45 @@ Comparison of baseline recursive reads, indexed recursion, and the stored-ancest
 
 Flag lookup p95 in milliseconds. Each cell shows **1 reader / 32 readers**.
 
-| Shape | Baseline recursion | Indexed recursion | Stored ancestry |
-|---|---:|---:|---:|
-| wide-10000 | 5.18 / 47.20 | 3.70 / 52.11 | 2.95 / 33.15 |
-| balanced-10000 | 7.55 / 134.39 | 4.36 / 56.50 | 2.77 / 37.77 |
-| depth-1000 | 145.36 / 150.41 | 6.35 / 57.77 | 20.32 / 63.76 |
-| detail-depth-1000 | 89.19 / 302.81 | 5.41 / 19.79 | 1.89 / 11.59 |
-| overrides-depth-1000 | 152.44 / 156.84 | 4.08 / 60.06 | 22.70 / 73.10 |
+| Shape                | Baseline recursion | Indexed recursion | Stored ancestry |
+| -------------------- | -----------------: | ----------------: | --------------: |
+| wide-10000           |       5.18 / 47.20 |      3.70 / 52.11 |    2.95 / 33.15 |
+| balanced-10000       |      7.55 / 134.39 |      4.36 / 56.50 |    2.77 / 37.77 |
+| depth-1000           |    145.36 / 150.41 |      6.35 / 57.77 |   20.32 / 63.76 |
+| detail-depth-1000    |     89.19 / 302.81 |      5.41 / 19.79 |    1.89 / 11.59 |
+| overrides-depth-1000 |    152.44 / 156.84 |      4.08 / 60.06 |   22.70 / 73.10 |
 
 Additional stored-ancestry controls, p95 milliseconds. ORM/JSON cells show **1 / 8 / 32 readers**. Mixed reads use 16 readers while four writers move the shared subtree; writer latency includes the whole transaction and its path cascade.
 
-| Shape | ORM + JSON | Reads with four writers | Worst writer p95 | Reads during held move |
-|---|---:|---:|---:|---:|
-| wide-10000 | 12.84 / 145.62 / 193.59 | 17.30 | 371.67 | 9.16 |
-| balanced-10000 | 10.10 / 54.11 / 200.32 | 17.23 | 296.59 | 10.10 |
-| depth-1000 | 25.83 / 51.86 / 307.17 | 33.93 | 173.04 | 26.35 |
-| detail-depth-1000 | 6.11 / 23.21 / 83.82 | 10.01 | 179.46 | 4.69 |
-| overrides-depth-1000 | 29.81 / 193.96 / 190.77 | 43.19 | 211.77 | 31.67 |
+| Shape                |              ORM + JSON | Reads with four writers | Worst writer p95 | Reads during held move |
+| -------------------- | ----------------------: | ----------------------: | ---------------: | ---------------------: |
+| wide-10000           | 12.84 / 145.62 / 193.59 |                   17.30 |           371.67 |                   9.16 |
+| balanced-10000       |  10.10 / 54.11 / 200.32 |                   17.23 |           296.59 |                  10.10 |
+| depth-1000           |  25.83 / 51.86 / 307.17 |                   33.93 |           173.04 |                  26.35 |
+| detail-depth-1000    |    6.11 / 23.21 / 83.82 |                   10.01 |           179.46 |                   4.69 |
+| overrides-depth-1000 | 29.81 / 193.96 / 190.77 |                   43.19 |           211.77 |                  31.67 |
 
 ## Preparation disabled
 
 Flag lookup p95 in milliseconds. Each cell shows **1 reader / 32 readers**.
 
-| Shape | Baseline recursion | Indexed recursion | Stored ancestry |
-|---|---:|---:|---:|
-| wide-10000 | 6.35 / 51.40 | 5.16 / 53.56 | 2.80 / 32.64 |
-| balanced-10000 | 5.33 / 142.92 | 3.58 / 57.10 | 3.10 / 37.52 |
-| depth-1000 | 61.18 / 171.16 | 7.57 / 58.85 | 19.16 / 61.84 |
-| detail-depth-1000 | 90.23 / 327.32 | 4.70 / 18.44 | 1.78 / 13.31 |
-| overrides-depth-1000 | 60.70 / 160.96 | 3.83 / 55.54 | 24.11 / 66.26 |
+| Shape                | Baseline recursion | Indexed recursion | Stored ancestry |
+| -------------------- | -----------------: | ----------------: | --------------: |
+| wide-10000           |       6.35 / 51.40 |      5.16 / 53.56 |    2.80 / 32.64 |
+| balanced-10000       |      5.33 / 142.92 |      3.58 / 57.10 |    3.10 / 37.52 |
+| depth-1000           |     61.18 / 171.16 |      7.57 / 58.85 |   19.16 / 61.84 |
+| detail-depth-1000    |     90.23 / 327.32 |      4.70 / 18.44 |    1.78 / 13.31 |
+| overrides-depth-1000 |     60.70 / 160.96 |      3.83 / 55.54 |   24.11 / 66.26 |
 
 Additional stored-ancestry controls, p95 milliseconds. ORM/JSON cells show **1 / 8 / 32 readers**. Mixed reads use 16 readers while four writers move the shared subtree; writer latency includes the whole transaction and its path cascade.
 
-| Shape | ORM + JSON | Reads with four writers | Worst writer p95 | Reads during held move |
-|---|---:|---:|---:|---:|
-| wide-10000 | 13.85 / 155.55 / 199.64 | 18.25 | 368.77 | 11.54 |
-| balanced-10000 | 9.79 / 52.79 / 200.69 | 24.95 | 253.20 | 9.37 |
-| depth-1000 | 27.73 / 54.85 / 302.04 | 34.87 | 178.17 | 30.36 |
-| detail-depth-1000 | 4.79 / 21.54 / 82.50 | 10.61 | 180.23 | 4.12 |
-| overrides-depth-1000 | 29.75 / 190.16 / 195.89 | 50.90 | 203.26 | 39.21 |
+| Shape                |              ORM + JSON | Reads with four writers | Worst writer p95 | Reads during held move |
+| -------------------- | ----------------------: | ----------------------: | ---------------: | ---------------------: |
+| wide-10000           | 13.85 / 155.55 / 199.64 |                   18.25 |           368.77 |                  11.54 |
+| balanced-10000       |   9.79 / 52.79 / 200.69 |                   24.95 |           253.20 |                   9.37 |
+| depth-1000           |  27.73 / 54.85 / 302.04 |                   34.87 |           178.17 |                  30.36 |
+| detail-depth-1000    |    4.79 / 21.54 / 82.50 |                   10.61 |           180.23 |                   4.12 |
+| overrides-depth-1000 | 29.75 / 190.16 / 195.89 |                   50.90 |           203.26 |                  39.21 |
 
 ## Interpretation
 

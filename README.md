@@ -100,7 +100,6 @@ Runnable entry points live under `apps/`; shared Python packages live under
 `packages/`. Each package maps its import namespace to its flat `src/` directory.
 Tests live at the repository root. Frontend work follows the tracker dependencies.
 
-
 ## Docker Compose
 
 Use Docker Engine with Compose 2.24.4 or later. This follows the base, build and
@@ -161,7 +160,6 @@ provided services. It also verifies private networking, worker overrides, and
 host/port configuration. ARM64 image inputs are verified; runtime integration
 tests execute on the host architecture.
 
-
 ### Watch local changes
 
 Use the build and worker overrides with `up --watch` to rebuild and recreate
@@ -189,7 +187,6 @@ The Docker daemon and builder must trust the registry's certificate, whose names
 must include the configured hostname. Local backend images are built locally;
 the registry prefix does not redirect them. `TINYPODS_BACKEND_IMAGE` still selects
 an existing backend image when the build override is omitted.
-
 
 ## Backend logging
 
@@ -227,7 +224,6 @@ rather than silent truncation; binary values use complete hexadecimal envelopes.
 JSON cannot preserve Python object identity. See [CONTRIBUTING.md](CONTRIBUTING.md)
 for report, validation and contribution guidance.
 
-
 ## Backend module packages
 
 Core cache storage, database/migration access and logging live in `cache/`, `db/`
@@ -245,12 +241,10 @@ The build metadata registers every concrete subpackage. Packaging tests rebuild 
 four distributions from source archives, verify complete module/typing-marker
 inclusion and check public imports in fresh interpreters outside the checkout.
 
-
 Select the project `.venv/bin/python` interpreter (Python 3.13) in the IDE.
 The backend uses modern typing syntax, including `bytes | None` and literal types.
 An older or unrelated interpreter can report invalid annotations even when the
 installed project checks pass; verify the selected SDK before changing valid types.
-
 
 ## Authentication
 
@@ -286,7 +280,6 @@ headers. Users behind a NAT share a peer budget. All replicas must share policy
 settings. Valkey needs non-evicting persistence; eviction/data loss resets budgets.
 The pool has 16 connections, 200 ms socket/connect waits and no automatic retries.
 
-
 ## Audit trail
 
 Authentication models now use transactional, allowlisted object change logging.
@@ -301,16 +294,18 @@ targets, immutable configuration history and scoped application-secret APIs.
 See [durable jobs and RQ](docs/jobs.md) for transactional work, fixed task contracts,
 scheduling, recovery and delivery limits.
 
-## Frontend foundation
+## Web login
 
-The [console workspace](apps/web/README.md) contains the minimal Next.js App Router
-scaffold and Orval-generated TanStack Query client/models. From the repository
-root, run `npm ci`, `npm run dev`, and `npm run check`. Feature screens and API/auth
-integration follow separately.
+The [web workspace](apps/web/README.md) provides shared login UI, local credentials
+and backend-discovered provider choices through direct Orval-generated API calls.
+It includes per-operation Fetch/TanStack modules, generated Zod validation and MSW
+test factories. From the root, run npm ci, npm run dev and npm run check.
 
-The web service joins the same Compose project. Frontend-only Watch:
-`docker compose -f compose.yaml -f compose.build.yaml up --build --force-recreate --watch web`.
-Production runtime:
-`TINYPODS_WEB_BUILD_TARGET=runtime docker compose -f compose.yaml -f compose.build.yaml up --build --force-recreate -d --wait web`.
-Open http://localhost:3000. Add --profile web before up to include web in the full-stack Watch command.
-See [frontend run and Watch details](apps/web/README.md#docker-compose).
+The web service joins the existing Compose project. With COMPOSE_FILE configured
+and COMPOSE_PROFILES=local,web, use docker compose up --build --watch.
+See the frontend README for explicit-file commands, production image builds,
+private LAN publishing, browser API origins/CORS and current post-login behavior.
+
+Use npm run format / npm run format:check for supported repository files.
+Ruff remains the Python formatter/linter. Frontend checks run alongside backend
+checks in the existing unified CI workflow.

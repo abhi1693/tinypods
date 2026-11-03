@@ -19,10 +19,10 @@ reads, temporary staging checks/DDL, batches and commit. Both use allocation
 tracing, which adds overhead; single-run times are diagnostic, not throughput or
 latency guarantees. Cursor-call reduction is the more reproducible result.
 
-| Case | Before cursor calls | Batched cursor calls | Before seconds | Batched seconds |
-| --- | ---: | ---: | ---: | ---: |
-| Audited insert, 1,200 objects | 1,241 | 41 | 4.32 | 3.12 |
-| Audited update, 1,200 objects | 2,442 | 54 | 4.48 | 2.26 |
+| Case                          | Before cursor calls | Batched cursor calls | Before seconds | Batched seconds |
+| ----------------------------- | ------------------: | -------------------: | -------------: | --------------: |
+| Audited insert, 1,200 objects |               1,241 |                   41 |           4.32 |            3.12 |
+| Audited update, 1,200 objects |               2,442 |                   54 |           4.48 |            2.26 |
 
 Unaudited comparison transactions took 0.79 seconds for insertion and 0.45 seconds
 for update in the batched run. Thus audit capture still has measurable overhead;

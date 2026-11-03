@@ -27,6 +27,16 @@ def get_auth(request: Request) -> AuthService[Credentials]:
 AuthDependency = Annotated[AuthService[Credentials], Depends(get_auth)]
 
 
+def get_registration_auth(request: Request) -> AuthService[Credentials]:
+    """Close public native registration before accessing authentication storage."""
+    if not request.app.state.settings.auth_registration_enabled:
+        raise HTTPException(403)
+    return get_auth(request)
+
+
+RegistrationDependency = Annotated[AuthService[Credentials], Depends(get_registration_auth)]
+
+
 def get_sessions(request: Request) -> SessionService:
     """Require provider-independent sessions for all authenticated feature access."""
     sessions: SessionService | None = request.app.state.sessions
@@ -53,7 +63,11 @@ AuthorizationDependency = Annotated[AuthorizationService, Depends(get_authorizat
 def check_origin(request: Request) -> None:
     """Reject foreign browser origins; custom CSRF headers also exclude form submissions."""
     origin = request.headers.get("origin")
-    if origin is not None and origin != f"{request.url.scheme}://{request.url.netloc}":
+    if (
+        origin is not None
+        and origin != f"{request.url.scheme}://{request.url.netloc}"
+        and origin not in request.app.state.settings.browser_origins
+    ):
         raise HTTPException(403)
 
 

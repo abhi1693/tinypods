@@ -49,6 +49,7 @@ def auth_settings(postgres_endpoints: PostgresEndpoints, valkey_url: str) -> Set
         database_url=SecretStr(postgres_endpoints.direct),
         valkey_url=SecretStr(valkey_url),
         cache_enabled=False,
+        auth_registration_enabled=True,
         rate_limit_namespace="test:limits:" + uuid4().hex,
     )
     MigrationManager(settings, ROOT / "alembic.ini").upgrade()

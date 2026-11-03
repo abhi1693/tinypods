@@ -289,25 +289,30 @@ def real_zitadel(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ZitadelFi
         subnet = ipaddress.ip_network(
             json.loads(docker("network", "inspect", name))[0]["IPAM"]["Config"][0]["Subnet"]
         )
-        private = ipaddress.ip_network("172.16.0.0/12")
-        assert isinstance(subnet, ipaddress.IPv4Network) and subnet.subnet_of(private)
+        private_ranges = [
+            ipaddress.IPv4Network("10.0.0.0/8"),
+            ipaddress.IPv4Network("172.16.0.0/12"),
+            ipaddress.IPv4Network("192.168.0.0/16"),
+        ]
+        assert isinstance(subnet, ipaddress.IPv4Network)
+        assert any(subnet.subnet_of(private) for private in private_ranges)
         # The only private destination exception is this disposable test network.
         # Keep loopback, metadata endpoints and every other private range blocked.
         denylist = [
             "localhost",
             "0.0.0.0/8",
-            "10.0.0.0/8",
             "100.64.0.0/10",
             "127.0.0.0/8",
             "169.254.0.0/16",
-            "192.168.0.0/16",
             "198.18.0.0/15",
             "::/128",
             "::1/128",
             "fc00::/7",
             "fe80::/10",
         ]
-        denylist.extend(str(network) for network in private.address_exclude(subnet))
+        for private in private_ranges:
+            networks = private.address_exclude(subnet) if subnet.subnet_of(private) else [private]
+            denylist.extend(str(network) for network in networks)
         environment = {
             "ZITADEL_HTTPCLIENT_DENYLIST": ",".join(denylist),
             "ZITADEL_PORT": "8080",
@@ -433,11 +438,13 @@ def real_zitadel(tmp_path_factory: pytest.TempPathFactory) -> Iterator[ZitadelFi
             pytest.fail("Disposable resource cleanup failed: " + ", ".join(cleanup_failures))
 
 
+@pytest.mark.parametrize("destination", ["/applications", "https://console.example/applications"])
 @pytest.mark.parametrize("method", ["none", "client_secret_basic"])
 def test_real_zitadel_tls_pkce_browser_session_and_authorization(
     real_zitadel: ZitadelFixture,
     auth_settings: Settings,
     method: str,
+    destination: str,
 ) -> None:
     """Validate actual signed upstream tokens through production adapter and core policy."""
     app = real_zitadel.application(method)
@@ -452,6 +459,7 @@ def test_real_zitadel_tls_pkce_browser_session_and_authorization(
             if method == "client_secret_basic"
             else None,
             "zitadel_post_logout_uri": "https://tinypods.example/",
+            "browser_origins": ["https://console.example"],
         }
     )
 
@@ -461,7 +469,18 @@ def test_real_zitadel_tls_pkce_browser_session_and_authorization(
         adapter = ZitadelOIDC(settings, transport=httpx.AsyncHTTPTransport(verify=real_zitadel.tls))
         browser = BrowserLogin(database, settings, adapter, limiter)
         try:
-            start = await browser.start("/applications")
+            for invalid in (
+                "https://foreign.example/",
+                "//console.example/",
+                "https://console.example/../",
+                "https://console.example/?q=1",
+                "https://console.example/#fragment",
+                "http://[malformed",
+            ):
+                with pytest.raises(AuthError) as rejected:
+                    await browser.start(invalid)
+                assert rejected.value.status == 400
+            start = await browser.start(destination)
             response = await asyncio.to_thread(real_zitadel.approve, start.authorization_url)
             login, return_to = await browser.finish(
                 response["state"][0],
@@ -469,7 +488,7 @@ def test_real_zitadel_tls_pkce_browser_session_and_authorization(
                 response["code"][0],
                 response_issuer=response.get("iss", [None])[0],
             )
-            assert return_to == "/applications" and login.principal.is_owner
+            assert return_to == destination and not login.principal.is_owner
             principal = await browser.sessions.authenticate(
                 login.token, csrf_token=login.csrf_token
             )
@@ -478,7 +497,9 @@ def test_real_zitadel_tls_pkce_browser_session_and_authorization(
                 await policy.require_access(principal, Scope.APP, owner_id=principal.user_id)
                 == principal
             )
-            assert await policy.require_access(principal, Scope.CATALOG_ADMIN) == principal
+            with pytest.raises(AuthError) as denied:
+                await policy.require_access(principal, Scope.CATALOG_ADMIN)
+            assert denied.value.status == 403
             async with database.session() as session:
                 assert await session.get(LocalCredential, principal.user_id) is None
                 record = await session.get(AuthSession, digest(login.token))

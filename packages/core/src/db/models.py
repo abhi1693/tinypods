@@ -33,7 +33,7 @@ class User(AuditTrailMixin, table=True):
 
     __tablename__ = "auth_user"
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    username: str = Field(max_length=64, unique=True)
+    username: str = Field(max_length=254, unique=True)
     is_owner: bool = False
 
 

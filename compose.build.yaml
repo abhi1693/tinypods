@@ -8,17 +8,17 @@ x-backend-build: &backend-build
 
 x-backend-develop: &backend-develop
   watch:
-    - {action: rebuild, path: ./apps/api}
-    - {action: rebuild, path: ./apps/worker}
-    - {action: rebuild, path: ./apps/cli}
-    - {action: rebuild, path: ./packages/core}
-    - {action: rebuild, path: ./migrations}
-    - {action: rebuild, path: ./alembic.ini}
-    - {action: rebuild, path: ./pyproject.toml}
-    - {action: rebuild, path: ./uv.lock}
-    - {action: rebuild, path: ./.python-version}
-    - {action: rebuild, path: ./Dockerfile}
-    - {action: rebuild, path: ./.dockerignore}
+    - { action: rebuild, path: ./apps/api }
+    - { action: rebuild, path: ./apps/worker }
+    - { action: rebuild, path: ./apps/cli }
+    - { action: rebuild, path: ./packages/core }
+    - { action: rebuild, path: ./migrations }
+    - { action: rebuild, path: ./alembic.ini }
+    - { action: rebuild, path: ./pyproject.toml }
+    - { action: rebuild, path: ./uv.lock }
+    - { action: rebuild, path: ./.python-version }
+    - { action: rebuild, path: ./Dockerfile }
+    - { action: rebuild, path: ./.dockerignore }
 
 services:
   api:
@@ -41,6 +41,7 @@ services:
       dockerfile: apps/web/Dockerfile
       target: ${TINYPODS_WEB_BUILD_TARGET:-development}
       args:
+        NEXT_PUBLIC_TINYPODS_API_ORIGIN: ${NEXT_PUBLIC_TINYPODS_API_ORIGIN:-http://localhost:8000}
         DOCKERHUB_PREFIX: ${TINYPODS_IMAGE_REGISTRY:+${TINYPODS_IMAGE_REGISTRY}/docker.io/library/}
     develop:
       watch:
@@ -56,19 +57,19 @@ services:
         - action: sync
           path: ./packages/http/src
           target: /app/packages/http/src
-        - {action: rebuild, path: ./package.json}
-        - {action: rebuild, path: ./package-lock.json}
-        - {action: rebuild, path: ./.npmrc}
-        - {action: rebuild, path: ./.node-version}
-        - {action: rebuild, path: ./tsconfig.base.json}
-        - {action: rebuild, path: ./.dockerignore}
-        - {action: rebuild, path: ./apps/web/Dockerfile}
-        - {action: rebuild, path: ./apps/web/package.json}
-        - {action: rebuild, path: ./apps/web/next.config.ts}
-        - {action: rebuild, path: ./apps/web/postcss.config.mjs}
-        - {action: rebuild, path: ./apps/web/tsconfig.json}
-        - {action: rebuild, path: ./packages/ui/package.json}
-        - {action: rebuild, path: ./packages/ui/tsconfig.json}
-        - {action: rebuild, path: ./packages/theme/package.json}
-        - {action: rebuild, path: ./packages/http/package.json}
-        - {action: rebuild, path: ./packages/http/tsconfig.json}
+        - { action: rebuild, path: ./package.json }
+        - { action: rebuild, path: ./package-lock.json }
+        - { action: rebuild, path: ./.npmrc }
+        - { action: rebuild, path: ./.node-version }
+        - { action: rebuild, path: ./tsconfig.base.json }
+        - { action: rebuild, path: ./.dockerignore }
+        - { action: rebuild, path: ./apps/web/Dockerfile }
+        - { action: rebuild, path: ./apps/web/package.json }
+        - { action: rebuild, path: ./apps/web/next.config.ts }
+        - { action: rebuild, path: ./apps/web/postcss.config.mjs }
+        - { action: rebuild, path: ./apps/web/tsconfig.json }
+        - { action: rebuild, path: ./packages/ui/package.json }
+        - { action: rebuild, path: ./packages/ui/tsconfig.json }
+        - { action: rebuild, path: ./packages/theme/package.json }
+        - { action: rebuild, path: ./packages/http/package.json }
+        - { action: rebuild, path: ./packages/http/tsconfig.json }

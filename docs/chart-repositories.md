@@ -20,8 +20,7 @@ missing from a successful snapshot become unavailable and remain in history.
 A failed or stale concurrent sync does not replace the previous snapshot.
 
 Deleting an unused repository removes its charts and versions in one transaction.
-Any application release referencing a version blocks the entire deletion with
-409. The service deletes children through the ORM for transactional audit capture;
+Any application release referencing a version blocks the entire deletion with 409. The service deletes children through the ORM for transactional audit capture;
 database cascades and restrictive release references also enforce integrity for
 direct SQL. Disabling a repository retains all metadata and prevents sync.
 
@@ -80,7 +79,13 @@ hostnames; an empty list allows public HTTPS hosts. `TINYPODS_REPOSITORY_MAX_BYT
 `TINYPODS_REPOSITORY_CREDENTIALS` optionally supplies a host-keyed JSON mapping:
 
 ```json
-{"registry.example.com":{"username":"ACCOUNT","password":"ACCESS_TOKEN","token_host":"auth.example.com"}}
+{
+  "registry.example.com": {
+    "username": "ACCOUNT",
+    "password": "ACCESS_TOKEN",
+    "token_host": "auth.example.com"
+  }
+}
 ```
 
 When supplied, credentials are used immediately; otherwise requests use public
@@ -118,7 +123,6 @@ disposable PostgreSQL/Valkey fixtures:
 uv run --no-sync pytest tests/test_repository_live.py -m live_repository -s --no-cov
 ```
 
-
 ### Initial version window
 
 Newly synced charts import only their latest three distinct stable semantic versions by
@@ -132,7 +136,6 @@ N does not trim existing history. Digest changes remain separate immutable pins.
 
 The public-network demo is deselected from the default suite. Select its
 `live_repository` marker explicitly; the regular CI suite requires zero skips.
-
 
 ### Latest version pointer
 
@@ -151,7 +154,6 @@ other prerelease identifiers are skipped before applying the initial N-version
 limit. Build metadata (for example `1.2.3+build.1`) remains supported. Previously
 pinned prerelease records are retained but become unavailable and cannot be
 latest after sync; they do not determine the stable import window.
-
 
 ### Application presentation metadata
 

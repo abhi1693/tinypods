@@ -2,12 +2,15 @@
 
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from tinypods_core.auth.contracts import AuthError, Credentials
 from tinypods_core.auth.providers.local.passwords import hash_password, verify_password
 from tinypods_core.db import Database
 from tinypods_core.db.models import Installation, LocalCredential, User
 from tinypods_core.rate_limit import RateLimiter, RatePolicy
+
+REGISTER_GLOBAL = RatePolicy("auth:register:global", 30, 60_000)
 
 LOGIN_ACCOUNT = RatePolicy("auth:login:account", 5, 60_000)
 
@@ -42,6 +45,33 @@ class LocalPasswordProvider:
             installation.owner_id = user.id
             session.add(installation)
             return user.id
+
+    async def register(self, credentials: Credentials) -> UUID:
+        """Create only an ordinary account; operator bootstrap remains separate.
+
+        Reserve hash work before opening the write transaction. The database unique
+        constraint resolves concurrent username claims without partial credentials.
+        """
+        if self.limiter is None:
+            raise AuthError(503)
+        async with self.database.session() as session:
+            installation = await session.get(Installation, 1)
+            if installation is None:
+                raise AuthError(503)
+            subject = str(installation.installation_id)
+        decision = await self.limiter.reserve(REGISTER_GLOBAL, subject)
+        if not decision.allowed:
+            raise AuthError(429, retry_after=decision.retry_after)
+        encoded = await hash_password(credentials.password.get_secret_value())
+        try:
+            async with self.database.transaction() as session:
+                user = User(username=credentials.username, is_owner=False)
+                session.add(user)
+                await session.flush()
+                session.add(LocalCredential(user_id=user.id, password_hash=encoded))
+                return user.id
+        except IntegrityError:
+            raise AuthError(409) from None
 
     async def verify(self, proof: Credentials) -> UUID:
         """Reject absent credentials, external-only identities and bad passwords uniformly."""

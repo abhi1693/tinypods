@@ -7,13 +7,27 @@ Writes and query filters continue to accept explicit UUID fields such as
 For example, `GET /api/v1/charts/{id}` previously returned:
 
 ```json
-{"id": "chart-uuid", "repository_id": "repository-uuid", "name": "redis", "available": true}
+{
+  "id": "chart-uuid",
+  "repository_id": "repository-uuid",
+  "name": "redis",
+  "available": true
+}
 ```
 
 Its relationship now appears as:
 
 ```json
-{"id": "chart-uuid", "repository": {"id": "repository-uuid", "name": "Bitnami", "source_type": "helm_repository"}, "name": "redis", "available": true}
+{
+  "id": "chart-uuid",
+  "repository": {
+    "id": "repository-uuid",
+    "name": "Bitnami",
+    "source_type": "helm_repository"
+  },
+  "name": "redis",
+  "available": true
+}
 ```
 
 These abbreviated examples omit unchanged audit timestamps. UUID placeholders are
@@ -63,12 +77,12 @@ Demo records and one-off population scripts are excluded from version control.
 A disposable PostgreSQL measurement of the presentation stage (excluding HTTP,
 domain list selection and fixture setup) produced:
 
-| Graph | Rows | SQL statements | JSON bytes | Elapsed ms |
-| --- | ---: | ---: | ---: | ---: |
-| Release, application, chart version and chart | 1 | 1 | 557 | 21.32 |
-| Release, application, chart version and chart | 100 | 1 | 55,790 | 17.12 |
-| Application/category membership | 1 | 1 | 265 | 7.84 |
-| Application/category membership | 100 | 1 | 26,680 | 13.42 |
+| Graph                                         | Rows | SQL statements | JSON bytes | Elapsed ms |
+| --------------------------------------------- | ---: | -------------: | ---------: | ---------: |
+| Release, application, chart version and chart |    1 |              1 |        557 |      21.32 |
+| Release, application, chart version and chart |  100 |              1 |     55,790 |      17.12 |
+| Application/category membership               |    1 |              1 |        265 |       7.84 |
+| Application/category membership               |  100 |              1 |     26,680 |      13.42 |
 
 These are individual local observations, not throughput guarantees; cold query
 compilation can make the single-record sample slower. Automated assertions check
