@@ -17,3 +17,7 @@ reports
 .ruff_cache
 .idea
 .local/
+
+**/node_modules
+**/.next
+**/*.tsbuildinfo

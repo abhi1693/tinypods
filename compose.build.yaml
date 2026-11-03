@@ -33,3 +33,42 @@ services:
     image: ${TINYPODS_LOCAL_IMAGE_PREFIX:-tinypods}/migrate:local
     build: *backend-build
     develop: *backend-develop
+
+  web:
+    image: ${TINYPODS_LOCAL_IMAGE_PREFIX:-tinypods}/web:local
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: ${TINYPODS_WEB_BUILD_TARGET:-development}
+      args:
+        DOCKERHUB_PREFIX: ${TINYPODS_IMAGE_REGISTRY:+${TINYPODS_IMAGE_REGISTRY}/docker.io/library/}
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/web/src
+          target: /app/apps/web/src
+        - action: sync
+          path: ./packages/ui/src
+          target: /app/packages/ui/src
+        - action: sync
+          path: ./packages/theme/src
+          target: /app/packages/theme/src
+        - action: sync
+          path: ./packages/http/src
+          target: /app/packages/http/src
+        - {action: rebuild, path: ./package.json}
+        - {action: rebuild, path: ./package-lock.json}
+        - {action: rebuild, path: ./.npmrc}
+        - {action: rebuild, path: ./.node-version}
+        - {action: rebuild, path: ./tsconfig.base.json}
+        - {action: rebuild, path: ./.dockerignore}
+        - {action: rebuild, path: ./apps/web/Dockerfile}
+        - {action: rebuild, path: ./apps/web/package.json}
+        - {action: rebuild, path: ./apps/web/next.config.ts}
+        - {action: rebuild, path: ./apps/web/postcss.config.mjs}
+        - {action: rebuild, path: ./apps/web/tsconfig.json}
+        - {action: rebuild, path: ./packages/ui/package.json}
+        - {action: rebuild, path: ./packages/ui/tsconfig.json}
+        - {action: rebuild, path: ./packages/theme/package.json}
+        - {action: rebuild, path: ./packages/http/package.json}
+        - {action: rebuild, path: ./packages/http/tsconfig.json}

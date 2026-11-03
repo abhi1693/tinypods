@@ -1,0 +1,8 @@
+{
+  "name": "@tinypods/theme",
+  "version": "0.0.1",
+  "private": true,
+  "exports": {
+    "./tokens.css": "./src/tokens.css"
+  }
+}
