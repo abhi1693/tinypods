@@ -92,6 +92,30 @@ services:
           'fetch("http://127.0.0.1:3000").then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))',
         ]
 
+  admin:
+    profiles: [admin]
+    environment:
+      PORT: "3001"
+      NEXT_PUBLIC_TINYPODS_WEB_ORIGIN: ${NEXT_PUBLIC_TINYPODS_WEB_ORIGIN:-}
+      TINYPODS_WEB_DEV_HOST: ${TINYPODS_ADMIN_PUBLISH_HOST:-127.0.0.1}
+      NEXT_PUBLIC_TINYPODS_API_ORIGIN: ${NEXT_PUBLIC_TINYPODS_API_ORIGIN:-http://localhost:8000}
+    image: ${TINYPODS_ADMIN_IMAGE:-tinypods/admin:local}
+    init: true
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports:
+      - "${TINYPODS_ADMIN_PUBLISH_HOST:-127.0.0.1}:${TINYPODS_ADMIN_PUBLISH_PORT:-3001}:3001"
+    healthcheck:
+      <<: *healthcheck
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          'fetch("http://127.0.0.1:3001").then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))',
+        ]
+
   postgres:
     image: ${TINYPODS_IMAGE_REGISTRY:+${TINYPODS_IMAGE_REGISTRY}/docker.io/library/}postgres:17-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
     profiles: [local]

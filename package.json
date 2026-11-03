@@ -6,7 +6,9 @@
     "packages/http",
     "packages/ui",
     "packages/theme",
-    "apps/web"
+    "apps/web",
+    "packages/web-auth",
+    "apps/admin"
   ],
   "engines": {
     "node": ">=24.21.0 <25",
@@ -15,10 +17,10 @@
   "packageManager": "npm@11.19.0",
   "scripts": {
     "dev": "npm run dev --workspace @tinypods/web",
-    "build": "npm run build --workspace @tinypods/web",
+    "build": "npm run build --workspace @tinypods/web && npm run build --workspace @tinypods/admin",
     "start": "npm run start --workspace @tinypods/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "api:generate": "orval --config apps/web/orval.config.ts",
+    "api:generate": "orval --config packages/http/orval.config.ts",
     "api:check": "node scripts/check-generated-api.mjs",
     "test:contracts": "node --test scripts/frontend-contract.test.mjs",
     "check": "npm run api:check && npm run test:contracts && npm run test:auth && npm run typecheck",

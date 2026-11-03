@@ -20,7 +20,7 @@ try {
     [
       resolve(root, "node_modules/orval/dist/bin/orval.mjs"),
       "--config",
-      "apps/web/orval.config.ts",
+      "packages/http/orval.config.ts",
     ],
     {
       cwd: root,

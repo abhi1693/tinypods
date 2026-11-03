@@ -1,0 +1,25 @@
+{
+  "name": "@tinypods/admin",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1 --port 3001",
+    "build": "next build",
+    "start": "next start --hostname 127.0.0.1 --port 3001",
+    "typecheck": "next typegen && tsc --noEmit"
+  },
+  "dependencies": {
+    "@tinypods/ui": "*",
+    "@tinypods/theme": "*",
+    "@tinypods/http": "*",
+    "@tanstack/react-query": "5.105.3",
+    "next": "16.4.4",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "@tinypods/web-auth": "*"
+  },
+  "devDependencies": {
+    "tailwindcss": "4.3.4",
+    "@tailwindcss/postcss": "4.3.4"
+  }
+}

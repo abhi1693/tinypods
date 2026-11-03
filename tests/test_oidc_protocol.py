@@ -174,6 +174,7 @@ def test_confidential_client_and_optional_logout_uri() -> None:
         ("sub", 123),
         ("sub", "s" * 256),
         ("at_hash", "wrong"),
+        ("auth_time", True),
     ],
 )
 def test_invalid_signed_identity_claims_are_rejected(field: str, value: object) -> None:

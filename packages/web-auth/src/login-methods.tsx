@@ -18,9 +18,11 @@ export function LoginMethods({
   onLogin,
   onRegistered,
   mode = "login",
+  operator = false,
 }: {
   onLogin: (identity: LoginResponse) => void;
-  onRegistered: () => void;
+  onRegistered?: () => void;
+  operator?: boolean;
   mode?: "login" | "register";
 }) {
   const starting = useRef(false);
@@ -129,7 +131,7 @@ export function LoginMethods({
           <section key={provider.id} aria-label={provider.label}>
             {mode === "register" ? (
               <RegistrationForm
-                onRegistered={onRegistered}
+                onRegistered={() => onRegistered?.()}
                 disabled={active !== null && active !== "local:" + provider.id}
                 onPendingChange={(pending) =>
                   localPending(provider.id, pending)
@@ -174,6 +176,7 @@ export function LoginMethods({
             Already have an account? Sign in
           </Link>
         ) : (
+          !operator &&
           allowed &&
           methods.some((provider) => provider.registration_path) && (
             <Link

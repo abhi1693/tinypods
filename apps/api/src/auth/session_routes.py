@@ -9,12 +9,14 @@ from tinypods_api.auth.cookies import request_cookie_policy
 from tinypods_api.auth.dependencies import (
     CSRF_HEADER,
     SESSION_CSRF_METADATA,
+    AuthorizationDependency,
     PrincipalDependency,
     SessionDependency,
     check_origin,
 )
 from tinypods_api.http.operations import build_operation_id
 from tinypods_api.rate_limit import RateLimitedRoute
+from tinypods_core.auth import Scope
 
 router = APIRouter(route_class=RateLimitedRoute)
 
@@ -28,6 +30,20 @@ router = APIRouter(route_class=RateLimitedRoute)
 async def session_identity(principal: PrincipalDependency) -> IdentityResponse:
     """Show the account currently signed in to this browser."""
     return IdentityResponse.from_principal(principal)
+
+
+@router.get(
+    "/owner-session",
+    operation_id=build_operation_id("auth", "ownerSession", "get"),
+    summary="Verify access to the Admin Portal",
+    response_model=IdentityResponse,
+)
+async def owner_session(
+    principal: PrincipalDependency, authorization: AuthorizationDependency
+) -> IdentityResponse:
+    """Return the current identity after checking the platform owner policy."""
+    owner = await authorization.require_access(principal, Scope.CATALOG_ADMIN)
+    return IdentityResponse.from_principal(owner)
 
 
 @router.post(

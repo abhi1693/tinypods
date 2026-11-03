@@ -10,7 +10,7 @@ import {
 import { getRequestErrorMessage } from "@tinypods/http/errors";
 import { RequestFeedback } from "@tinypods/ui/components/molecules/request-feedback";
 import { AuthHeading } from "../molecules/auth-heading";
-import { LoginMethods } from "./login-methods";
+import { LoginMethods } from "@tinypods/web-auth/login-methods";
 
 export function LoginPanel({
   mode = "login",

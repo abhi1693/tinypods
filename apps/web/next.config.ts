@@ -4,7 +4,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: fileURLToPath(new URL("../../", import.meta.url)),
-  transpilePackages: ["@tinypods/ui", "@tinypods/http"],
+  transpilePackages: ["@tinypods/ui", "@tinypods/http", "@tinypods/web-auth"],
   poweredByHeader: false,
   logging: { incomingRequests: { ignore: [/^\/setup(?:[/?]|$)/] } },
   async headers() {

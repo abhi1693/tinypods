@@ -388,6 +388,44 @@ def test_cli_bootstrap_and_validation(
     assert PASSWORD not in repr(credentials())
 
 
+def test_operator_session_enforces_owner_policy(auth_settings: Settings) -> None:
+    """Allow a live owner session and deny anonymous and ordinary sessions."""
+
+    async def bootstrap() -> None:
+        async with Database(auth_settings) as database:
+            await LocalPasswordProvider(database).bootstrap(credentials())
+
+    asyncio.run(bootstrap())
+    path = "/api/v1/auth/owner-session"
+    headers = {"x-csrf-token": "login"}
+    with TestClient(create_app(auth_settings), base_url="https://testserver") as client:
+        assert client.get(path).status_code == 401
+        account = {"username": "ordinary", "password": PASSWORD}
+        assert (
+            client.post(
+                "/api/v1/auth/register",
+                json={**account, "password_confirmation": PASSWORD},
+                headers=headers,
+            ).status_code
+            == 201
+        )
+        assert client.post("/api/v1/auth/login", json=account, headers=headers).status_code == 200
+        assert client.get("/api/v1/auth/session").json()["user"]["is_owner"] is False
+        assert client.get(path).status_code == 403
+        assert (
+            client.post(
+                "/api/v1/auth/login",
+                json={"username": "owner", "password": PASSWORD},
+                headers=headers,
+            ).status_code
+            == 200
+        )
+        owner = client.get(path)
+        assert owner.status_code == 200
+        assert owner.json()["user"]["is_owner"] is True
+        assert owner.headers["cache-control"] == "no-store"
+
+
 def test_http_bad_credentials_account_and_endpoint_limits(auth_settings: Settings) -> None:
     """Expose uniform 401, account 429 and endpoint 429 responses without credential leakage."""
 

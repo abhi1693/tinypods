@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { Providers } from "./providers";
+import { Providers } from "@tinypods/web-auth/providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
