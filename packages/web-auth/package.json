@@ -8,12 +8,12 @@
     "./providers": "./src/providers.tsx"
   },
   "dependencies": {
+    "@tanstack/react-query": "5.105.3",
     "@tinypods/http": "*",
-    "@tinypods/ui": "*",
-    "@tanstack/react-query": "5.105.3"
+    "@tinypods/ui": "*"
   },
   "peerDependencies": {
-    "next": "16.4.4",
+    "next": "16.4.6",
     "react": "^19.3.1"
   }
 }
